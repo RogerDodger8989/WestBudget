@@ -1,7 +1,9 @@
-import React, { useState, useMemo } from 'react';
-import { Search, Filter, Import, ArrowDown, Download, Calendar } from 'lucide-react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { Search, Filter, Import, ArrowDown, Download, Calendar, Undo2, Trash2 } from 'lucide-react';
 import TransactionItem from '../TransactionItem';
 import DateRangeBtn from '../DateRangeBtn';
+import { api } from '../../api';
+import { useToast } from '../../contexts/ToastContext';
 
 const TransactionsTab = ({ 
   transactions, 
@@ -12,9 +14,16 @@ const TransactionsTab = ({
   dateRange,
   setDateRange,
   getTitle,
-  loading 
+  loading,
+  lastImportIds,
+  onUndoLastImport,
+  reloadData
 }) => {
+  const { showToast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedTransactions, setSelectedTransactions] = useState(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
+  const selectAllCheckboxRef = useRef(null);
 
   // Filtrera transaktioner baserat på sökfråga
   const filteredTransactions = useMemo(() => {
@@ -49,6 +58,119 @@ const TransactionsTab = ({
       return false;
     });
   }, [transactions, searchQuery]);
+
+  const handleSelectAll = (checked) => {
+    if (checked) {
+      const allIds = new Set(filteredTransactions.map(t => t.id));
+      setSelectedTransactions(allIds);
+    } else {
+      setSelectedTransactions(new Set());
+    }
+  };
+
+  const handleToggleTransaction = (id) => {
+    const newSelected = new Set(selectedTransactions);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedTransactions(newSelected);
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedTransactions.size === 0) {
+      showToast('Välj minst en transaktion att radera', { type: 'error' });
+      return;
+    }
+
+    const idsToDelete = Array.from(selectedTransactions);
+    const transactionsToDelete = filteredTransactions.filter(t => idsToDelete.includes(t.id));
+    
+    // Save for undo
+    const deletedTransactions = transactionsToDelete.map(t => ({ ...t }));
+
+    setIsDeleting(true);
+    try {
+      // Delete all selected transactions
+      const deletePromises = idsToDelete.map(id => api.deleteTransaction(id));
+      await Promise.all(deletePromises);
+
+      // Clear selection
+      setSelectedTransactions(new Set());
+
+      // Reload data
+      if (reloadData) {
+        await reloadData();
+      }
+
+      // Show toast with undo
+      showToast(`${idsToDelete.length} transaktion${idsToDelete.length !== 1 ? 'er' : ''} raderade!`, {
+        type: 'success',
+        undo: true,
+        undoAction: async () => {
+          try {
+            // Recreate deleted transactions
+            const recreatePromises = deletedTransactions.map(t => {
+              // Convert amount from display format (e.g., "-40 kr") to numeric string for API
+              let amountValue = t.amount;
+              if (typeof amountValue === 'string') {
+                // Remove "kr", spaces, and convert comma to dot
+                amountValue = amountValue.replace(/[^\d.,-]/g, '').replace(',', '.');
+              }
+              const numericAmount = parseFloat(amountValue);
+              
+              if (isNaN(numericAmount)) {
+                throw new Error(`Ogiltigt belopp för transaktion "${t.title}"`);
+              }
+              
+              return api.createTransaction({
+                title: t.title,
+                date: t.date,
+                amount: numericAmount.toString(),
+                type: t.type,
+                category: t.category,
+                status: t.status || 'Bokförd',
+                note: t.note || '',
+                receipt: t.receipt || false
+              });
+            });
+            await Promise.all(recreatePromises);
+            
+            if (reloadData) {
+              await reloadData();
+            }
+            
+            showToast('Transaktioner återställda!', { type: 'success' });
+          } catch (err) {
+            showToast('Kunde inte återställa transaktioner: ' + (err.message || 'Okänt fel'), {
+              type: 'error'
+            });
+          }
+        },
+        description: 'Klicka på Ångra för att återställa'
+      });
+    } catch (err) {
+      console.error('❌ Kunde inte radera transaktioner:', err);
+      showToast('Kunde inte radera transaktioner: ' + (err.message || 'Okänt fel'), {
+        type: 'error'
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const allSelected = filteredTransactions.length > 0 && 
+    filteredTransactions.every(t => selectedTransactions.has(t.id));
+  const someSelected = selectedTransactions.size > 0 && !allSelected;
+
+  // Update indeterminate state of select all checkbox
+  useEffect(() => {
+    if (selectAllCheckboxRef.current) {
+      selectAllCheckboxRef.current.indeterminate = someSelected;
+    }
+  }, [someSelected]);
+
   return (
     <div className="animate-fade-in space-y-6">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -95,6 +217,27 @@ const TransactionsTab = ({
               <Import size={16} />
               Importera
             </button>
+            {lastImportIds && lastImportIds.length > 0 && onUndoLastImport && (
+              <button 
+                onClick={() => onUndoLastImport()}
+                className="flex items-center gap-2 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg text-sm font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
+                title={`Ångra senaste importen (${lastImportIds.length} transaktion${lastImportIds.length !== 1 ? 'er' : ''})`}
+              >
+                <Undo2 size={16} />
+                Ångra import
+              </button>
+            )}
+            {selectedTransactions.size > 0 && (
+              <button 
+                onClick={handleDeleteSelected}
+                disabled={isDeleting}
+                className="flex items-center gap-2 px-3 py-2 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-lg text-sm font-medium text-rose-700 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title={`Radera ${selectedTransactions.size} valda transaktion${selectedTransactions.size !== 1 ? 'er' : ''}`}
+              >
+                <Trash2 size={16} />
+                Radera valda ({selectedTransactions.size})
+              </button>
+            )}
           </div>
           <div className="flex gap-2 w-full sm:w-auto">
             <select className="bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-sm rounded-lg px-3 py-2 outline-none">
@@ -110,7 +253,16 @@ const TransactionsTab = ({
         </div>
 
         <div className="grid grid-cols-12 gap-4 px-6 py-3 bg-zinc-50 dark:bg-zinc-800/30 border-b border-zinc-200 dark:border-zinc-800 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
-          <div className="col-span-3 flex items-center gap-1 cursor-pointer hover:text-zinc-800 dark:hover:text-zinc-300">
+          <div className="col-span-1 flex items-center">
+            <input
+              type="checkbox"
+              ref={selectAllCheckboxRef}
+              checked={allSelected}
+              onChange={(e) => handleSelectAll(e.target.checked)}
+              className="w-4 h-4 text-indigo-600 border-zinc-300 rounded focus:ring-indigo-500"
+            />
+          </div>
+          <div className="col-span-2 flex items-center gap-1 cursor-pointer hover:text-zinc-800 dark:hover:text-zinc-300">
             Beskrivning <ArrowDown size={12} />
           </div>
           <div className="col-span-2">Datum</div>
@@ -135,6 +287,8 @@ const TransactionsTab = ({
                 data={t} 
                 onClick={() => setSelectedTransaction(t)} 
                 onEditNote={() => setEditingNoteTransactionId(t.id)}
+                isSelected={selectedTransactions.has(t.id)}
+                onToggleSelect={() => handleToggleTransaction(t.id)}
               />
             ))
           )}

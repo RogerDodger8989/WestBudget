@@ -590,7 +590,7 @@ const SettingsTab = ({ getTitle, reloadData }) => {
                   }
                   try {
                     await api.createCategoryRule({
-                      description_pattern: newRulePattern.trim(),
+                      description_patterns: [newRulePattern.trim()],
                       category: newRuleCategory,
                       is_active: true
                     });

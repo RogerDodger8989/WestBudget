@@ -36,6 +36,7 @@ const DashboardLayout = ({
   const [selectedTransaction, setSelectedTransaction] = useState(null);
   const [selectedAgreement, setSelectedAgreement] = useState(null);
   const [isAddAgreementModalOpen, setIsAddAgreementModalOpen] = useState(false);
+  const [lastImportIds, setLastImportIds] = useState([]);
   
   // Toast system
   const { showToast } = useToast();
@@ -194,17 +195,61 @@ const DashboardLayout = ({
         }
       }
       
+      // Save IDs of imported transactions for undo functionality
+      const importedIds = createdTransactions.map(t => t.id);
+      setLastImportIds(importedIds);
+      
       // Reload data to get all transactions with IDs
       if (reloadData) {
         await reloadData();
       }
       
+      // Show toast with undo functionality
       showToast(`${createdTransactions.length} transaktion${createdTransactions.length !== 1 ? 'er' : ''} importerade!`, {
-        type: 'success'
+        type: 'success',
+        undo: true,
+        undoAction: async () => {
+          await handleUndoLastImport(importedIds);
+        }
       });
     } catch (error) {
       console.error('❌ Kunde inte importera transaktioner:', error);
       showToast('Kunde inte importera transaktioner. Försök igen.', { type: 'error' });
+      // Clear last import IDs on error
+      setLastImportIds([]);
+    }
+  };
+
+  const handleUndoLastImport = async (idsToDelete = null) => {
+    const ids = idsToDelete || lastImportIds;
+    
+    if (!ids || ids.length === 0) {
+      showToast('Inga transaktioner att ångra', { type: 'error' });
+      return;
+    }
+
+    try {
+      // Delete all transactions
+      const deletePromises = ids.map(id => api.deleteTransaction(id));
+      await Promise.all(deletePromises);
+      
+      // Clear last import IDs
+      setLastImportIds([]);
+      
+      // Reload data
+      if (reloadData) {
+        await reloadData();
+      }
+      
+      showToast(`${ids.length} transaktion${ids.length !== 1 ? 'er' : ''} borttagna!`, {
+        type: 'success',
+        description: 'Importen har ångrats'
+      });
+    } catch (err) {
+      console.error('❌ Kunde inte ångra import:', err);
+      showToast('Kunde inte ångra import: ' + (err.message || 'Okänt fel'), {
+        type: 'error'
+      });
     }
   };
 
@@ -376,6 +421,12 @@ const DashboardLayout = ({
           onImport={handleImportTransactions}
           categories={categories.map(c => c.name || c)}
           existingTransactions={transactions}
+          onCategoriesChange={async () => {
+            // Reload categories if needed
+            if (reloadData) {
+              await reloadData();
+            }
+          }}
         />
       )}
 
@@ -475,6 +526,9 @@ const DashboardLayout = ({
                 setDateRange={setDateRange}
                 getTitle={getTitle}
                 loading={loading}
+                lastImportIds={lastImportIds}
+                onUndoLastImport={handleUndoLastImport}
+                reloadData={reloadData}
               />
             )}
 

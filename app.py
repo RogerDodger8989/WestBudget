@@ -918,8 +918,27 @@ def get_category_rules():
         ''')
         conn.commit()
     
-    cursor.execute('SELECT * FROM category_rules WHERE is_active = 1 ORDER BY description_pattern')
-    rules = [dict(row) for row in cursor.fetchall()]
+    # Return all rules (not just active) so UI can show all
+    cursor.execute('SELECT * FROM category_rules ORDER BY description_pattern')
+    rows = cursor.fetchall()
+    
+    # Parse description_pattern as JSON if it's an array, otherwise keep as string
+    import json
+    rules = []
+    for row in rows:
+        rule = dict(row)
+        try:
+            # Try to parse as JSON array
+            patterns = json.loads(rule['description_pattern'])
+            if isinstance(patterns, list):
+                rule['description_patterns'] = patterns
+                rule['description_pattern'] = patterns[0] if patterns else ''  # Keep first for backward compatibility
+            else:
+                rule['description_patterns'] = [patterns] if patterns else []
+        except (json.JSONDecodeError, TypeError):
+            # Not JSON, treat as single pattern string
+            rule['description_patterns'] = [rule['description_pattern']] if rule['description_pattern'] else []
+        rules.append(rule)
     
     conn.close()
     return jsonify(rules), 200
@@ -930,8 +949,18 @@ def create_category_rule():
     """Create a new category rule"""
     data = request.get_json()
     
-    if not data or not data.get('description_pattern') or not data.get('category'):
-        return jsonify({'error': 'Missing description_pattern or category'}), 400
+    # Support both single pattern (string) and multiple patterns (array)
+    patterns = data.get('description_patterns') or data.get('description_pattern')
+    if not patterns or not data.get('category'):
+        return jsonify({'error': 'Missing description_pattern(s) or category'}), 400
+    
+    # Convert to list if single pattern
+    if isinstance(patterns, str):
+        patterns = [patterns]
+    
+    # Store as JSON array
+    import json
+    patterns_json = json.dumps(patterns)
     
     conn = get_db()
     cursor = conn.cursor()
@@ -955,7 +984,7 @@ def create_category_rule():
         INSERT INTO category_rules (description_pattern, category, is_active)
         VALUES (?, ?, ?)
     ''', (
-        data['description_pattern'],
+        patterns_json,
         data['category'],
         data.get('is_active', True)
     ))
@@ -964,7 +993,20 @@ def create_category_rule():
     conn.commit()
     
     cursor.execute('SELECT * FROM category_rules WHERE id = ?', (rule_id,))
-    new_rule = dict(cursor.fetchone())
+    row = cursor.fetchone()
+    new_rule = dict(row)
+    
+    # Parse description_pattern as JSON
+    import json
+    try:
+        patterns = json.loads(new_rule['description_pattern'])
+        if isinstance(patterns, list):
+            new_rule['description_patterns'] = patterns
+            new_rule['description_pattern'] = patterns[0] if patterns else ''
+        else:
+            new_rule['description_patterns'] = [patterns] if patterns else []
+    except (json.JSONDecodeError, TypeError):
+        new_rule['description_patterns'] = [new_rule['description_pattern']] if new_rule['description_pattern'] else []
     
     conn.close()
     return jsonify(new_rule), 201
@@ -984,9 +1026,16 @@ def update_category_rule(rule_id):
     update_fields = []
     values = []
     
-    if 'description_pattern' in data:
+    if 'description_patterns' in data or 'description_pattern' in data:
+        # Support both description_patterns (array) and description_pattern (string)
+        patterns = data.get('description_patterns') or data.get('description_pattern')
+        if isinstance(patterns, str):
+            patterns = [patterns]
+        
+        import json
+        patterns_json = json.dumps(patterns)
         update_fields.append('description_pattern = ?')
-        values.append(data['description_pattern'])
+        values.append(patterns_json)
     
     if 'category' in data:
         update_fields.append('category = ?')
@@ -1014,7 +1063,20 @@ def update_category_rule(rule_id):
         return jsonify({'error': 'Rule not found'}), 404
     
     cursor.execute('SELECT * FROM category_rules WHERE id = ?', (rule_id,))
-    updated_rule = dict(cursor.fetchone())
+    row = cursor.fetchone()
+    updated_rule = dict(row)
+    
+    # Parse description_pattern as JSON
+    import json
+    try:
+        patterns = json.loads(updated_rule['description_pattern'])
+        if isinstance(patterns, list):
+            updated_rule['description_patterns'] = patterns
+            updated_rule['description_pattern'] = patterns[0] if patterns else ''
+        else:
+            updated_rule['description_patterns'] = [patterns] if patterns else []
+    except (json.JSONDecodeError, TypeError):
+        updated_rule['description_patterns'] = [updated_rule['description_pattern']] if updated_rule['description_pattern'] else []
     
     conn.close()
     return jsonify(updated_rule), 200

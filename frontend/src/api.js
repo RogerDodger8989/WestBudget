@@ -34,6 +34,13 @@ export const api = {
     return handleResponse(res);
   },
 
+  deleteTransaction: async (id) => {
+    const res = await fetch(`${API_BASE_URL}/transactions/${id}`, {
+      method: 'DELETE',
+    });
+    return handleResponse(res);
+  },
+
   // --- Filuppladdning (Kvitton) ---
   uploadReceipt: async (file) => {
     const formData = new FormData();

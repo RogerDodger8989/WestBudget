@@ -1,8 +1,10 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { X, FileSpreadsheet, CheckCircle, AlertCircle, Settings, Edit2 } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { X, FileSpreadsheet, CheckCircle, AlertCircle, Settings, Edit2, Plus, Sparkles, Loader2 } from 'lucide-react';
 import { api } from '../api';
+import { useToast } from '../contexts/ToastContext';
 
-const ImportModal = ({ onClose, onImport, categories = [], existingTransactions = [] }) => {
+const ImportModal = ({ onClose, onImport, categories = [], existingTransactions = [], onCategoriesChange }) => {
+  const { showToast } = useToast();
   const [step, setStep] = useState(1);
   const [bank, setBank] = useState('swedbank');
   const [isDragging, setIsDragging] = useState(false);
@@ -13,7 +15,21 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
   const [categoryRules, setCategoryRules] = useState([]);
   const [isRulesModalOpen, setIsRulesModalOpen] = useState(false);
   const [editingCategoryIndex, setEditingCategoryIndex] = useState(null);
+  const [bulkEditMode, setBulkEditMode] = useState(false);
+  const [bulkCategory, setBulkCategory] = useState('');
+  const [localCategories, setLocalCategories] = useState(categories);
+  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [isCreatingCategoryLoading, setIsCreatingCategoryLoading] = useState(false);
+  const [isQuickCategorizing, setIsQuickCategorizing] = useState(null);
+  const [isBulkChanging, setIsBulkChanging] = useState(false);
+  const [manuallyChangedCategories, setManuallyChangedCategories] = useState(new Set());
   const fileInputRef = useRef(null);
+
+  // Update local categories when prop changes
+  useEffect(() => {
+    setLocalCategories(categories);
+  }, [categories]);
 
   // Load category rules on mount
   useEffect(() => {
@@ -29,15 +45,86 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
     }
   };
 
+  // Helper function to read file with encoding detection
+  const readFileWithEncoding = async (file) => {
+    // Try different encodings in order
+    const encodings = ['windows-1252', 'iso-8859-1', 'utf-8'];
+    
+    for (const encoding of encodings) {
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const decoder = new TextDecoder(encoding);
+        const text = decoder.decode(arrayBuffer);
+        
+        // Check if text contains Swedish characters properly
+        // If we see proper Swedish characters, this encoding is likely correct
+        if (text.includes('å') || text.includes('ä') || text.includes('ö') || 
+            text.includes('Å') || text.includes('Ä') || text.includes('Ö')) {
+          return text;
+        }
+        
+        // If no Swedish chars but no encoding errors, still return it
+        // (might be a file without Swedish characters)
+        if (encoding === 'windows-1252') {
+          return text; // Default to windows-1252 for Swedbank files
+        }
+      } catch (err) {
+        // Try next encoding
+        continue;
+      }
+    }
+    
+    // Fallback to UTF-8
+    const arrayBuffer = await file.arrayBuffer();
+    const decoder = new TextDecoder('utf-8');
+    return decoder.decode(arrayBuffer);
+  };
+
   // Apply category rules to description
-  const applyCategoryRules = (description) => {
+  const applyCategoryRules = (description, rules = categoryRules) => {
     const descLower = description.toLowerCase();
-    for (const rule of categoryRules) {
-      if (rule.is_active && descLower.includes(rule.description_pattern.toLowerCase())) {
-        return rule.category;
+    for (const rule of rules) {
+      if (!rule.is_active) continue;
+      
+      // Support both old format (single pattern) and new format (array of patterns)
+      const patterns = rule.description_patterns || [rule.description_pattern].filter(p => p);
+      
+      // Check if any pattern matches
+      for (const pattern of patterns) {
+        if (pattern && typeof pattern === 'string' && descLower.includes(pattern.toLowerCase())) {
+          return rule.category;
+        }
       }
     }
     return null; // No rule matched
+  };
+
+  // Re-apply category rules to all imported transactions
+  // Skips transactions with manually changed categories
+  const reapplyCategoryRules = (newRules) => {
+    if (importedData.length === 0) return;
+    
+    const updated = importedData.map((transaction, index) => {
+      // Skip if this transaction's category was manually changed
+      if (manuallyChangedCategories.has(index)) {
+        return transaction;
+      }
+      
+      // Try to apply rules first
+      let category = applyCategoryRules(transaction.title, newRules);
+      
+      // If no rule matched, use auto-categorize
+      if (!category) {
+        category = autoCategorize(transaction.title);
+      }
+      
+      return {
+        ...transaction,
+        category: category
+      };
+    });
+    
+    setImportedData(updated);
   };
 
   // Auto-categorize based on description (fallback if no rule matches)
@@ -179,7 +266,7 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
         type: type,
         category: category,
         status: 'Bokförd',
-        note: reference ? `Referens: ${reference}` : '',
+        note: '',
         receipt: false,
         isDuplicate: isDuplicate,
         originalIndex: transactions.length // For tracking in UI
@@ -202,7 +289,7 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
     setError(null);
 
     try {
-      const text = await file.text();
+      const text = await readFileWithEncoding(file);
       const transactions = parseCSV(text);
       
       if (transactions.length === 0) {
@@ -221,6 +308,8 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
       setSelectedTransactions(nonDuplicates);
 
       setImportedData(transactions);
+      // Reset manually changed categories when new file is loaded
+      setManuallyChangedCategories(new Set());
       setStep(2);
     } catch (err) {
       console.error('Fel vid parsing:', err);
@@ -280,6 +369,147 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
     updated[index].category = newCategory;
     setImportedData(updated);
     setEditingCategoryIndex(null);
+    
+    // Mark this transaction as manually changed
+    const newManuallyChanged = new Set(manuallyChangedCategories);
+    newManuallyChanged.add(index);
+    setManuallyChangedCategories(newManuallyChanged);
+  };
+
+  // Bulk category change
+  const handleBulkCategoryChange = async () => {
+    if (!bulkCategory) return;
+    
+    setIsBulkChanging(true);
+    try {
+      const updated = [...importedData];
+      const selectedIndices = Array.from(selectedTransactions);
+      const newManuallyChanged = new Set(manuallyChangedCategories);
+      let changedCount = 0;
+      
+      selectedIndices.forEach(index => {
+        if (!updated[index].isDuplicate) {
+          updated[index].category = bulkCategory;
+          newManuallyChanged.add(index); // Mark as manually changed
+          changedCount++;
+        }
+      });
+      
+      setImportedData(updated);
+      setManuallyChangedCategories(newManuallyChanged);
+      setBulkEditMode(false);
+      setBulkCategory('');
+      
+      showToast(`${changedCount} transaktion${changedCount !== 1 ? 'er' : ''} uppdaterade!`, {
+        type: 'success',
+        description: `Kategori ändrad till "${bulkCategory}"`
+      });
+    } catch (err) {
+      showToast('Kunde inte uppdatera kategorier: ' + err.message, {
+        type: 'error'
+      });
+    } finally {
+      setIsBulkChanging(false);
+    }
+  };
+
+  // Quick categorize: Create rule from description
+  const handleQuickCategorize = async (index, category) => {
+    const transaction = importedData[index];
+    if (!transaction) return;
+
+    setIsQuickCategorizing(index);
+    
+    // Extract a meaningful pattern from description (first few words)
+    const words = transaction.title.split(' ').filter(w => w.length > 2).slice(0, 3);
+    const pattern = words.join(' ').toLowerCase();
+
+    if (!pattern) {
+      setIsQuickCategorizing(null);
+      showToast('Kunde inte extrahera mönster från beskrivningen', {
+        type: 'error'
+      });
+      return;
+    }
+
+    try {
+      // Create rule with single pattern (can be expanded later)
+      await api.createCategoryRule({
+        description_patterns: [pattern],
+        category: category,
+        is_active: true
+      });
+
+      // Reload rules
+      await loadCategoryRules();
+
+      // Apply to all similar transactions
+      const updated = [...importedData];
+      let matchedCount = 0;
+      updated.forEach((t, i) => {
+        if (t.title.toLowerCase().includes(pattern)) {
+          updated[i].category = category;
+          matchedCount++;
+        }
+      });
+      setImportedData(updated);
+      
+      showToast(`Regel skapad! ${matchedCount} transaktion${matchedCount !== 1 ? 'er' : ''} uppdaterade.`, {
+        type: 'success',
+        description: `Mönster: "${pattern}" → ${category}`
+      });
+    } catch (err) {
+      console.error('Kunde inte skapa regel:', err);
+      showToast('Kunde inte skapa regel: ' + (err.message || 'Okänt fel'), {
+        type: 'error'
+      });
+    } finally {
+      setIsQuickCategorizing(null);
+    }
+  };
+
+  // Create new category
+  const handleCreateCategory = async () => {
+    const trimmedName = newCategoryName.trim();
+    if (!trimmedName) {
+      showToast('Kategorinamn kan inte vara tomt', {
+        type: 'error'
+      });
+      return;
+    }
+
+    // Check for duplicates
+    if (localCategories.some(c => c.toLowerCase() === trimmedName.toLowerCase())) {
+      showToast('En kategori med detta namn finns redan', {
+        type: 'error'
+      });
+      return;
+    }
+
+    setIsCreatingCategoryLoading(true);
+    try {
+      await api.createCategory(trimmedName);
+      const updated = [...localCategories, trimmedName];
+      setLocalCategories(updated);
+      if (onCategoriesChange) {
+        onCategoriesChange(updated);
+      }
+      setNewCategoryName('');
+      setIsCreatingCategory(false);
+      
+      showToast(`Kategori "${trimmedName}" skapad!`, {
+        type: 'success',
+        description: 'Kategorin är nu tillgänglig i alla dropdown-menyer'
+      });
+    } catch (err) {
+      const errorMsg = err.message || 'Okänt fel';
+      showToast('Kunde inte skapa kategori: ' + errorMsg, {
+        type: 'error',
+        description: 'Kontrollera att kategorin inte redan finns.'
+      });
+    } finally {
+      setIsCreatingCategoryLoading(false);
+    }
   };
 
   const handleImport = async () => {
@@ -301,6 +531,9 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
   const allNonDuplicatesSelected = importedData.length > 0 && 
     importedData.every((t, index) => t.isDuplicate || selectedTransactions.has(index));
 
+  const selectedCount = selectedTransactions.size;
+  const hasSelected = selectedCount > 0;
+
   return (
     <>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -314,13 +547,23 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
             </h2>
             <div className="flex items-center gap-2">
               {step === 2 && (
-                <button
-                  onClick={() => setIsRulesModalOpen(true)}
-                  className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
-                  title="Hantera kategoriregler"
-                >
-                  <Settings size={18} className="text-zinc-500" />
-                </button>
+                <>
+                  {hasSelected && (
+                    <button
+                      onClick={() => setBulkEditMode(!bulkEditMode)}
+                      className="px-3 py-1.5 text-sm bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors"
+                    >
+                      {bulkEditMode ? 'Avbryt' : 'Ändra alla valda'}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setIsRulesModalOpen(true)}
+                    className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
+                    title="Hantera kategoriregler"
+                  >
+                    <Settings size={18} className="text-zinc-500" />
+                  </button>
+                </>
               )}
               <button onClick={onClose} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors">
                 <X size={20} className="text-zinc-500" />
@@ -393,6 +636,46 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
               </div>
             ) : (
               <div className="space-y-6">
+                {/* Bulk edit mode */}
+                {bulkEditMode && hasSelected && (
+                  <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl">
+                    <div className="flex items-center gap-3">
+                      <Sparkles size={18} className="text-indigo-600 dark:text-indigo-400" />
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold text-indigo-900 dark:text-indigo-100">
+                          Ändra kategori för {selectedCount} valda transaktion{selectedCount !== 1 ? 'er' : ''}
+                        </p>
+                        <div className="flex items-center gap-2 mt-2">
+                          <select
+                            value={bulkCategory}
+                            onChange={(e) => setBulkCategory(e.target.value)}
+                            className="flex-1 px-3 py-2 bg-white dark:bg-zinc-800 border border-indigo-300 dark:border-indigo-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                          >
+                            <option value="">Välj kategori...</option>
+                            {localCategories.map(cat => (
+                              <option key={cat} value={cat}>{cat}</option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={handleBulkCategoryChange}
+                            disabled={!bulkCategory || isBulkChanging}
+                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                          >
+                            {isBulkChanging ? (
+                              <>
+                                <Loader2 size={14} className="animate-spin" />
+                                Uppdaterar...
+                              </>
+                            ) : (
+                              'Tillämpa'
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex items-center gap-3 p-4 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-200 rounded-xl border border-emerald-100 dark:border-emerald-800">
                   <CheckCircle size={20} />
                   <div className="flex-1">
@@ -457,25 +740,77 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
                           </td>
                           <td className="px-4 py-3">
                             {editingCategoryIndex === i ? (
-                              <select
-                                value={row.category}
-                                onChange={(e) => handleCategoryChange(i, e.target.value)}
-                                onBlur={() => setEditingCategoryIndex(null)}
-                                autoFocus
-                                className="px-2 py-1 bg-white dark:bg-zinc-800 border border-indigo-500 rounded text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
-                              >
-                                {categories.map(cat => (
-                                  <option key={cat} value={cat}>{cat}</option>
-                                ))}
-                              </select>
+                              <div className="flex items-center gap-1">
+                                <select
+                                  value={row.category}
+                                  onChange={(e) => {
+                                    if (e.target.value === '__CREATE__') {
+                                      setIsCreatingCategory(true);
+                                      setEditingCategoryIndex(i);
+                                    } else {
+                                      handleCategoryChange(i, e.target.value);
+                                    }
+                                  }}
+                                  onBlur={() => {
+                                    if (row.category !== '__CREATE__') {
+                                      setEditingCategoryIndex(null);
+                                    }
+                                  }}
+                                  autoFocus
+                                  className="px-2 py-1 bg-white dark:bg-zinc-800 border border-indigo-500 rounded text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
+                                >
+                                  {localCategories.map(cat => (
+                                    <option key={cat} value={cat}>{cat}</option>
+                                  ))}
+                                  <option value="__CREATE__">+ Skapa ny kategori</option>
+                                </select>
+                                {isCreatingCategory && editingCategoryIndex === i && (
+                                  <div className="flex items-center gap-1">
+                                    <input
+                                      type="text"
+                                      value={newCategoryName}
+                                      onChange={(e) => setNewCategoryName(e.target.value)}
+                                      onKeyPress={(e) => {
+                                        if (e.key === 'Enter') {
+                                          handleCreateCategory().then(() => {
+                                            handleCategoryChange(i, newCategoryName);
+                                          });
+                                        }
+                                      }}
+                                      placeholder="Kategorinamn"
+                                      autoFocus
+                                      className="px-2 py-1 bg-white dark:bg-zinc-800 border border-indigo-500 rounded text-xs w-32 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                    />
+                                    <button
+                                      onClick={() => {
+                                        handleCreateCategory().then(() => {
+                                          handleCategoryChange(i, newCategoryName);
+                                        });
+                                      }}
+                                      className="p-1 bg-indigo-600 text-white rounded"
+                                    >
+                                      <CheckCircle size={14} />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                             ) : (
-                              <button
-                                onClick={() => setEditingCategoryIndex(i)}
-                                className="px-2 py-1 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded text-xs border border-zinc-200 dark:border-zinc-700 hover:border-indigo-500 transition-colors flex items-center gap-1"
-                              >
-                                <span>{row.category}</span>
-                                <Edit2 size={12} />
-                              </button>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => setEditingCategoryIndex(i)}
+                                  className="px-2 py-1 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded text-xs border border-zinc-200 dark:border-zinc-700 hover:border-indigo-500 transition-colors flex items-center gap-1"
+                                >
+                                  <span>{row.category}</span>
+                                  <Edit2 size={12} />
+                                </button>
+                                <button
+                                  onClick={() => handleQuickCategorize(i, row.category)}
+                                  className="p-1 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded transition-colors"
+                                  title="Använd denna kategori för alla liknande"
+                                >
+                                  <Sparkles size={12} />
+                                </button>
+                              </div>
                             )}
                           </td>
                         </tr>
@@ -520,8 +855,27 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
         <CategoryRulesModal
           onClose={() => setIsRulesModalOpen(false)}
           rules={categoryRules}
-          onRulesChange={setCategoryRules}
-          categories={categories}
+          onRulesChange={async (newRules) => {
+            console.log('onRulesChange called with:', newRules.length, 'rules');
+            // Use the rules passed from CategoryRulesModal directly (they're already updated from server response)
+            // Don't reload from server here - it causes the editing state to be overwritten
+            setCategoryRules(newRules);
+            // Re-apply rules to imported transactions (respects manually changed categories)
+            reapplyCategoryRules(newRules);
+          }}
+          onRuleCreated={(newRule) => {
+            // When a new rule is created, immediately re-apply to transactions
+            const updatedRules = [...categoryRules, newRule];
+            setCategoryRules(updatedRules);
+            reapplyCategoryRules(updatedRules);
+          }}
+          categories={localCategories}
+          onCategoriesChange={(newCategories) => {
+            setLocalCategories(newCategories);
+            if (onCategoriesChange) {
+              onCategoriesChange(newCategories);
+            }
+          }}
         />
       )}
     </>
@@ -529,52 +883,409 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
 };
 
 // Category Rules Modal Component
-const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories }) => {
+const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories, onCategoriesChange, onRuleCreated }) => {
+  const { showToast } = useToast();
   const [localRules, setLocalRules] = useState(rules);
-  const [newPattern, setNewPattern] = useState('');
+  const [newPatterns, setNewPatterns] = useState(['']); // Array of patterns
   const [newCategory, setNewCategory] = useState('');
+  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [localCategories, setLocalCategories] = useState(categories);
+  const [isCreatingCategoryLoading, setIsCreatingCategoryLoading] = useState(false);
+  const [isCreatingRule, setIsCreatingRule] = useState(false);
+  const [isDeletingRule, setIsDeletingRule] = useState(null);
+  const [isTogglingRule, setIsTogglingRule] = useState(null);
+  
+  // Inline editing states
+  const [editingRuleId, setEditingRuleId] = useState(null);
+  const [editingPatterns, setEditingPatterns] = useState([]);
+  const [editingCategory, setEditingCategory] = useState('');
+  const [isSavingRule, setIsSavingRule] = useState(null);
+  const pendingRulesUpdateRef = useRef(null);
+  const [rulesUpdateTrigger, setRulesUpdateTrigger] = useState(0);
+  // Refs to track latest values without causing re-renders
+  const editingPatternsRef = useRef([]);
+  const editingCategoryRef = useRef('');
+
+  useEffect(() => {
+    setLocalCategories(categories);
+  }, [categories]);
+
+  // Sync localRules with parent when rules prop changes
+  // BUT: Don't update editing state if we're currently editing (to prevent losing user input)
+  useEffect(() => {
+    // If we're editing, only update the rule in localRules, but DON'T touch editingPatterns/editingCategory
+    // This prevents the user's input from being overwritten when rules reload from server
+    if (editingRuleId) {
+      const updatedRule = rules.find(r => r.id === editingRuleId);
+      if (updatedRule) {
+        // Update the rule in localRules
+        setLocalRules(prevRules => 
+          prevRules.map(r => r.id === editingRuleId ? updatedRule : r)
+        );
+        
+        // Don't update editingPatterns from server - we manage it in saveRule
+        // This prevents overwriting user input while they're typing
+        // The saveRule function already updates editingPatterns correctly
+      }
+    } else {
+      // Not editing, sync all rules
+      // BUT: Only sync if rules prop actually changed (not just a re-render)
+      // This prevents overwriting localRules when we just updated it ourselves
+      setLocalRules(prevRules => {
+        // Only update if the rules are actually different
+        if (prevRules.length !== rules.length || 
+            prevRules.some((r, i) => r.id !== rules[i]?.id)) {
+          return rules;
+        }
+        return prevRules;
+      });
+    }
+  }, [rules, editingRuleId, isSavingRule]);
+
+  // Sync pending rules update to parent after state update
+  useEffect(() => {
+    if (pendingRulesUpdateRef.current) {
+      const { updated, ruleId } = pendingRulesUpdateRef.current;
+      pendingRulesUpdateRef.current = null;
+      
+      console.log('Syncing rules to parent:', updated.length, 'rules, ruleId:', ruleId);
+      console.log('Updated rule:', updated.find(r => r.id === ruleId));
+      
+      // Use setTimeout to ensure this runs after render
+      setTimeout(() => {
+        // Pass the updated rules to parent
+        onRulesChange(updated);
+        
+        // Don't call onRuleCreated for updates - that's only for new rules
+        // onRuleCreated is only called when creating a new rule, not when updating
+      }, 0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localRules, rulesUpdateTrigger]);
+
+  const handleCreateCategory = async () => {
+    const trimmedName = newCategoryName.trim();
+    if (!trimmedName) {
+      showToast('Kategorinamn kan inte vara tomt', {
+        type: 'error'
+      });
+      return;
+    }
+
+    // Check for duplicates
+    if (localCategories.some(c => c.toLowerCase() === trimmedName.toLowerCase())) {
+      showToast('En kategori med detta namn finns redan', {
+        type: 'error'
+      });
+      return;
+    }
+
+    setIsCreatingCategoryLoading(true);
+    try {
+      await api.createCategory(trimmedName);
+      const updated = [...localCategories, trimmedName];
+      setLocalCategories(updated);
+      if (onCategoriesChange) {
+        onCategoriesChange(updated);
+      }
+      setNewCategoryName('');
+      setIsCreatingCategory(false);
+      setNewCategory(trimmedName); // Auto-select the new category
+      
+      showToast(`Kategori "${trimmedName}" skapad!`, {
+        type: 'success'
+      });
+    } catch (err) {
+      const errorMsg = err.message || 'Okänt fel';
+      showToast('Kunde inte skapa kategori: ' + errorMsg, {
+        type: 'error',
+        description: 'Kontrollera att kategorin inte redan finns.'
+      });
+    } finally {
+      setIsCreatingCategoryLoading(false);
+    }
+  };
+
+  const handleAddPattern = () => {
+    setNewPatterns([...newPatterns, '']);
+  };
+
+  const handleRemovePattern = (index) => {
+    if (newPatterns.length > 1) {
+      setNewPatterns(newPatterns.filter((_, i) => i !== index));
+    }
+  };
+
+  const handlePatternChange = (index, value) => {
+    const updated = [...newPatterns];
+    updated[index] = value;
+    setNewPatterns(updated);
+  };
 
   const handleAddRule = async () => {
-    if (!newPattern.trim() || !newCategory) return;
+    // Filter out empty patterns
+    const validPatterns = newPatterns.map(p => p.trim()).filter(p => p);
+    
+    if (validPatterns.length === 0 || !newCategory) {
+      showToast('Fyll i minst ett mönster och kategori', {
+        type: 'error'
+      });
+      return;
+    }
 
+    setIsCreatingRule(true);
     try {
       const newRule = await api.createCategoryRule({
-        description_pattern: newPattern.trim(),
+        description_patterns: validPatterns,
         category: newCategory,
         is_active: true
       });
-      setLocalRules([...localRules, newRule]);
-      onRulesChange([...localRules, newRule]);
-      setNewPattern('');
+      const updated = [...localRules, newRule];
+      const patternsText = validPatterns.join(', ');
+      const categoryText = newCategory;
+      setLocalRules(updated);
+      onRulesChange(updated);
+      setNewPatterns(['']); // Reset to one empty field
       setNewCategory('');
+      
+      // Notify parent that a rule was created (for re-applying to transactions)
+      if (onRuleCreated) {
+        onRuleCreated(newRule);
+      }
+      
+      showToast('Regel skapad!', {
+        type: 'success',
+        description: `"${patternsText}" → ${categoryText}`
+      });
     } catch (err) {
       console.error('Kunde inte skapa regel:', err);
-      alert('Kunde inte skapa regel: ' + err.message);
+      showToast('Kunde inte skapa regel: ' + (err.message || 'Okänt fel'), {
+        type: 'error'
+      });
+    } finally {
+      setIsCreatingRule(false);
     }
   };
 
   const handleDeleteRule = async (id) => {
+    const rule = localRules.find(r => r.id === id);
+    if (!rule) return;
+
+    setIsDeletingRule(id);
     try {
       await api.deleteCategoryRule(id);
       const updated = localRules.filter(r => r.id !== id);
       setLocalRules(updated);
-      onRulesChange(updated);
+      
+      // Store update to be synced with parent in useEffect
+      pendingRulesUpdateRef.current = { updated, ruleId: null };
+      setRulesUpdateTrigger(prev => prev + 1);
+      
+      const patterns = rule.description_patterns || [rule.description_pattern].filter(p => p);
+      const patternsText = patterns.join(', ');
+      showToast('Regel borttagen', {
+        type: 'success',
+        description: `Regel för "${patternsText}" har tagits bort`
+      });
     } catch (err) {
       console.error('Kunde inte ta bort regel:', err);
-      alert('Kunde inte ta bort regel: ' + err.message);
+      showToast('Kunde inte ta bort regel: ' + (err.message || 'Okänt fel'), {
+        type: 'error'
+      });
+    } finally {
+      setIsDeletingRule(null);
     }
   };
 
-  const handleToggleRule = async (id, isActive) => {
+  const handleToggleRule = async (id, isActive, e) => {
+    // Stop event propagation to prevent triggering edit mode
+    if (e) e.stopPropagation();
+    
+    setIsTogglingRule(id);
+    const rule = localRules.find(r => r.id === id);
     try {
       await api.updateCategoryRule(id, { is_active: !isActive });
       const updated = localRules.map(r => 
         r.id === id ? { ...r, is_active: !isActive } : r
       );
       setLocalRules(updated);
+      // Reload rules from server and re-apply to transactions
       onRulesChange(updated);
+      
+      const patterns = rule ? (rule.description_patterns || [rule.description_pattern].filter(p => p)) : [];
+      const patternsText = patterns.join(', ');
+      showToast(`Regel ${!isActive ? 'aktiverad' : 'inaktiverad'}`, {
+        type: 'success',
+        description: rule ? `"${patternsText}" → ${rule.category}` : ''
+      });
     } catch (err) {
       console.error('Kunde inte uppdatera regel:', err);
+      showToast('Kunde inte uppdatera regel: ' + (err.message || 'Okänt fel'), {
+        type: 'error'
+      });
+    } finally {
+      setIsTogglingRule(null);
+    }
+  };
+
+  // Save function (no auto-save, called on blur or modal close)
+  const saveRule = useCallback(async (ruleId, patterns, category) => {
+    const validPatterns = patterns.map(p => p.trim()).filter(p => p);
+    
+    if (validPatterns.length === 0) {
+      // Don't show error if no patterns - just return silently
+      return;
+    }
+
+    if (!category) {
+      // Don't show error if no category - just return silently
+      return;
+    }
+
+    setIsSavingRule(ruleId);
+    try {
+      const savedRule = await api.updateCategoryRule(ruleId, {
+        description_patterns: validPatterns,
+        category: category
+      });
+      
+      console.log('Rule saved successfully:', savedRule);
+      
+      // Parse the saved rule to get the correct format
+      const savedPatterns = savedRule.description_patterns || [savedRule.description_pattern].filter(p => p);
+      console.log('Saved patterns:', savedPatterns);
+      
+      // Update local rules with the response from server (this is the source of truth)
+      setLocalRules(prevRules => {
+        const updated = prevRules.map(r => 
+          r.id === ruleId 
+            ? { ...r, description_patterns: savedPatterns, category: savedRule.category }
+            : r
+        );
+        
+        console.log('Updated localRules, rule:', updated.find(r => r.id === ruleId));
+        
+        // Store update to be synced with parent in useEffect
+        pendingRulesUpdateRef.current = { updated, ruleId };
+        
+        // Force useEffect to trigger
+        setRulesUpdateTrigger(prev => prev + 1);
+        
+        return updated;
+      });
+      
+      // Update editing state to match what was actually saved on server
+      // BUT: Keep any empty patterns that the user might be typing in
+      // Also add an empty field at the end so user can continue adding patterns
+      const currentPatterns = editingPatternsRef.current;
+      const emptyPatterns = currentPatterns.filter(p => !p.trim());
+      const savedPatternsArray = savedPatterns.length > 0 ? [...savedPatterns, ...emptyPatterns] : [...emptyPatterns];
+      
+      // Always add one empty field at the end if there isn't one already
+      if (savedPatternsArray.length === 0 || savedPatternsArray[savedPatternsArray.length - 1].trim()) {
+        savedPatternsArray.push('');
+      }
+      
+      setEditingPatterns(savedPatternsArray);
+      editingPatternsRef.current = savedPatternsArray;
+      setEditingCategory(savedRule.category);
+      editingCategoryRef.current = savedRule.category;
+      
+      console.log('Updated editingPatterns to:', savedPatternsArray);
+      
+      // Set isSavingRule to null AFTER a small delay to allow useEffect to see it
+      // This ensures the useEffect that syncs rules prop can update editingPatterns correctly
+      setTimeout(() => {
+        setIsSavingRule(null);
+      }, 100);
+    } catch (err) {
+      console.error('Kunde inte spara regel:', err);
+      showToast('Kunde inte spara regel: ' + (err.message || 'Okänt fel'), {
+        type: 'error'
+      });
+      setIsSavingRule(null);
+    }
+  }, [onRulesChange, onRuleCreated, showToast]);
+
+  const handleEditRule = (rule) => {
+    const patterns = rule.description_patterns || [rule.description_pattern].filter(p => p);
+    const patternsArray = patterns.length > 0 ? [...patterns] : [''];
+    setEditingRuleId(rule.id);
+    setEditingPatterns(patternsArray);
+    editingPatternsRef.current = patternsArray;
+    const category = rule.category || '';
+    setEditingCategory(category);
+    editingCategoryRef.current = category;
+  };
+
+  const handleCancelEdit = () => {
+    // Don't save when canceling - just reset editing state
+    setEditingRuleId(null);
+    setEditingPatterns([]);
+    editingPatternsRef.current = [];
+    setEditingCategory('');
+    editingCategoryRef.current = '';
+    setIsSavingRule(null);
+  };
+
+  const handleClose = () => {
+    // Save before closing if there are unsaved changes
+    if (editingRuleId) {
+      saveRule(editingRuleId, editingPatternsRef.current, editingCategoryRef.current);
+    }
+    onClose();
+  };
+
+  const handleEditingPatternChange = (index, value) => {
+    const updated = [...editingPatterns];
+    updated[index] = value;
+    setEditingPatterns(updated);
+    editingPatternsRef.current = updated; // Update ref immediately
+    // Don't auto-save - wait for blur or modal close
+  };
+
+  const handleEditingPatternBlur = () => {
+    // Save when user clicks outside the input field
+    // Use a small delay to ensure the onChange has finished updating the state
+    setTimeout(() => {
+      if (editingRuleId) {
+        // Get the latest patterns from ref (which is updated immediately in onChange)
+        saveRule(editingRuleId, editingPatternsRef.current, editingCategoryRef.current);
+      }
+    }, 50);
+  };
+
+  const handleEditingCategoryChange = (value) => {
+    setEditingCategory(value);
+    editingCategoryRef.current = value; // Update ref immediately
+    // Don't auto-save - wait for blur or modal close
+  };
+
+  const handleEditingCategoryBlur = () => {
+    // Save when user clicks outside the select field
+    if (editingRuleId) {
+      saveRule(editingRuleId, editingPatternsRef.current, editingCategoryRef.current);
+    }
+  };
+
+  const handleAddEditingPattern = () => {
+    const updated = [...editingPatterns, ''];
+    setEditingPatterns(updated);
+    editingPatternsRef.current = updated; // Update ref
+    // Don't trigger auto-save when adding empty pattern - wait for user to type
+  };
+
+  const handleRemoveEditingPattern = (index) => {
+    if (editingPatterns.length > 1) {
+      const updated = editingPatterns.filter((_, i) => i !== index);
+      setEditingPatterns(updated);
+      editingPatternsRef.current = updated; // Update ref
+      
+      // Trigger auto-save
+      if (editingRuleId) {
+        saveRule(editingRuleId, updated, editingCategoryRef.current);
+      }
     }
   };
 
@@ -585,7 +1296,7 @@ const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories }) => {
       <div className="relative w-full max-w-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[90vh]">
         <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
           <h2 className="text-xl font-bold text-zinc-900 dark:text-white">Kategoriregler</h2>
-          <button onClick={onClose} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors">
+          <button onClick={handleClose} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors">
             <X size={20} className="text-zinc-500" />
           </button>
         </div>
@@ -594,31 +1305,107 @@ const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories }) => {
           {/* Add new rule */}
           <div className="p-4 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-3">Lägg till ny regel</h3>
-            <div className="grid grid-cols-2 gap-3">
-              <input
-                type="text"
-                value={newPattern}
-                onChange={(e) => setNewPattern(e.target.value)}
-                placeholder="Beskrivning innehåller..."
-                className="px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-              />
-              <select
-                value={newCategory}
-                onChange={(e) => setNewCategory(e.target.value)}
-                className="px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-              >
-                <option value="">Välj kategori...</option>
-                {categories.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
+            <div className="space-y-3">
+              {/* Multiple pattern fields */}
+              <div className="space-y-2">
+                {newPatterns.map((pattern, index) => (
+                  <div key={index} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={pattern}
+                      onChange={(e) => handlePatternChange(index, e.target.value)}
+                      placeholder="Beskrivning innehåller..."
+                      className="flex-1 px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                    />
+                    {newPatterns.length > 1 && (
+                      <button
+                        onClick={() => handleRemovePattern(index)}
+                        className="p-2 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors"
+                        title="Ta bort mönster"
+                      >
+                        <X size={16} />
+                      </button>
+                    )}
+                  </div>
                 ))}
-              </select>
+                <button
+                  onClick={handleAddPattern}
+                  className="w-full px-3 py-2 text-sm text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 rounded-lg transition-colors flex items-center justify-center gap-2"
+                >
+                  <Plus size={16} />
+                  Lägg till mönster
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <select
+                  value={newCategory}
+                  onChange={(e) => {
+                    if (e.target.value === '__CREATE__') {
+                      setIsCreatingCategory(true);
+                    } else {
+                      setNewCategory(e.target.value);
+                    }
+                  }}
+                  className="flex-1 px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                >
+                  <option value="">Välj kategori...</option>
+                  {localCategories.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                  <option value="__CREATE__">+ Skapa ny kategori</option>
+                </select>
+                {isCreatingCategory && (
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="text"
+                      value={newCategoryName}
+                      onChange={(e) => setNewCategoryName(e.target.value)}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter') {
+                          handleCreateCategory();
+                        }
+                      }}
+                      placeholder="Kategorinamn"
+                      autoFocus
+                      className="px-3 py-2 bg-white dark:bg-zinc-900 border border-indigo-500 rounded-lg text-sm w-40 focus:ring-2 focus:ring-indigo-500 outline-none"
+                    />
+                    <button
+                      onClick={handleCreateCategory}
+                      disabled={isCreatingCategoryLoading || !newCategoryName.trim()}
+                      className="p-2 bg-indigo-600 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isCreatingCategoryLoading ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : (
+                        <CheckCircle size={16} />
+                      )}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsCreatingCategory(false);
+                        setNewCategoryName('');
+                      }}
+                      className="p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
             <button
               onClick={handleAddRule}
-              disabled={!newPattern.trim() || !newCategory}
-              className="mt-3 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              disabled={newPatterns.every(p => !p.trim()) || !newCategory || isCreatingRule}
+              className="mt-3 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
             >
-              Lägg till regel
+              {isCreatingRule ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" />
+                  Skapar...
+                </>
+              ) : (
+                'Lägg till regel'
+              )}
             </button>
           </div>
 
@@ -627,43 +1414,172 @@ const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories }) => {
             {localRules.length === 0 ? (
               <p className="text-sm text-zinc-500 text-center py-4">Inga regler skapade än</p>
             ) : (
-              localRules.map(rule => (
-                <div
-                  key={rule.id}
-                  className={`p-3 rounded-lg border flex items-center justify-between ${
-                    rule.is_active
-                      ? 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700'
-                      : 'bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 opacity-60'
-                  }`}
-                >
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-zinc-900 dark:text-white">
-                      Om beskrivning innehåller <span className="font-mono text-indigo-600 dark:text-indigo-400">"{rule.description_pattern}"</span>
-                    </p>
-                    <p className="text-xs text-zinc-500 mt-1">
-                      → Sätt kategori: <span className="font-semibold">{rule.category}</span>
-                    </p>
+              localRules.map(rule => {
+                const isEditing = editingRuleId === rule.id;
+                const patterns = rule.description_patterns || [rule.description_pattern].filter(p => p);
+                
+                return (
+                  <div
+                    key={rule.id}
+                    className={`p-3 rounded-lg border ${
+                      rule.is_active
+                        ? 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700'
+                        : 'bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 opacity-60'
+                    } ${isEditing ? 'border-indigo-400 dark:border-indigo-600 ring-2 ring-indigo-200 dark:ring-indigo-800' : 'cursor-pointer hover:border-indigo-300 dark:hover:border-indigo-700'}`}
+                    onClick={() => !isEditing && handleEditRule(rule)}
+                  >
+                    {isEditing ? (
+                      // Editing mode
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-medium text-zinc-900 dark:text-white">
+                            Redigerar regel
+                          </p>
+                          <div className="flex items-center gap-2">
+                            {isSavingRule === rule.id && (
+                              <span className="text-xs text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
+                                <Loader2 size={12} className="animate-spin" />
+                                Sparar...
+                              </span>
+                            )}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCancelEdit();
+                              }}
+                              className="p-1.5 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors"
+                              title="Avbryt"
+                            >
+                              <X size={16} />
+                            </button>
+                          </div>
+                        </div>
+                        
+                        {/* Editable patterns */}
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                            Mönster:
+                          </label>
+                          {editingPatterns.map((pattern, idx) => (
+                            <div key={`pattern-${editingRuleId}-${idx}`} className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                value={pattern}
+                                onChange={(e) => handleEditingPatternChange(idx, e.target.value)}
+                                onBlur={handleEditingPatternBlur}
+                                onClick={(e) => e.stopPropagation()}
+                                placeholder="Beskrivning innehåller..."
+                                className="flex-1 px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                              />
+                              {editingPatterns.length > 1 && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemoveEditingPattern(idx);
+                                  }}
+                                  className="p-2 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors"
+                                  title="Ta bort mönster"
+                                >
+                                  <X size={16} />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleAddEditingPattern();
+                            }}
+                            className="w-full px-3 py-2 text-sm text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 rounded-lg transition-colors flex items-center justify-center gap-2"
+                          >
+                            <Plus size={16} />
+                            Lägg till mönster
+                          </button>
+                        </div>
+                        
+                        {/* Editable category */}
+                        <div>
+                          <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1 block">
+                            Kategori:
+                          </label>
+                          <select
+                            value={editingCategory}
+                            onChange={(e) => {
+                              if (e.target.value === '__CREATE__') {
+                                setIsCreatingCategory(true);
+                              } else {
+                                handleEditingCategoryChange(e.target.value);
+                              }
+                            }}
+                            onBlur={handleEditingCategoryBlur}
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                          >
+                            <option value="">Välj kategori...</option>
+                            {localCategories.map(cat => (
+                              <option key={cat} value={cat}>{cat}</option>
+                            ))}
+                            <option value="__CREATE__">+ Skapa ny kategori</option>
+                          </select>
+                        </div>
+                      </div>
+                    ) : (
+                      // View mode
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-zinc-900 dark:text-white">
+                            Om beskrivning innehåller:
+                          </p>
+                          <div className="flex flex-wrap gap-1.5 mt-1">
+                            {patterns.map((pattern, idx) => (
+                              <span
+                                key={`view-pattern-${rule.id}-${idx}-${pattern}`}
+                                className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 font-mono text-xs rounded"
+                              >
+                                "{pattern}"
+                              </span>
+                            ))}
+                          </div>
+                          <p className="text-xs text-zinc-500 mt-1.5">
+                            → Sätt kategori: <span className="font-semibold">{rule.category}</span>
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={(e) => handleToggleRule(rule.id, rule.is_active, e)}
+                            disabled={isTogglingRule === rule.id}
+                            className={`px-3 py-1 text-xs rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 ${
+                              rule.is_active
+                                ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                                : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400'
+                            }`}
+                          >
+                            {isTogglingRule === rule.id ? (
+                              <Loader2 size={12} className="animate-spin" />
+                            ) : (
+                              rule.is_active ? 'Aktiv' : 'Inaktiv'
+                            )}
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteRule(rule.id);
+                            }}
+                            disabled={isDeletingRule === rule.id}
+                            className="p-1.5 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {isDeletingRule === rule.id ? (
+                              <Loader2 size={16} className="animate-spin" />
+                            ) : (
+                              <X size={16} />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleToggleRule(rule.id, rule.is_active)}
-                      className={`px-3 py-1 text-xs rounded-lg transition-colors ${
-                        rule.is_active
-                          ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
-                          : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400'
-                      }`}
-                    >
-                      {rule.is_active ? 'Aktiv' : 'Inaktiv'}
-                    </button>
-                    <button
-                      onClick={() => handleDeleteRule(rule.id)}
-                      className="p-1.5 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded transition-colors"
-                    >
-                      <X size={16} />
-                    </button>
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
