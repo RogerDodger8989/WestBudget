@@ -1,26 +1,46 @@
 import React, { useMemo, useState } from 'react';
-import { TrendingUp, TrendingDown, BarChart, Search } from 'lucide-react';
+import { TrendingUp, TrendingDown, BarChart, Search, Calendar } from 'lucide-react';
 import StatCard from '../StatCard';
 import TransactionItem from '../TransactionItem';
+import DateRangeBtn from '../DateRangeBtn';
+import { formatAmount } from '../../utils/formatAmount';
+import { filterByDateRange } from '../../utils/filterByDateRange';
 
 const OverviewTab = ({ 
   transactions, 
   setSelectedTransaction, 
   setEditingNoteTransactionId,
   setActiveTab,
+  dateRange = 'month',
+  setDateRange,
+  customStartDate,
+  customEndDate,
+  setIsCustomDateModalOpen,
   loading 
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // Filtrera transaktioner baserat på datum (sorteras redan i filterByDateRange)
+  const dateFilteredTransactions = useMemo(() => {
+    const filtered = filterByDateRange(transactions, dateRange, customStartDate, customEndDate);
+    // Ytterligare sortering efter datum (nyaste först) om det behövs
+    return filtered.sort((a, b) => {
+      if (!a.date || !b.date) return 0;
+      const dateA = parseInt(a.date.replace(/-/g, ''));
+      const dateB = parseInt(b.date.replace(/-/g, ''));
+      return dateB - dateA; // Descending order (newest first)
+    });
+  }, [transactions, dateRange, customStartDate, customEndDate]);
 
-  // Filtrera transaktioner baserat på sökfråga
+  // Filtrera transaktioner baserat på sökfråga (efter datumfiltrering)
   const filteredTransactions = useMemo(() => {
     if (!searchQuery.trim()) {
-      return transactions;
+      return dateFilteredTransactions;
     }
 
     const query = searchQuery.toLowerCase().trim();
     
-    return transactions.filter(t => {
+    return dateFilteredTransactions.filter(t => {
       if (t.title?.toLowerCase().includes(query)) return true;
       if (t.amount?.toLowerCase().includes(query)) return true;
       if (t.category?.toLowerCase().includes(query)) return true;
@@ -30,14 +50,14 @@ const OverviewTab = ({
       if (t.status?.toLowerCase().includes(query)) return true;
       return false;
     });
-  }, [transactions, searchQuery]);
+  }, [dateFilteredTransactions, searchQuery]);
 
-  // Beräkna statistik från transaktioner
+  // Beräkna statistik från filtrerade transaktioner
   const stats = useMemo(() => {
     let inkomst = 0;
     let utgifter = 0;
 
-    transactions.forEach(t => {
+    dateFilteredTransactions.forEach(t => {
       // Extrahera numeriskt värde från amount-strängen (t.ex. "+12,500 kr" -> 12500)
       const amountStr = t.amount.replace(/[^\d,.-]/g, '').replace(',', '');
       const amount = parseFloat(amountStr) || 0;
@@ -51,21 +71,13 @@ const OverviewTab = ({
 
     const netto = inkomst - utgifter;
 
-    // Formatera belopp med svensk formatering
-    const formatAmount = (value) => {
-      return new Intl.NumberFormat('sv-SE', {
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0
-      }).format(value) + ' kr';
-    };
-
     return {
       inkomst: formatAmount(inkomst),
       utgifter: formatAmount(utgifter),
       netto: formatAmount(netto),
       nettoValue: netto
     };
-  }, [transactions]);
+  }, [dateFilteredTransactions]);
 
   if (loading) {
     return <div className="text-center py-12">Laddar data...</div>;
@@ -73,6 +85,18 @@ const OverviewTab = ({
 
   return (
     <div className="animate-fade-in space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-3xl font-bold text-zinc-900 dark:text-white tracking-tight">
+          Ekonomisk Översikt
+        </h2>
+        <div className="flex items-center gap-1 bg-zinc-200 dark:bg-zinc-900/50 p-1 rounded-xl w-fit">
+          <DateRangeBtn active={dateRange === 'month'} onClick={() => setDateRange('month')}>Denna Månad</DateRangeBtn>
+          <DateRangeBtn active={dateRange === 'lastMonth'} onClick={() => setDateRange('lastMonth')}>Föregående Månad</DateRangeBtn>
+          <DateRangeBtn active={dateRange === 'year'} onClick={() => setDateRange('year')}>Hela Året</DateRangeBtn>
+          <DateRangeBtn active={dateRange === 'custom'} onClick={() => setIsCustomDateModalOpen(true)} icon={<Calendar size={14} className="text-indigo-500 dark:text-indigo-400" />}>Anpassad</DateRangeBtn>
+        </div>
+      </div>
+      
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <StatCard 
           title="Inkomst" 

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { formatAmount, getAmountClassName } from '../utils/formatAmount';
 import { X, FileSpreadsheet, CheckCircle, AlertCircle, Settings, Edit2, Plus, Sparkles, Loader2 } from 'lucide-react';
 import { api } from '../api';
 import { useToast } from '../contexts/ToastContext';
@@ -231,11 +232,13 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
 
       // Determine type based on amount sign
       const type = amount < 0 ? 'expense' : 'income';
-      // Format amount for display (keep 2 decimals, remove trailing zeros)
-      const absAmount = Math.abs(amount);
-      const amountDisplay = amount < 0 
-        ? `-${absAmount.toFixed(2).replace(/\.?0+$/, '')} kr`
-        : `+${absAmount.toFixed(2).replace(/\.?0+$/, '')} kr`;
+      // Format amount for display according to WestBudget standards
+      // Both positive and negative: use space as thousand separator and "kr" suffix
+      const formatted = new Intl.NumberFormat('sv-SE', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(Math.abs(amount));
+      const amountDisplay = amount < 0 ? `-${formatted} kr` : `${formatted} kr`;
 
       // Format date (YYYY-MM-DD)
       let formattedDate = dateStr;
@@ -735,7 +738,7 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
                               <span className="ml-2 text-xs text-rose-600 dark:text-rose-400">(Dublett)</span>
                             )}
                           </td>
-                          <td className={`px-4 py-3 font-mono ${row.type === 'income' ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-900 dark:text-zinc-300'}`}>
+                          <td className={`px-4 py-3 font-mono ${getAmountClassName(row.amountValue)}`}>
                             {row.amount}
                           </td>
                           <td className="px-4 py-3">

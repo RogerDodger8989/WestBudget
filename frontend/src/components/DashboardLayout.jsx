@@ -15,6 +15,7 @@ import NoteModal from './NoteModal';
 import AgreementNoteModal from './AgreementNoteModal';
 import ImportModal from './ImportModal';
 import AddAgreementModal from './AddAgreementModal';
+import CustomDateRangeModal from './CustomDateRangeModal';
 
 const DashboardLayout = ({ 
   onLogout, 
@@ -30,6 +31,9 @@ const DashboardLayout = ({
   const [activeTab, setActiveTab] = useState('overview');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [dateRange, setDateRange] = useState('month');
+  const [customStartDate, setCustomStartDate] = useState(null);
+  const [customEndDate, setCustomEndDate] = useState(null);
+  const [isCustomDateModalOpen, setIsCustomDateModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [editingNoteTransactionId, setEditingNoteTransactionId] = useState(null);
   const [editingNoteAgreementId, setEditingNoteAgreementId] = useState(null);
@@ -454,6 +458,20 @@ const DashboardLayout = ({
         />
       )}
 
+      {isCustomDateModalOpen && (
+        <CustomDateRangeModal
+          isOpen={isCustomDateModalOpen}
+          onClose={() => setIsCustomDateModalOpen(false)}
+          onApply={(startDate, endDate) => {
+            setCustomStartDate(startDate);
+            setCustomEndDate(endDate);
+            setDateRange('custom');
+          }}
+          currentStartDate={customStartDate}
+          currentEndDate={customEndDate}
+        />
+      )}
+
       <div 
         className={`fixed inset-0 bg-black/20 backdrop-blur-sm z-40 transition-opacity duration-300 ${
           (selectedTransaction || selectedAgreement) ? 'opacity-100' : 'opacity-0 pointer-events-none'
@@ -500,7 +518,7 @@ const DashboardLayout = ({
       />
 
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-zinc-50/50 dark:bg-zinc-950/50 transition-colors duration-500">
-        <Topbar />
+        <Topbar agreements={agreements} />
 
         <div className="flex-1 overflow-y-auto p-8">
           <div className="max-w-7xl mx-auto space-y-8">
@@ -511,6 +529,11 @@ const DashboardLayout = ({
                 setSelectedTransaction={setSelectedTransaction}
                 setEditingNoteTransactionId={setEditingNoteTransactionId}
                 setActiveTab={setActiveTab}
+                dateRange={dateRange}
+                setDateRange={setDateRange}
+                customStartDate={customStartDate}
+                customEndDate={customEndDate}
+                setIsCustomDateModalOpen={setIsCustomDateModalOpen}
                 loading={loading}
               />
             )}
@@ -524,6 +547,9 @@ const DashboardLayout = ({
                 setIsImportModalOpen={setIsImportModalOpen}
                 dateRange={dateRange}
                 setDateRange={setDateRange}
+                customStartDate={customStartDate}
+                customEndDate={customEndDate}
+                setIsCustomDateModalOpen={setIsCustomDateModalOpen}
                 getTitle={getTitle}
                 loading={loading}
                 lastImportIds={lastImportIds}

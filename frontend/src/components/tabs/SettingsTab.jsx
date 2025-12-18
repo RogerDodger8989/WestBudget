@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Settings, FolderOpen, Save, CheckCircle, Image as ImageIcon, Tag, Plus, Edit2, Trash2, X, Merge, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { Settings, FolderOpen, Save, CheckCircle, Image as ImageIcon, Tag, Plus, Edit2, Trash2, X, Merge, AlertCircle, Loader2 } from 'lucide-react';
 import { api } from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import CategoryEditForm from '../CategoryEditForm';
@@ -17,8 +17,17 @@ const SettingsTab = ({ getTitle, reloadData }) => {
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
   const [categoryRules, setCategoryRules] = useState([]);
-  const [newRulePattern, setNewRulePattern] = useState('');
+  const [newRulePatterns, setNewRulePatterns] = useState(['']); // Array of patterns
   const [newRuleCategory, setNewRuleCategory] = useState('');
+  const [activeCategoryTab, setActiveCategoryTab] = useState('categories'); // 'categories' or 'rules'
+  
+  // Inline editing states for category rules
+  const [editingRuleId, setEditingRuleId] = useState(null);
+  const [editingPatterns, setEditingPatterns] = useState([]);
+  const [editingRuleCategory, setEditingRuleCategory] = useState('');
+  const [isSavingRule, setIsSavingRule] = useState(null);
+  const editingPatternsRef = useRef([]);
+  const editingCategoryRef = useRef('');
   
   // Hitta dubletter (kategorier med samma namn, case-insensitive)
   const duplicates = useMemo(() => {
@@ -175,6 +184,60 @@ const SettingsTab = ({ getTitle, reloadData }) => {
       showToast(error.message || 'Kunde inte merga kategorier.', { type: 'error' });
     }
   };
+
+  // Save category rule (inline editing)
+  const saveRule = useCallback(async (ruleId, patterns, category) => {
+    const validPatterns = patterns.map(p => p.trim()).filter(p => p);
+    
+    if (validPatterns.length === 0) {
+      return; // Don't save if no valid patterns
+    }
+
+    if (!category) {
+      return; // Don't save if no category
+    }
+
+    setIsSavingRule(ruleId);
+    try {
+      const savedRule = await api.updateCategoryRule(ruleId, {
+        description_patterns: validPatterns,
+        category: category
+      });
+      
+      // Parse the saved rule to get the correct format
+      const savedPatterns = savedRule.description_patterns || [savedRule.description_pattern].filter(p => p);
+      
+      // Update local rules
+      setCategoryRules(prevRules => 
+        prevRules.map(r => 
+          r.id === ruleId 
+            ? { ...r, description_patterns: savedPatterns, category: savedRule.category }
+            : r
+        )
+      );
+      
+      // Update editing state - keep empty patterns for adding more
+      const currentPatterns = editingPatternsRef.current;
+      const emptyPatterns = currentPatterns.filter(p => !p.trim());
+      const savedPatternsArray = savedPatterns.length > 0 ? [...savedPatterns, ...emptyPatterns] : [...emptyPatterns];
+      
+      if (savedPatternsArray.length === 0) {
+        savedPatternsArray.push(''); // Always have at least one empty field
+      }
+      
+      setEditingPatterns(savedPatternsArray);
+      editingPatternsRef.current = savedPatternsArray;
+      setEditingRuleCategory(savedRule.category);
+      editingCategoryRef.current = savedRule.category;
+      
+      showToast('Regel uppdaterad!', { type: 'success' });
+    } catch (err) {
+      console.error('Kunde inte spara regel:', err);
+      showToast('Kunde inte spara regel: ' + (err.message || 'Okänt fel'), { type: 'error' });
+    } finally {
+      setIsSavingRule(null);
+    }
+  }, []);
 
   const handleDeleteCategory = async (id, name) => {
     if (!confirm(`Är du säker på att du vill ta bort kategorin "${name}"?\n\nObs: Kategorier som används i transaktioner eller avtal kan inte tas bort.`)) {
@@ -404,48 +467,78 @@ const SettingsTab = ({ getTitle, reloadData }) => {
                 <Tag className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
               </div>
               <div>
-                <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Kategorier</h3>
+                <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Kategorier & Regler</h3>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">Hantera transaktions- och avtalskategorier</p>
               </div>
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setIsMergeModalOpen(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-sm font-medium transition-all"
-              >
-                <Merge size={16} />
-                Merga
-              </button>
-              <button
-                onClick={() => setIsAddingCategory(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-all"
-              >
-                <Plus size={16} />
-                Lägg till
-              </button>
-            </div>
           </div>
 
-          {/* Duplicate Warning */}
-          {duplicates.length > 0 && (
-            <div className="mb-4 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
-              <div className="flex items-start gap-3">
-                <AlertCircle size={18} className="text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-amber-800 dark:text-amber-300 mb-2">
-                    Dubletter hittade ({duplicates.length} grupper)
-                  </p>
-                  <div className="space-y-1">
-                    {duplicates.map((group, idx) => (
-                      <p key={idx} className="text-xs text-amber-700 dark:text-amber-400">
-                        • {group.map(c => c.name).join(', ')} - Använd "Merga" för att slå ihop dem
-                      </p>
-                    ))}
-                  </div>
+          {/* Tabs */}
+          <div className="flex items-center gap-1 mb-6 bg-zinc-200 dark:bg-zinc-900/50 p-1 rounded-xl w-fit">
+            <button
+              onClick={() => setActiveCategoryTab('categories')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                activeCategoryTab === 'categories'
+                  ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm'
+                  : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+              }`}
+            >
+              Kategorier
+            </button>
+            <button
+              onClick={() => setActiveCategoryTab('rules')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                activeCategoryTab === 'rules'
+                  ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm'
+                  : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+              }`}
+            >
+              Kategoriregler
+            </button>
+          </div>
+
+          {/* Categories Tab Content */}
+          {activeCategoryTab === 'categories' && (
+            <>
+              <div className="flex items-center justify-end mb-4">
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setIsMergeModalOpen(true)}
+                    className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-sm font-medium transition-all"
+                  >
+                    <Merge size={16} />
+                    Merga
+                  </button>
+                  <button
+                    onClick={() => setIsAddingCategory(true)}
+                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-all"
+                  >
+                    <Plus size={16} />
+                    Lägg till
+                  </button>
                 </div>
               </div>
-            </div>
-          )}
+
+              {/* Duplicate Warning */}
+              {duplicates.length > 0 && (
+                <div className="mb-4 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle size={18} className="text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-amber-800 dark:text-amber-300 mb-2">
+                        Dubletter hittade ({duplicates.length} grupper)
+                      </p>
+                      <div className="space-y-1">
+                        {duplicates.map((group, idx) => (
+                          <p key={idx} className="text-xs text-amber-700 dark:text-amber-400">
+                            • {group.map(c => c.name).join(', ')} - Använd "Merga" för att slå ihop dem
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
           <div className="space-y-3">
             {/* Add Category Form */}
@@ -501,8 +594,11 @@ const SettingsTab = ({ getTitle, reloadData }) => {
                     />
                   ) : (
                     <>
-                      <div className="flex-1">
-                        <span className="text-zinc-900 dark:text-white font-medium">{category.name}</span>
+                      <div 
+                        className="flex-1 cursor-pointer"
+                        onClick={() => setEditingCategory(category.id)}
+                      >
+                        <span className="text-zinc-900 dark:text-white font-medium hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">{category.name}</span>
                         <div className="flex items-center gap-3 mt-1">
                           <span className="text-xs text-zinc-500">
                             {category.transaction_count || 0} transaktioner
@@ -523,14 +619,20 @@ const SettingsTab = ({ getTitle, reloadData }) => {
                       </div>
                       <div className="flex items-center gap-2">
                         <button
-                          onClick={() => setEditingCategory(category.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingCategory(category.id);
+                          }}
                           className="p-2 text-zinc-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded-lg transition-all"
                           title="Redigera"
                         >
                           <Edit2 size={16} />
                         </button>
                         <button
-                          onClick={() => handleDeleteCategory(category.id, category.name)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteCategory(category.id, category.name);
+                          }}
                           className="p-2 text-zinc-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded-lg transition-all"
                           title="Ta bort"
                         >
@@ -543,38 +645,58 @@ const SettingsTab = ({ getTitle, reloadData }) => {
               ))
             )}
           </div>
-        </div>
+            </>
+          )}
 
-        {/* Category Rules Section */}
-        <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl">
-                <Settings className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Kategoriregler</h3>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">Automatisk kategorisering vid import</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            {/* Add new rule */}
+          {/* Category Rules Tab Content */}
+          {activeCategoryTab === 'rules' && (
+            <div className="space-y-4">
+              {/* Add new rule */}
             <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700">
               <h4 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-3">Lägg till ny regel</h4>
-              <div className="grid grid-cols-2 gap-3">
-                <input
-                  type="text"
-                  value={newRulePattern}
-                  onChange={(e) => setNewRulePattern(e.target.value)}
-                  placeholder="Beskrivning innehåller..."
-                  className="px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                />
+              <div className="space-y-3">
+                {/* Multiple pattern fields */}
+                <div className="space-y-2">
+                  {newRulePatterns.map((pattern, index) => (
+                    <div key={index} className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={pattern}
+                        onChange={(e) => {
+                          const updated = [...newRulePatterns];
+                          updated[index] = e.target.value;
+                          setNewRulePatterns(updated);
+                        }}
+                        placeholder="Beskrivning innehåller..."
+                        className="flex-1 px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                      />
+                      {newRulePatterns.length > 1 && (
+                        <button
+                          onClick={() => {
+                            setNewRulePatterns(newRulePatterns.filter((_, i) => i !== index));
+                          }}
+                          className="p-2 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors"
+                          title="Ta bort mönster"
+                        >
+                          <X size={16} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => setNewRulePatterns([...newRulePatterns, ''])}
+                    className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 flex items-center gap-1"
+                  >
+                    <Plus size={14} />
+                    Lägg till mönster
+                  </button>
+                </div>
+                
+                {/* Category select */}
                 <select
                   value={newRuleCategory}
                   onChange={(e) => setNewRuleCategory(e.target.value)}
-                  className="px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                 >
                   <option value="">Välj kategori...</option>
                   {categories.map(cat => (
@@ -584,17 +706,18 @@ const SettingsTab = ({ getTitle, reloadData }) => {
               </div>
               <button
                 onClick={async () => {
-                  if (!newRulePattern.trim() || !newRuleCategory) {
-                    showToast('Fyll i både mönster och kategori', { type: 'error' });
+                  const validPatterns = newRulePatterns.map(p => p.trim()).filter(p => p);
+                  if (validPatterns.length === 0 || !newRuleCategory) {
+                    showToast('Fyll i minst ett mönster och kategori', { type: 'error' });
                     return;
                   }
                   try {
                     await api.createCategoryRule({
-                      description_patterns: [newRulePattern.trim()],
+                      description_patterns: validPatterns,
                       category: newRuleCategory,
                       is_active: true
                     });
-                    setNewRulePattern('');
+                    setNewRulePatterns(['']);
                     setNewRuleCategory('');
                     await loadCategoryRules();
                     showToast('Regel skapad!', { type: 'success' });
@@ -602,7 +725,7 @@ const SettingsTab = ({ getTitle, reloadData }) => {
                     showToast('Kunde inte skapa regel: ' + (err.message || 'Okänt fel'), { type: 'error' });
                   }
                 }}
-                disabled={!newRulePattern.trim() || !newRuleCategory}
+                disabled={newRulePatterns.every(p => !p.trim()) || !newRuleCategory}
                 className="mt-3 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 Lägg till regel
@@ -614,64 +737,190 @@ const SettingsTab = ({ getTitle, reloadData }) => {
               {categoryRules.length === 0 ? (
                 <p className="text-sm text-zinc-500 text-center py-4">Inga regler skapade än</p>
               ) : (
-                categoryRules.map(rule => (
-                  <div
-                    key={rule.id}
-                    className={`p-3 rounded-lg border flex items-center justify-between ${
-                      rule.is_active
-                        ? 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700'
-                        : 'bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 opacity-60'
-                    }`}
-                  >
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-zinc-900 dark:text-white">
-                        Om beskrivning innehåller <span className="font-mono text-indigo-600 dark:text-indigo-400">"{rule.description_pattern}"</span>
-                      </p>
-                      <p className="text-xs text-zinc-500 mt-1">
-                        → Sätt kategori: <span className="font-semibold">{rule.category}</span>
-                      </p>
+                categoryRules.map(rule => {
+                  const isEditing = editingRuleId === rule.id;
+                  const patterns = rule.description_patterns || [rule.description_pattern].filter(p => p);
+                  
+                  return (
+                    <div
+                      key={rule.id}
+                      className={`p-3 rounded-lg border ${
+                        rule.is_active
+                          ? 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700'
+                          : 'bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 opacity-60'
+                      }`}
+                    >
+                      {isEditing ? (
+                        <div className="space-y-3">
+                          {/* Patterns editing */}
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                              Mönster (beskrivning innehåller):
+                            </label>
+                            <div className="space-y-2">
+                              {editingPatterns.map((pattern, idx) => (
+                                <div key={`pattern-${rule.id}-${idx}`} className="flex gap-2">
+                                  <input
+                                    type="text"
+                                    value={pattern}
+                                    onChange={(e) => {
+                                      const updated = [...editingPatterns];
+                                      updated[idx] = e.target.value;
+                                      setEditingPatterns(updated);
+                                      editingPatternsRef.current = updated;
+                                    }}
+                                    onBlur={() => {
+                                      setTimeout(() => {
+                                        if (editingRuleId === rule.id) {
+                                          saveRule(rule.id, editingPatternsRef.current, editingCategoryRef.current);
+                                        }
+                                      }, 50);
+                                    }}
+                                    placeholder="Beskrivning innehåller..."
+                                    className="flex-1 px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                  />
+                                  {editingPatterns.length > 1 && (
+                                    <button
+                                      onClick={() => {
+                                        const updated = editingPatterns.filter((_, i) => i !== idx);
+                                        setEditingPatterns(updated);
+                                        editingPatternsRef.current = updated;
+                                      }}
+                                      className="px-2 py-2 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors"
+                                    >
+                                      <X size={16} />
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                              <button
+                                onClick={() => {
+                                  const updated = [...editingPatterns, ''];
+                                  setEditingPatterns(updated);
+                                  editingPatternsRef.current = updated;
+                                }}
+                                className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 flex items-center gap-1"
+                              >
+                                <Plus size={14} />
+                                Lägg till mönster
+                              </button>
+                            </div>
+                          </div>
+                          
+                          {/* Category editing */}
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                              Kategori:
+                            </label>
+                            <select
+                              value={editingRuleCategory}
+                              onChange={(e) => {
+                                setEditingRuleCategory(e.target.value);
+                                editingCategoryRef.current = e.target.value;
+                              }}
+                              onBlur={() => {
+                                if (editingRuleId === rule.id) {
+                                  saveRule(rule.id, editingPatternsRef.current, editingCategoryRef.current);
+                                }
+                              }}
+                              className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                            >
+                              <option value="">Välj kategori...</option>
+                              {categories.map(cat => (
+                                <option key={cat.id} value={cat.name}>{cat.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                          
+                          {/* Action buttons */}
+                          <div className="flex items-center gap-2 pt-2">
+                            {isSavingRule === rule.id && (
+                              <Loader2 size={16} className="animate-spin text-indigo-600 dark:text-indigo-400" />
+                            )}
+                            <button
+                              onClick={() => {
+                                setEditingRuleId(null);
+                                setEditingPatterns([]);
+                                setEditingRuleCategory('');
+                                editingPatternsRef.current = [];
+                                editingCategoryRef.current = '';
+                              }}
+                              className="text-xs px-3 py-1.5 bg-zinc-200 dark:bg-zinc-700 hover:bg-zinc-300 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-300 rounded-lg transition-colors"
+                            >
+                              Avbryt
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between">
+                          <div 
+                            className="flex-1 cursor-pointer"
+                            onClick={() => {
+                              const patterns = rule.description_patterns || [rule.description_pattern].filter(p => p);
+                              setEditingRuleId(rule.id);
+                              setEditingPatterns(patterns.length > 0 ? [...patterns, ''] : ['']);
+                              setEditingRuleCategory(rule.category || '');
+                              editingPatternsRef.current = patterns.length > 0 ? [...patterns, ''] : [''];
+                              editingCategoryRef.current = rule.category || '';
+                            }}
+                          >
+                            <p className="text-sm font-medium text-zinc-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
+                              Om beskrivning innehåller{' '}
+                              <span className="font-mono text-indigo-600 dark:text-indigo-400">
+                                "{patterns.length > 0 ? patterns.join('", "') : rule.description_pattern}"
+                              </span>
+                            </p>
+                            <p className="text-xs text-zinc-500 mt-1">
+                              → Sätt kategori: <span className="font-semibold">{rule.category}</span>
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                try {
+                                  await api.updateCategoryRule(rule.id, { is_active: !rule.is_active });
+                                  await loadCategoryRules();
+                                } catch (err) {
+                                  showToast('Kunde inte uppdatera regel', { type: 'error' });
+                                }
+                              }}
+                              className={`px-3 py-1 text-xs rounded-lg transition-colors ${
+                                rule.is_active
+                                  ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                                  : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400'
+                              }`}
+                            >
+                              {rule.is_active ? 'Aktiv' : 'Inaktiv'}
+                            </button>
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                if (!confirm(`Är du säker på att du vill ta bort regeln?\n\n"${patterns.join('", "') || rule.description_pattern}" → ${rule.category}`)) {
+                                  return;
+                                }
+                                try {
+                                  await api.deleteCategoryRule(rule.id);
+                                  await loadCategoryRules();
+                                  showToast('Regel borttagen', { type: 'success' });
+                                } catch (err) {
+                                  showToast('Kunde inte ta bort regel', { type: 'error' });
+                                }
+                              }}
+                              className="p-1.5 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded transition-colors"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={async () => {
-                          try {
-                            await api.updateCategoryRule(rule.id, { is_active: !rule.is_active });
-                            await loadCategoryRules();
-                          } catch (err) {
-                            showToast('Kunde inte uppdatera regel', { type: 'error' });
-                          }
-                        }}
-                        className={`px-3 py-1 text-xs rounded-lg transition-colors ${
-                          rule.is_active
-                            ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
-                            : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400'
-                        }`}
-                      >
-                        {rule.is_active ? 'Aktiv' : 'Inaktiv'}
-                      </button>
-                      <button
-                        onClick={async () => {
-                          if (!confirm(`Är du säker på att du vill ta bort regeln?\n\n"${rule.description_pattern}" → ${rule.category}`)) {
-                            return;
-                          }
-                          try {
-                            await api.deleteCategoryRule(rule.id);
-                            await loadCategoryRules();
-                            showToast('Regel borttagen', { type: 'success' });
-                          } catch (err) {
-                            showToast('Kunde inte ta bort regel', { type: 'error' });
-                          }
-                        }}
-                        className="p-1.5 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded transition-colors"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
+          )}
         </div>
 
         {/* Application Settings */}

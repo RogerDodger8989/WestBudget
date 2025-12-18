@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Bell, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
+import NotificationBell from './NotificationBell';
 
-const Topbar = ({ onSearch, searchQuery: externalSearchQuery }) => {
+const Topbar = ({ onSearch, searchQuery: externalSearchQuery, agreements }) => {
   const [localSearchQuery, setLocalSearchQuery] = useState('');
   const searchQuery = externalSearchQuery !== undefined ? externalSearchQuery : localSearchQuery;
 
@@ -28,10 +29,7 @@ const Topbar = ({ onSearch, searchQuery: externalSearchQuery }) => {
         />
       </div>
       <div className="flex items-center gap-4">
-        <button className="relative p-2 text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors">
-          <Bell className="w-5 h-5" />
-          <span className="absolute top-2 right-2 w-2 h-2 bg-rose-500 rounded-full border-2 border-white dark:border-zinc-950"></span>
-        </button>
+        <NotificationBell agreements={agreements || []} />
         <div className="flex items-center gap-3 pl-4 border-l border-zinc-200 dark:border-zinc-800">
           <div className="w-9 h-9 rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 flex items-center justify-center text-xs font-bold text-white shadow-md">
             JD

@@ -76,6 +76,11 @@ Lucide Icons: Use explicit imports: import { Wallet, Settings } from 'lucide-rea
 
 Calendar Icons: All Calendar and CalendarClock icons MUST use indigo color: className="text-indigo-500 dark:text-indigo-400". This applies to all calendar icons throughout the application, including labels, date picker buttons, and date-related UI elements.
 
+Amount Formatting:
+- Positive amounts: Format as "1 700 kr" (space as thousand separator, "kr" suffix). Use green text: className="text-emerald-500 dark:text-emerald-400" or text-emerald-600.
+- Negative amounts: Format as "-1 700 kr" (space as thousand separator, "kr" suffix). Use red text: className="text-rose-500 dark:text-rose-400" or text-rose-600.
+- Always apply these formatting rules consistently across all components displaying monetary values.
+
 State Management: Use useState for UI states (modals, tabs, hover effects).
 
 No "Alerts": Never use the browser alert(). Build custom UI notifications or modals.

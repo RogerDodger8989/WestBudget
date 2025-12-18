@@ -3,6 +3,7 @@ import { Fuel, Wrench, Gauge, Car, Calendar, Download, Search } from 'lucide-rea
 import StatCard from '../StatCard';
 import TransactionItem from '../TransactionItem';
 import DateRangeBtn from '../DateRangeBtn';
+import { filterByDateRange } from '../../utils/filterByDateRange';
 
 const VehiclesTab = ({ 
   transactions, 
@@ -17,10 +18,12 @@ const VehiclesTab = ({
 
   // Filtrera fordonsrelaterade transaktioner
   const vehicleTransactions = useMemo(() => {
-    return transactions.filter(t => 
+    const categoryFiltered = transactions.filter(t => 
       ['Drivmedel', 'Underhåll', 'Försäkring', 'Resor'].includes(t.category)
     );
-  }, [transactions]);
+    // Applicera även datumfiltrering
+    return filterByDateRange(categoryFiltered, dateRange);
+  }, [transactions, dateRange]);
 
   // Filtrera baserat på sökfråga
   const filteredVehicleTransactions = useMemo(() => {
@@ -51,6 +54,7 @@ const VehiclesTab = ({
           </h2>
           <div className="flex items-center gap-1 mt-2 bg-zinc-200 dark:bg-zinc-900/50 p-1 rounded-xl w-fit">
             <DateRangeBtn active={dateRange === 'month'} onClick={() => setDateRange('month')}>Denna Månad</DateRangeBtn>
+            <DateRangeBtn active={dateRange === 'lastMonth'} onClick={() => setDateRange('lastMonth')}>Föregående Månad</DateRangeBtn>
             <DateRangeBtn active={dateRange === 'year'} onClick={() => setDateRange('year')}>Hela Året</DateRangeBtn>
             <DateRangeBtn active={dateRange === 'custom'} onClick={() => setDateRange('custom')} icon={<Calendar size={14} className="text-indigo-500 dark:text-indigo-400" />}>Anpassad</DateRangeBtn>
           </div>

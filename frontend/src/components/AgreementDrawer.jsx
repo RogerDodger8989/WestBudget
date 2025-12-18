@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Tag, FileText, UploadCloud, Trash2, ChevronRight, Calendar, DollarSign, Building2, Image as ImageIcon } from 'lucide-react';
+import { formatAmount } from '../utils/formatAmount';
 
 const AgreementDrawer = ({ agreement, onClose, onSave, onImageUpload, categories }) => {
   const fileInputRef = useRef(null);
@@ -177,7 +178,7 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onImageUpload, categories
         {/* Kostnad */}
         <div className="text-center py-4">
           <span className="text-4xl font-bold tracking-tight text-zinc-900 dark:text-white">
-            {formData.cost} kr
+            {formatAmount(formData.cost)}
           </span>
           <div className="mt-2 flex items-center justify-center gap-2">
             <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${

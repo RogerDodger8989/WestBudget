@@ -1,10 +1,13 @@
-import React, { useState, useMemo } from 'react';
-import { RefreshCw, FileText, AlertTriangle, Search, Filter, CalendarClock, Download, Plus, CheckCircle2, Check } from 'lucide-react';
+import React, { useState, useMemo, useRef } from 'react';
+import { formatAmount } from '../../utils/formatAmount';
+import { RefreshCw, FileText, AlertTriangle, Search, Filter, CalendarClock, Download, Plus, CheckCircle2, Check, ArrowUp, ArrowDown, ChevronUp, ChevronDown } from 'lucide-react';
 import StatCard from '../StatCard';
 import ImageLightbox from '../ImageLightbox';
 import AgreementFilterModal from '../AgreementFilterModal';
+import { useToast } from '../../contexts/ToastContext';
 
 const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreement, setSelectedAgreement, setEditingNoteAgreementId }) => {
+  const { showToast } = useToast();
   const [lightboxImages, setLightboxImages] = useState(null);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
@@ -18,6 +21,10 @@ const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreeme
     minCost: '',
     maxCost: ''
   });
+  const [sortColumn, setSortColumn] = useState(null); // 'cost', 'nextPayment', 'provider', 'category'
+  const [sortDirection, setSortDirection] = useState('asc'); // 'asc' or 'desc'
+  const [selectedAgreements, setSelectedAgreements] = useState(new Set());
+  const selectAllCheckboxRef = useRef(null);
 
   // Parse images from agreement
   const parseImages = (imagesData) => {
@@ -113,6 +120,250 @@ const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreeme
     return filtered;
   }, [agreements, searchQuery, filters]);
 
+  // Sortera filtrerade avtal
+  const sortedAgreements = useMemo(() => {
+    if (!sortColumn) return filteredAgreements;
+    
+    const sorted = [...filteredAgreements].sort((a, b) => {
+      let comparison = 0;
+      
+      switch (sortColumn) {
+        case 'cost':
+          comparison = (parseFloat(a.cost) || 0) - (parseFloat(b.cost) || 0);
+          break;
+        case 'nextPayment': {
+          const dateA = a.next_payment || a.nextPayment || '';
+          const dateB = b.next_payment || b.nextPayment || '';
+          if (!dateA && !dateB) comparison = 0;
+          else if (!dateA) comparison = 1;
+          else if (!dateB) comparison = -1;
+          else comparison = dateA.localeCompare(dateB);
+          break;
+        }
+        case 'provider':
+          comparison = (a.provider || '').localeCompare(b.provider || '');
+          break;
+        case 'category':
+          comparison = (a.category || '').localeCompare(b.category || '');
+          break;
+        default:
+          return 0;
+      }
+      
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+    
+    return sorted;
+  }, [filteredAgreements, sortColumn, sortDirection]);
+
+  // Hantera sortering
+  const handleSort = (column) => {
+    if (sortColumn === column) {
+      // Toggle direction if same column
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      // New column, default to ascending
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+  };
+
+  // Hantera val av alla avtal
+  const handleSelectAll = (checked) => {
+    if (checked) {
+      const allIds = new Set(sortedAgreements.map(a => a.id));
+      setSelectedAgreements(allIds);
+    } else {
+      setSelectedAgreements(new Set());
+    }
+  };
+
+  // Hantera val av enskilt avtal
+  const handleToggleAgreement = (id) => {
+    const newSelected = new Set(selectedAgreements);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedAgreements(newSelected);
+  };
+
+  // Beräkna statistik
+  const stats = useMemo(() => {
+    const activeAgreements = agreements.filter(a => a.status === 'Aktiv');
+    const totalMonthlyCost = activeAgreements.reduce((sum, a) => {
+      const cost = parseFloat(a.cost) || 0;
+      // Convert to monthly if needed
+      let monthlyCost = cost;
+      if (a.frequency === 'Kvartalsvis') monthlyCost = cost / 3;
+      else if (a.frequency === 'Årligen') monthlyCost = cost / 12;
+      return sum + monthlyCost;
+    }, 0);
+    
+    const totalYearlyCost = activeAgreements.reduce((sum, a) => {
+      const cost = parseFloat(a.cost) || 0;
+      // Convert to yearly if needed
+      let yearlyCost = cost;
+      if (a.frequency === 'Månadsvis') yearlyCost = cost * 12;
+      else if (a.frequency === 'Kvartalsvis') yearlyCost = cost * 4;
+      return sum + yearlyCost;
+    }, 0);
+
+    // Cost per category
+    const costByCategory = {};
+    activeAgreements.forEach(a => {
+      const cost = parseFloat(a.cost) || 0;
+      let yearlyCost = cost;
+      if (a.frequency === 'Månadsvis') yearlyCost = cost * 12;
+      else if (a.frequency === 'Kvartalsvis') yearlyCost = cost * 4;
+      
+      const category = a.category || 'Övrigt';
+      costByCategory[category] = (costByCategory[category] || 0) + yearlyCost;
+    });
+
+    return {
+      totalMonthlyCost,
+      totalYearlyCost,
+      activeCount: activeAgreements.length,
+      costByCategory
+    };
+  }, [agreements]);
+
+  // Export to CSV
+  const handleExport = () => {
+    if (sortedAgreements.length === 0) {
+      showToast('Inga avtal att exportera', { type: 'info' });
+      return;
+    }
+
+    const now = new Date();
+    const year = now.getFullYear();
+    const filename = `Westbudget Avtal ${year}.csv`;
+
+    // CSV headers (Swedish)
+    const headers = ['Tjänst', 'Leverantör', 'Kategori', 'Kostnad', 'Frekvens', 'Nästa Betalning', 'Status', 'Startdatum', 'Slutdatum', 'Notering'];
+    
+    // Convert agreements to CSV rows
+    const csvRows = [
+      headers.join(','), // Header row
+      ...sortedAgreements.map(agreement => {
+        const row = [
+          `"${(agreement.name || '').replace(/"/g, '""')}"`,
+          `"${(agreement.provider || '').replace(/"/g, '""')}"`,
+          `"${(agreement.category || '').replace(/"/g, '""')}"`,
+          agreement.cost || '',
+          agreement.frequency || '',
+          agreement.next_payment || agreement.nextPayment || '',
+          agreement.status || '',
+          agreement.start_date || '',
+          agreement.end_date || '',
+          `"${(agreement.notice || '').replace(/"/g, '""')}"`
+        ];
+        return row.join(',');
+      })
+    ];
+
+    // Create CSV content
+    const csvContent = csvRows.join('\n');
+    
+    // Create blob and download
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' }); // BOM for Excel UTF-8 support
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    showToast(`Exporterade ${sortedAgreements.length} avtal`, { type: 'success' });
+  };
+
+  // Export to PDF
+  const handleExportPDF = () => {
+    if (sortedAgreements.length === 0) {
+      showToast('Inga avtal att exportera', { type: 'info' });
+      return;
+    }
+
+    // Create HTML content for PDF
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>WestBudget Avtal Rapport</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; }
+            h1 { color: #333; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th { background-color: #f2f2f2; font-weight: bold; }
+            .stats { margin: 20px 0; padding: 15px; background-color: #f9f9f9; border-radius: 5px; }
+            .stats h3 { margin-top: 0; }
+          </style>
+        </head>
+        <body>
+          <h1>WestBudget Avtal Rapport</h1>
+          <p>Genererad: ${new Date().toLocaleDateString('sv-SE')}</p>
+          
+          <div class="stats">
+            <h3>Sammanfattning</h3>
+            <p><strong>Total Månadskostnad:</strong> ${formatAmount(stats.totalMonthlyCost)}</p>
+            <p><strong>Total Årskostnad:</strong> ${formatAmount(stats.totalYearlyCost)}</p>
+            <p><strong>Aktiva Avtal:</strong> ${stats.activeCount} st</p>
+          </div>
+
+          <h2>Avtalslista</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Tjänst</th>
+                <th>Leverantör</th>
+                <th>Kategori</th>
+                <th>Kostnad</th>
+                <th>Frekvens</th>
+                <th>Nästa Betalning</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${sortedAgreements.map(agreement => `
+                <tr>
+                  <td>${agreement.name || ''}</td>
+                  <td>${agreement.provider || ''}</td>
+                  <td>${agreement.category || ''}</td>
+                  <td>${formatAmount(agreement.cost)}</td>
+                  <td>${agreement.frequency || ''}</td>
+                  <td>${agreement.next_payment || agreement.nextPayment || ''}</td>
+                  <td>${agreement.status || ''}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+
+    // Create blob and open in new window for printing
+    const blob = new Blob([htmlContent], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const printWindow = window.open(url, '_blank');
+    
+    if (printWindow) {
+      printWindow.onload = () => {
+        setTimeout(() => {
+          printWindow.print();
+        }, 250);
+      };
+    }
+    
+    showToast('PDF-rapport öppnad för utskrift', { type: 'success' });
+  };
+
   const handleImageClick = (e, agreement) => {
     e.stopPropagation(); // Förhindra att öppna drawer
     const images = parseImages(agreement.images);
@@ -131,9 +382,20 @@ const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreeme
           </h2>
         </div>
         <div className="flex gap-3">
-          <button className="flex items-center gap-2 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm">
-            <Download size={16} /> Exportera
-          </button>
+          <div className="flex gap-2">
+            <button 
+              onClick={handleExport}
+              className="flex items-center gap-2 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm"
+            >
+              <Download size={16} /> Exportera CSV
+            </button>
+            <button 
+              onClick={handleExportPDF}
+              className="flex items-center gap-2 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm"
+            >
+              <Download size={16} /> Exportera PDF
+            </button>
+          </div>
           <button 
             onClick={onAddAgreement}
             className="flex items-center gap-2 bg-zinc-900 dark:bg-indigo-600 hover:bg-zinc-800 dark:hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-all shadow-lg hover:shadow-xl active:scale-95"
@@ -146,25 +408,111 @@ const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreeme
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <StatCard 
           title="Fast Månadskostnad" 
-          amount="9,543 kr" 
-          change="+450 kr" 
+          amount={formatAmount(stats.totalMonthlyCost)} 
+          change={`${formatAmount(stats.totalYearlyCost)}/år`}
           trend="up" 
           icon={<RefreshCw className="text-indigo-500 dark:text-indigo-400" />}
         />
         <StatCard 
           title="Aktiva Avtal" 
-          amount="7 st" 
-          change="1 uppsagd" 
-          trend="down" 
+          amount={`${stats.activeCount} st`} 
+          change={`${formatAmount(stats.totalYearlyCost)}/år`}
+          trend="up" 
           icon={<FileText className="text-emerald-500 dark:text-emerald-400" />}
         />
         <StatCard 
-          title="Att omförhandla (30d)" 
-          amount="2 st" 
-          change="Kolla nu!" 
-          trend="down"
+          title="Total Årskostnad" 
+          amount={formatAmount(stats.totalYearlyCost)} 
+          change="Alla aktiva avtal"
+          trend="up"
           icon={<AlertTriangle className="text-amber-500 dark:text-amber-400" />}
         />
+      </div>
+
+      {/* Cost per Category */}
+      {Object.keys(stats.costByCategory).length > 0 && (
+        <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
+          <h3 className="text-lg font-semibold text-zinc-900 dark:text-white mb-4">Kostnad per Kategori</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {Object.entries(stats.costByCategory)
+              .sort(([, a], [, b]) => b - a)
+              .map(([category, cost]) => (
+                <div key={category} className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700">
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">{category}</p>
+                  <p className="text-xl font-bold text-zinc-900 dark:text-white">{formatAmount(cost)}</p>
+                  <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-1">per år</p>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
+      {/* Yearly Overview and Trend */}
+      <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
+        <h3 className="text-lg font-semibold text-zinc-900 dark:text-white mb-4">Årsvis Översikt</h3>
+        
+        {/* Current Year */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              {new Date().getFullYear()}
+            </p>
+            <p className="text-2xl font-bold text-zinc-900 dark:text-white">
+              {formatAmount(stats.totalYearlyCost)}
+            </p>
+          </div>
+          
+          {/* Simple trend visualization */}
+          <div className="h-8 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden relative">
+            <div 
+              className="h-full bg-gradient-to-r from-indigo-500 to-purple-600 rounded-full transition-all duration-500"
+              style={{ width: `${Math.min(100, (stats.totalYearlyCost / 200000) * 100)}%` }}
+            />
+            <div className="absolute inset-0 flex items-center justify-center text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              {formatAmount(stats.totalYearlyCost)} / år
+            </div>
+          </div>
+        </div>
+
+        {/* Previous Year Comparison (mock data for now - would need historical data) */}
+        <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+              {new Date().getFullYear() - 1} (förra året)
+            </p>
+            <p className="text-lg font-semibold text-zinc-600 dark:text-zinc-400">
+              {formatAmount(stats.totalYearlyCost * 0.95)} {/* Mock: 5% decrease */}
+            </p>
+          </div>
+          <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1">
+            +{formatAmount(stats.totalYearlyCost * 0.05)} jämfört med förra året
+          </p>
+        </div>
+
+        {/* Trend Chart - Monthly breakdown */}
+        <div className="mt-6 pt-6 border-t border-zinc-200 dark:border-zinc-800">
+          <h4 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-4">Månadsvis Kostnad</h4>
+          <div className="flex items-end gap-2 h-32">
+            {Array.from({ length: 12 }, (_, i) => {
+              const monthCost = stats.totalMonthlyCost;
+              const maxCost = stats.totalMonthlyCost * 1.2; // Add some headroom
+              const height = (monthCost / maxCost) * 100;
+              const monthName = new Date(2024, i, 1).toLocaleDateString('sv-SE', { month: 'short' });
+              
+              return (
+                <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                  <div className="w-full bg-zinc-200 dark:bg-zinc-800 rounded-t relative" style={{ height: '100px' }}>
+                    <div 
+                      className="absolute bottom-0 w-full bg-gradient-to-t from-indigo-500 to-purple-600 rounded-t transition-all duration-500"
+                      style={{ height: `${height}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">{monthName}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl flex flex-col shadow-sm dark:shadow-none overflow-hidden min-h-[600px]">
@@ -198,10 +546,52 @@ const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreeme
         </div>
 
         <div className="grid grid-cols-12 gap-4 px-6 py-3 bg-zinc-50 dark:bg-zinc-800/30 border-b border-zinc-200 dark:border-zinc-800 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
-          <div className="col-span-4 sm:col-span-3">Tjänst / Leverantör</div>
-          <div className="col-span-2 hidden sm:block">Kategori</div>
-          <div className="col-span-2 sm:col-span-2">Kostnad</div>
-          <div className="col-span-2 hidden sm:block">Nästa Betalning</div>
+          <div className="col-span-1 flex items-center justify-center">
+            <input
+              ref={selectAllCheckboxRef}
+              type="checkbox"
+              checked={selectedAgreements.size > 0 && selectedAgreements.size === sortedAgreements.length}
+              onChange={(e) => handleSelectAll(e.target.checked)}
+              className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+          <div 
+            className="col-span-3 sm:col-span-2 flex items-center gap-1 cursor-pointer hover:text-zinc-700 dark:hover:text-zinc-300 select-none"
+            onClick={() => handleSort('provider')}
+          >
+            Tjänst / Leverantör
+            {sortColumn === 'provider' && (
+              sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
+            )}
+          </div>
+          <div 
+            className="col-span-2 hidden sm:flex items-center gap-1 cursor-pointer hover:text-zinc-700 dark:hover:text-zinc-300 select-none"
+            onClick={() => handleSort('category')}
+          >
+            Kategori
+            {sortColumn === 'category' && (
+              sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
+            )}
+          </div>
+          <div 
+            className="col-span-2 sm:col-span-2 flex items-center gap-1 cursor-pointer hover:text-zinc-700 dark:hover:text-zinc-300 select-none"
+            onClick={() => handleSort('cost')}
+          >
+            Kostnad
+            {sortColumn === 'cost' && (
+              sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
+            )}
+          </div>
+          <div 
+            className="col-span-2 hidden sm:flex items-center gap-1 cursor-pointer hover:text-zinc-700 dark:hover:text-zinc-300 select-none"
+            onClick={() => handleSort('nextPayment')}
+          >
+            Nästa Betalning
+            {sortColumn === 'nextPayment' && (
+              sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
+            )}
+          </div>
           <div className="col-span-1 text-center">Notering</div>
           <div className="col-span-1 text-center">Bild</div>
           <div className="col-span-2 sm:col-span-2 text-left">Status</div>
@@ -210,12 +600,12 @@ const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreeme
         <div className="flex-1 overflow-y-auto">
           {loading ? (
             <div className="text-center py-12">Laddar avtal...</div>
-          ) : filteredAgreements.length === 0 ? (
+          ) : sortedAgreements.length === 0 ? (
             <div className="text-center py-12 text-zinc-500">
               {searchQuery ? `Inga avtal matchar "${searchQuery}"` : 'Inga avtal hittades'}
             </div>
           ) : (
-            filteredAgreements.map(agreement => (
+            sortedAgreements.map(agreement => (
               <div 
                 key={agreement.id} 
                 onClick={() => setSelectedAgreement(agreement)}
@@ -238,7 +628,7 @@ const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreeme
                 </div>
 
                 <div className="col-span-2 sm:col-span-2">
-                  <p className="font-bold text-zinc-900 dark:text-white">{agreement.cost} kr</p>
+                  <p className="font-bold text-zinc-900 dark:text-white">{formatAmount(agreement.cost)}</p>
                   <p className="text-xs text-zinc-500">{agreement.frequency}</p>
                 </div>
 

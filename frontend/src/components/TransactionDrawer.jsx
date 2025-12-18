@@ -1,8 +1,16 @@
 import React, { useRef } from 'react';
 import { X, Tag, FileText, CheckCircle, UploadCloud, Trash2, ChevronRight } from 'lucide-react';
+import { formatAmount, getAmountClassName } from '../utils/formatAmount';
 
 const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUpload, categories }) => {
   const fileInputRef = useRef(null);
+  
+  // Parse amount to determine formatting
+  const amountValue = typeof transaction.amount === 'string' 
+    ? parseFloat(transaction.amount.replace(/[^\d.-]/g, '')) 
+    : transaction.amount;
+  const formattedAmount = formatAmount(amountValue);
+  const amountClass = getAmountClassName(amountValue);
 
   const handleFileSelect = (e) => {
     const file = e.target.files[0];
@@ -29,10 +37,8 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
       <div className="flex-1 overflow-y-auto p-6 space-y-8">
         
         <div className="text-center py-4">
-          <span className={`text-4xl font-bold tracking-tight ${
-            transaction.type === 'income' ? 'text-emerald-500' : 'text-zinc-900 dark:text-white'
-          }`}>
-            {transaction.amount}
+          <span className={`text-4xl font-bold tracking-tight ${amountClass}`}>
+            {formattedAmount}
           </span>
           <div className="mt-2 flex items-center justify-center gap-2">
             <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${

@@ -1,8 +1,14 @@
 import React from 'react';
 import { Check, Plus, FileText } from 'lucide-react';
+import { formatAmount, getAmountClassName } from '../utils/formatAmount';
 
 const TransactionItem = ({ data, onClick, onEditNote, isSelected = false, onToggleSelect }) => {
   const { title, date, amount, type, note, category, status, receipt } = data;
+  
+  // Parse amount to determine if it's positive or negative
+  const amountValue = typeof amount === 'string' ? parseFloat(amount.replace(/[^\d.-]/g, '')) : amount;
+  const formattedAmount = formatAmount(amountValue);
+  const amountClass = getAmountClassName(amountValue);
   
   return (
     <div className={`grid grid-cols-12 gap-4 px-6 py-4 border-b border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-50 dark:hover:bg-zinc-800/40 transition-colors group items-center ${
@@ -44,8 +50,8 @@ const TransactionItem = ({ data, onClick, onEditNote, isSelected = false, onTogg
         </button>
       </div>
 
-      <div onClick={onClick} className={`col-span-2 text-right font-medium cursor-pointer ${type === 'income' ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-900 dark:text-zinc-300'}`}>
-        {amount}
+      <div onClick={onClick} className={`col-span-2 text-right font-medium cursor-pointer ${amountClass}`}>
+        {formattedAmount}
       </div>
       <div onClick={onClick} className="col-span-1 hidden sm:block text-center cursor-pointer">
         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
