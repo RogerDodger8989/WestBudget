@@ -12,7 +12,9 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onImageUpload, categories
     status: agreement.status || 'Aktiv',
     category: agreement.category || '',
     icon: agreement.icon || '📄',
-    notice: agreement.notice || ''
+    notice: agreement.notice || '',
+    start_date: agreement.start_date || '',
+    end_date: agreement.end_date || ''
   });
 
   // Parse images from JSON string or array
@@ -28,6 +30,9 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onImageUpload, categories
 
   const [images, setImages] = useState(parseImages(agreement.images)); // Array med bildsökvägar
   const [isSaving, setIsSaving] = useState(false);
+  const startDatePickerRef = useRef(null);
+  const endDatePickerRef = useRef(null);
+  const nextPaymentPickerRef = useRef(null);
 
   // Uppdatera state när agreement ändras
   useEffect(() => {
@@ -40,7 +45,9 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onImageUpload, categories
       status: agreement.status || 'Aktiv',
       category: agreement.category || '',
       icon: agreement.icon || '📄',
-      notice: agreement.notice || ''
+      notice: agreement.notice || '',
+      start_date: agreement.start_date || '',
+      end_date: agreement.end_date || ''
     });
     setImages(parseImages(agreement.images));
   }, [agreement]);
@@ -229,7 +236,7 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onImageUpload, categories
 
           <div className="space-y-2">
             <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
-              <Calendar size={14} /> Frekvens
+              <Calendar size={14} className="text-indigo-500 dark:text-indigo-400" /> Frekvens
             </label>
             <div className="relative">
               <select
@@ -246,18 +253,153 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onImageUpload, categories
           </div>
         </div>
 
+        {/* Startdatum & Slutdatum */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
+              <Calendar size={14} className="text-indigo-500 dark:text-indigo-400" /> Startdatum
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                value={formData.start_date || ''}
+                onChange={(e) => {
+                  let value = e.target.value.replace(/\D/g, ''); // Only numbers
+                  
+                  // Limit: 4 digits for year, 2 for month, 2 for day
+                  if (value.length > 8) value = value.slice(0, 8);
+                  
+                  // Format as YYYY-MM-DD while typing
+                  let formatted = '';
+                  if (value.length <= 4) {
+                    formatted = value;
+                  } else if (value.length <= 6) {
+                    formatted = value.slice(0, 4) + '-' + value.slice(4);
+                  } else {
+                    formatted = value.slice(0, 4) + '-' + value.slice(4, 6) + '-' + value.slice(6, 8);
+                  }
+                  
+                  handleChange('start_date', formatted);
+                }}
+                placeholder="ÅÅÅÅ-MM-DD"
+                maxLength={10}
+                className="w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none font-mono"
+              />
+              <input
+                ref={startDatePickerRef}
+                type="date"
+                value={formData.start_date || ''}
+                onChange={(e) => handleChange('start_date', e.target.value)}
+                className="absolute opacity-0 pointer-events-none"
+                style={{ width: 0, height: 0 }}
+              />
+              <button
+                type="button"
+                onClick={() => startDatePickerRef.current?.showPicker?.() || startDatePickerRef.current?.click()}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded transition-colors"
+              >
+                <Calendar size={18} className="text-indigo-500 dark:text-indigo-400" />
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
+              <Calendar size={14} className="text-indigo-500 dark:text-indigo-400" /> Slutdatum
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                value={formData.end_date || ''}
+                onChange={(e) => {
+                  let value = e.target.value.replace(/\D/g, ''); // Only numbers
+                  
+                  // Limit: 4 digits for year, 2 for month, 2 for day
+                  if (value.length > 8) value = value.slice(0, 8);
+                  
+                  // Format as YYYY-MM-DD while typing
+                  let formatted = '';
+                  if (value.length <= 4) {
+                    formatted = value;
+                  } else if (value.length <= 6) {
+                    formatted = value.slice(0, 4) + '-' + value.slice(4);
+                  } else {
+                    formatted = value.slice(0, 4) + '-' + value.slice(4, 6) + '-' + value.slice(6, 8);
+                  }
+                  
+                  handleChange('end_date', formatted);
+                }}
+                placeholder="ÅÅÅÅ-MM-DD"
+                maxLength={10}
+                className="w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none font-mono"
+              />
+              <input
+                ref={endDatePickerRef}
+                type="date"
+                value={formData.end_date || ''}
+                onChange={(e) => handleChange('end_date', e.target.value)}
+                className="absolute opacity-0 pointer-events-none"
+                style={{ width: 0, height: 0 }}
+              />
+              <button
+                type="button"
+                onClick={() => endDatePickerRef.current?.showPicker?.() || endDatePickerRef.current?.click()}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded transition-colors"
+              >
+                <Calendar size={18} className="text-indigo-500 dark:text-indigo-400" />
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* Nästa betalning & Status */}
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
-              <Calendar size={14} /> Nästa betalning
+              <Calendar size={14} className="text-indigo-500 dark:text-indigo-400" /> Nästa betalning
             </label>
-            <input
-              type="date"
-              value={formData.next_payment}
-              onChange={(e) => handleChange('next_payment', e.target.value)}
-              className="w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
-            />
+            <div className="relative">
+              <input
+                type="text"
+                value={formData.next_payment || ''}
+                onChange={(e) => {
+                  let value = e.target.value.replace(/\D/g, ''); // Only numbers
+                  
+                  // Limit: 4 digits for year, 2 for month, 2 for day
+                  if (value.length > 8) value = value.slice(0, 8);
+                  
+                  // Format as YYYY-MM-DD while typing
+                  let formatted = '';
+                  if (value.length <= 4) {
+                    formatted = value;
+                  } else if (value.length <= 6) {
+                    formatted = value.slice(0, 4) + '-' + value.slice(4);
+                  } else {
+                    formatted = value.slice(0, 4) + '-' + value.slice(4, 6) + '-' + value.slice(6, 8);
+                  }
+                  
+                  handleChange('next_payment', formatted);
+                }}
+                placeholder="ÅÅÅÅ-MM-DD"
+                maxLength={10}
+                className="w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none font-mono"
+              />
+              <input
+                ref={nextPaymentPickerRef}
+                type="date"
+                value={formData.next_payment || ''}
+                onChange={(e) => handleChange('next_payment', e.target.value)}
+                className="absolute opacity-0 pointer-events-none"
+                style={{ width: 0, height: 0 }}
+              />
+              <button
+                type="button"
+                onClick={() => nextPaymentPickerRef.current?.showPicker?.() || nextPaymentPickerRef.current?.click()}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded transition-colors"
+              >
+                <Calendar size={18} className="text-indigo-500 dark:text-indigo-400" />
+              </button>
+            </div>
           </div>
 
           <div className="space-y-2">

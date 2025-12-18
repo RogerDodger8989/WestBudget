@@ -19,10 +19,25 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 CORS(app, resources={
     r"/api/*": {
         "origins": ["http://localhost:5100", "http://192.168.1.232:5100", "http://localhost:3000"],
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"]
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+        "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
+        "supports_credentials": True,
+        "expose_headers": ["Content-Type"]
     }
-})
+}, supports_credentials=True)
+
+# Add CORS headers manually for all routes as fallback
+@app.after_request
+def after_request(response):
+    origin = request.headers.get('Origin')
+    allowed_origins = ["http://localhost:5100", "http://192.168.1.232:5100", "http://localhost:3000"]
+    
+    if origin in allowed_origins:
+        response.headers.add('Access-Control-Allow-Origin', origin)
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS,PATCH')
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    return response
 
 # Ensure upload folder exists
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -37,6 +52,7 @@ def init_db():
     db_exists = os.path.exists(DATABASE)
     
     conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
     
     if not db_exists:
         print("🗄️  Initializing database...")
@@ -44,6 +60,20 @@ def init_db():
             conn.executescript(f.read())
         conn.commit()
         print("✅ Database initialized successfully!")
+    else:
+        # Check and add missing columns to existing database
+        cursor.execute("PRAGMA table_info(agreements)")
+        columns = [col[1] for col in cursor.fetchall()]
+        
+        if 'start_date' not in columns:
+            print("⚠️  Adding start_date column to agreements table...")
+            cursor.execute('ALTER TABLE agreements ADD COLUMN start_date TEXT')
+            conn.commit()
+        
+        if 'end_date' not in columns:
+            print("⚠️  Adding end_date column to agreements table...")
+            cursor.execute('ALTER TABLE agreements ADD COLUMN end_date TEXT')
+            conn.commit()
     
     conn.close()
 
@@ -256,8 +286,8 @@ def create_agreement():
     cursor = conn.cursor()
     
     cursor.execute('''
-        INSERT INTO agreements (name, provider, cost, frequency, next_payment, status, category, icon, notice)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO agreements (name, provider, cost, frequency, next_payment, status, category, icon, notice, start_date, end_date)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         data['name'],
         data['provider'],
@@ -267,7 +297,9 @@ def create_agreement():
         data.get('status', 'Aktiv'),
         data['category'],
         data.get('icon', '📄'),
-        data.get('notice', '')
+        data.get('notice', ''),
+        data.get('start_date', ''),
+        data.get('end_date', '')
     ))
     
     agreement_id = cursor.lastrowid
@@ -292,11 +324,23 @@ def update_agreement(agreement_id):
     conn = get_db()
     cursor = conn.cursor()
     
+    # Ensure start_date and end_date columns exist
+    cursor.execute("PRAGMA table_info(agreements)")
+    columns = [col[1] for col in cursor.fetchall()]
+    
+    if 'start_date' not in columns:
+        cursor.execute('ALTER TABLE agreements ADD COLUMN start_date TEXT')
+        conn.commit()
+    
+    if 'end_date' not in columns:
+        cursor.execute('ALTER TABLE agreements ADD COLUMN end_date TEXT')
+        conn.commit()
+    
     # Build dynamic UPDATE query
     update_fields = []
     values = []
     
-    allowed_fields = ['name', 'provider', 'cost', 'frequency', 'next_payment', 'status', 'category', 'icon', 'notice', 'images']
+    allowed_fields = ['name', 'provider', 'cost', 'frequency', 'next_payment', 'status', 'category', 'icon', 'notice', 'images', 'start_date', 'end_date']
     
     for field in allowed_fields:
         if field in data:
@@ -309,6 +353,7 @@ def update_agreement(agreement_id):
                 values.append(data[field])
     
     if not update_fields:
+        conn.close()
         return jsonify({'error': 'No valid fields to update'}), 400
     
     update_fields.append('updated_at = ?')
@@ -317,8 +362,12 @@ def update_agreement(agreement_id):
     
     query = f"UPDATE agreements SET {', '.join(update_fields)} WHERE id = ?"
     
-    cursor.execute(query, values)
-    conn.commit()
+    try:
+        cursor.execute(query, values)
+        conn.commit()
+    except sqlite3.OperationalError as e:
+        conn.close()
+        return jsonify({'error': f'Database error: {str(e)}'}), 500
     
     if cursor.rowcount == 0:
         conn.close()
@@ -504,6 +553,16 @@ def upload_agreement_image(agreement_id):
         if 'images' not in columns:
             print("⚠️ [Backend] Lägger till images-kolumn...")
             cursor.execute('ALTER TABLE agreements ADD COLUMN images TEXT DEFAULT "[]"')
+            conn.commit()
+        
+        # Check if start_date and end_date columns exist, if not add them
+        if 'start_date' not in columns:
+            print("⚠️ [Backend] Lägger till start_date-kolumn...")
+            cursor.execute('ALTER TABLE agreements ADD COLUMN start_date TEXT')
+            conn.commit()
+        if 'end_date' not in columns:
+            print("⚠️ [Backend] Lägger till end_date-kolumn...")
+            cursor.execute('ALTER TABLE agreements ADD COLUMN end_date TEXT')
             conn.commit()
         
         # Get current images
@@ -832,6 +891,150 @@ def merge_categories():
     except Exception as e:
         conn.close()
         return jsonify({'error': str(e)}), 500
+
+
+# ============================================================================
+# CATEGORY RULES ENDPOINTS
+# ============================================================================
+
+@app.route('/api/category-rules', methods=['GET'])
+def get_category_rules():
+    """Get all category rules"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Check if table exists, create if not
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='category_rules'")
+    if not cursor.fetchone():
+        cursor.execute('''
+            CREATE TABLE category_rules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                description_pattern TEXT NOT NULL,
+                category TEXT NOT NULL,
+                is_active BOOLEAN NOT NULL DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.commit()
+    
+    cursor.execute('SELECT * FROM category_rules WHERE is_active = 1 ORDER BY description_pattern')
+    rules = [dict(row) for row in cursor.fetchall()]
+    
+    conn.close()
+    return jsonify(rules), 200
+
+
+@app.route('/api/category-rules', methods=['POST'])
+def create_category_rule():
+    """Create a new category rule"""
+    data = request.get_json()
+    
+    if not data or not data.get('description_pattern') or not data.get('category'):
+        return jsonify({'error': 'Missing description_pattern or category'}), 400
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Check if table exists
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='category_rules'")
+    if not cursor.fetchone():
+        cursor.execute('''
+            CREATE TABLE category_rules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                description_pattern TEXT NOT NULL,
+                category TEXT NOT NULL,
+                is_active BOOLEAN NOT NULL DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.commit()
+    
+    cursor.execute('''
+        INSERT INTO category_rules (description_pattern, category, is_active)
+        VALUES (?, ?, ?)
+    ''', (
+        data['description_pattern'],
+        data['category'],
+        data.get('is_active', True)
+    ))
+    
+    rule_id = cursor.lastrowid
+    conn.commit()
+    
+    cursor.execute('SELECT * FROM category_rules WHERE id = ?', (rule_id,))
+    new_rule = dict(cursor.fetchone())
+    
+    conn.close()
+    return jsonify(new_rule), 201
+
+
+@app.route('/api/category-rules/<int:rule_id>', methods=['PUT'])
+def update_category_rule(rule_id):
+    """Update a category rule"""
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    update_fields = []
+    values = []
+    
+    if 'description_pattern' in data:
+        update_fields.append('description_pattern = ?')
+        values.append(data['description_pattern'])
+    
+    if 'category' in data:
+        update_fields.append('category = ?')
+        values.append(data['category'])
+    
+    if 'is_active' in data:
+        update_fields.append('is_active = ?')
+        values.append(data['is_active'])
+    
+    if not update_fields:
+        conn.close()
+        return jsonify({'error': 'No valid fields to update'}), 400
+    
+    update_fields.append('updated_at = ?')
+    values.append(datetime.now().isoformat())
+    values.append(rule_id)
+    
+    query = f"UPDATE category_rules SET {', '.join(update_fields)} WHERE id = ?"
+    
+    cursor.execute(query, values)
+    conn.commit()
+    
+    if cursor.rowcount == 0:
+        conn.close()
+        return jsonify({'error': 'Rule not found'}), 404
+    
+    cursor.execute('SELECT * FROM category_rules WHERE id = ?', (rule_id,))
+    updated_rule = dict(cursor.fetchone())
+    
+    conn.close()
+    return jsonify(updated_rule), 200
+
+
+@app.route('/api/category-rules/<int:rule_id>', methods=['DELETE'])
+def delete_category_rule(rule_id):
+    """Delete a category rule"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('DELETE FROM category_rules WHERE id = ?', (rule_id,))
+    conn.commit()
+    
+    if cursor.rowcount == 0:
+        conn.close()
+        return jsonify({'error': 'Rule not found'}), 404
+    
+    conn.close()
+    return jsonify({'message': 'Rule deleted successfully'}), 200
 
 
 # ============================================================================

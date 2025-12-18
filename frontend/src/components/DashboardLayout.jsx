@@ -147,14 +147,65 @@ const DashboardLayout = ({
     }
   };
 
-  const handleImportTransactions = (newTransactions) => {
-    const startId = Math.max(...transactions.map(t => t.id)) + 1;
-    const transactionsWithIds = newTransactions.map((t, index) => ({
-      ...t,
-      id: startId + index
-    }));
-    setTransactions([...transactionsWithIds, ...transactions]);
-    setIsImportModalOpen(false);
+  const handleImportTransactions = async (newTransactions) => {
+    try {
+      setIsImportModalOpen(false);
+      
+      // Create transactions via API - stop at first error
+      const createdTransactions = [];
+      for (let i = 0; i < newTransactions.length; i++) {
+        const transaction = newTransactions[i];
+        
+        // Convert amount display to numeric value for API
+        // Remove "kr", spaces, and convert to number
+        let amountValue = transaction.amount.replace(/[^\d.,-]/g, '');
+        // Handle comma as decimal separator
+        if (amountValue.includes(',') && !amountValue.includes('.')) {
+          amountValue = amountValue.replace(',', '.');
+        }
+        const numericAmount = parseFloat(amountValue);
+        
+        if (isNaN(numericAmount)) {
+          const errorMsg = `Ogiltigt belopp för transaktion "${transaction.title}" (rad ${i + 1})`;
+          showToast(errorMsg, { type: 'error', description: 'Importen stoppades.' });
+          throw new Error(errorMsg);
+        }
+        
+        const transactionData = {
+          title: transaction.title,
+          date: transaction.date,
+          amount: numericAmount.toString(),
+          type: transaction.type,
+          category: transaction.category,
+          status: transaction.status || 'Bokförd',
+          note: transaction.note || '',
+          receipt: false
+        };
+        
+        try {
+          const created = await api.createTransaction(transactionData);
+          createdTransactions.push(created);
+        } catch (err) {
+          // Stop at first error and show detailed message
+          const errorMsg = err.message || 'Okänt fel';
+          const detailedMsg = `Kunde inte importera transaktion "${transaction.title}" (rad ${i + 1}): ${errorMsg}`;
+          showToast(detailedMsg, { type: 'error', description: 'Importen stoppades vid första felet.' });
+          throw new Error(detailedMsg);
+        }
+      }
+      
+      // Reload data to get all transactions with IDs
+      if (reloadData) {
+        await reloadData();
+      }
+      
+      showToast(`${createdTransactions.length} transaktion${createdTransactions.length !== 1 ? 'er' : ''} importerade!`, {
+        type: 'success'
+      });
+    } catch (error) {
+      console.error('❌ Kunde inte importera transaktioner:', error);
+      showToast('Kunde inte importera transaktioner. Försök igen.', { type: 'error' });
+    }
   };
 
   const handleAddAgreement = async (agreementData) => {
@@ -323,6 +374,8 @@ const DashboardLayout = ({
         <ImportModal 
           onClose={() => setIsImportModalOpen(false)} 
           onImport={handleImportTransactions}
+          categories={categories.map(c => c.name || c)}
+          existingTransactions={transactions}
         />
       )}
 

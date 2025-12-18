@@ -16,6 +16,9 @@ const SettingsTab = ({ getTitle, reloadData }) => {
   const [newCategoryName, setNewCategoryName] = useState('');
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
+  const [categoryRules, setCategoryRules] = useState([]);
+  const [newRulePattern, setNewRulePattern] = useState('');
+  const [newRuleCategory, setNewRuleCategory] = useState('');
   
   // Hitta dubletter (kategorier med samma namn, case-insensitive)
   const duplicates = useMemo(() => {
@@ -35,7 +38,17 @@ const SettingsTab = ({ getTitle, reloadData }) => {
   useEffect(() => {
     loadSettings();
     loadCategories();
+    loadCategoryRules();
   }, []);
+
+  const loadCategoryRules = async () => {
+    try {
+      const rules = await api.getCategoryRules();
+      setCategoryRules(rules);
+    } catch (error) {
+      console.error('Kunde inte ladda kategoriregler:', error);
+    }
+  };
 
   const loadSettings = async () => {
     try {
@@ -529,6 +542,135 @@ const SettingsTab = ({ getTitle, reloadData }) => {
                 </div>
               ))
             )}
+          </div>
+        </div>
+
+        {/* Category Rules Section */}
+        <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl">
+                <Settings className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Kategoriregler</h3>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">Automatisk kategorisering vid import</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {/* Add new rule */}
+            <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700">
+              <h4 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-3">Lägg till ny regel</h4>
+              <div className="grid grid-cols-2 gap-3">
+                <input
+                  type="text"
+                  value={newRulePattern}
+                  onChange={(e) => setNewRulePattern(e.target.value)}
+                  placeholder="Beskrivning innehåller..."
+                  className="px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                />
+                <select
+                  value={newRuleCategory}
+                  onChange={(e) => setNewRuleCategory(e.target.value)}
+                  className="px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                >
+                  <option value="">Välj kategori...</option>
+                  {categories.map(cat => (
+                    <option key={cat.id} value={cat.name}>{cat.name}</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                onClick={async () => {
+                  if (!newRulePattern.trim() || !newRuleCategory) {
+                    showToast('Fyll i både mönster och kategori', { type: 'error' });
+                    return;
+                  }
+                  try {
+                    await api.createCategoryRule({
+                      description_pattern: newRulePattern.trim(),
+                      category: newRuleCategory,
+                      is_active: true
+                    });
+                    setNewRulePattern('');
+                    setNewRuleCategory('');
+                    await loadCategoryRules();
+                    showToast('Regel skapad!', { type: 'success' });
+                  } catch (err) {
+                    showToast('Kunde inte skapa regel: ' + (err.message || 'Okänt fel'), { type: 'error' });
+                  }
+                }}
+                disabled={!newRulePattern.trim() || !newRuleCategory}
+                className="mt-3 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Lägg till regel
+              </button>
+            </div>
+
+            {/* Existing rules */}
+            <div className="space-y-2">
+              {categoryRules.length === 0 ? (
+                <p className="text-sm text-zinc-500 text-center py-4">Inga regler skapade än</p>
+              ) : (
+                categoryRules.map(rule => (
+                  <div
+                    key={rule.id}
+                    className={`p-3 rounded-lg border flex items-center justify-between ${
+                      rule.is_active
+                        ? 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700'
+                        : 'bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 opacity-60'
+                    }`}
+                  >
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-zinc-900 dark:text-white">
+                        Om beskrivning innehåller <span className="font-mono text-indigo-600 dark:text-indigo-400">"{rule.description_pattern}"</span>
+                      </p>
+                      <p className="text-xs text-zinc-500 mt-1">
+                        → Sätt kategori: <span className="font-semibold">{rule.category}</span>
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={async () => {
+                          try {
+                            await api.updateCategoryRule(rule.id, { is_active: !rule.is_active });
+                            await loadCategoryRules();
+                          } catch (err) {
+                            showToast('Kunde inte uppdatera regel', { type: 'error' });
+                          }
+                        }}
+                        className={`px-3 py-1 text-xs rounded-lg transition-colors ${
+                          rule.is_active
+                            ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                            : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400'
+                        }`}
+                      >
+                        {rule.is_active ? 'Aktiv' : 'Inaktiv'}
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`Är du säker på att du vill ta bort regeln?\n\n"${rule.description_pattern}" → ${rule.category}`)) {
+                            return;
+                          }
+                          try {
+                            await api.deleteCategoryRule(rule.id);
+                            await loadCategoryRules();
+                            showToast('Regel borttagen', { type: 'success' });
+                          } catch (err) {
+                            showToast('Kunde inte ta bort regel', { type: 'error' });
+                          }
+                        }}
+                        className="p-1.5 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded transition-colors"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </div>
 

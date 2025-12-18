@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FileText, X, Calendar, DollarSign, Tag, AlertCircle } from 'lucide-react';
 
 const AddAgreementModal = ({ onClose, onSave, categories = [] }) => {
@@ -8,6 +8,7 @@ const AddAgreementModal = ({ onClose, onSave, categories = [] }) => {
     cost: '',
     frequency: 'Månadsvis',
     startDate: new Date().toISOString().split('T')[0], // Idag som default
+    endDate: '',
     status: 'Aktiv',
     category: categories[0] || '',
     icon: '📄',
@@ -15,6 +16,10 @@ const AddAgreementModal = ({ onClose, onSave, categories = [] }) => {
   });
 
   const [errors, setErrors] = useState({});
+  const startDateRef = useRef(null);
+  const endDateRef = useRef(null);
+  const startDatePickerRef = useRef(null);
+  const endDatePickerRef = useRef(null);
 
   // Beräkna nästa betalning baserat på startdatum och frekvens
   const calculateNextPayment = (startDate, frequency) => {
@@ -88,7 +93,9 @@ const AddAgreementModal = ({ onClose, onSave, categories = [] }) => {
       status: formData.status,
       category: formData.category,
       icon: formData.icon || '📄',
-      notice: formData.notice.trim()
+      notice: formData.notice.trim(),
+      start_date: formData.startDate || '',
+      end_date: formData.endDate || ''
     };
 
     await onSave(agreementData);
@@ -186,7 +193,7 @@ const AddAgreementModal = ({ onClose, onSave, categories = [] }) => {
 
             <div className="space-y-2">
               <label className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
-                <Calendar size={14} /> Betalningsfrekvens *
+                <Calendar size={14} className="text-indigo-500 dark:text-indigo-400" /> Betalningsfrekvens *
               </label>
               <select
                 value={formData.frequency}
@@ -200,26 +207,63 @@ const AddAgreementModal = ({ onClose, onSave, categories = [] }) => {
             </div>
           </div>
 
-          {/* Startdatum & Status */}
+          {/* Startdatum & Slutdatum */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
-                <Calendar size={14} /> Startdatum *
+                <Calendar size={14} className="text-indigo-500 dark:text-indigo-400" /> Startdatum *
               </label>
-              <input
-                type="date"
-                value={formData.startDate}
-                onChange={(e) => handleChange('startDate', e.target.value)}
-                className={`w-full bg-zinc-50 dark:bg-zinc-800 border rounded-xl px-4 py-3 text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 ${
-                  errors.startDate ? 'border-rose-500' : 'border-zinc-200 dark:border-zinc-700'
-                }`}
-              />
+              <div className="relative">
+                <input
+                  ref={startDateRef}
+                  type="text"
+                  value={formData.startDate}
+                  onChange={(e) => {
+                    let value = e.target.value.replace(/\D/g, ''); // Only numbers
+                    
+                    // Limit: 4 digits for year, 2 for month, 2 for day
+                    if (value.length > 8) value = value.slice(0, 8);
+                    
+                    // Format as YYYY-MM-DD while typing
+                    let formatted = '';
+                    if (value.length <= 4) {
+                      formatted = value;
+                    } else if (value.length <= 6) {
+                      formatted = value.slice(0, 4) + '-' + value.slice(4);
+                    } else {
+                      formatted = value.slice(0, 4) + '-' + value.slice(4, 6) + '-' + value.slice(6, 8);
+                    }
+                    
+                    handleChange('startDate', formatted);
+                  }}
+                  placeholder="ÅÅÅÅ-MM-DD"
+                  maxLength={10}
+                  className={`w-full bg-zinc-50 dark:bg-zinc-800 border rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 font-mono ${
+                    errors.startDate ? 'border-rose-500' : 'border-zinc-200 dark:border-zinc-700'
+                  }`}
+                />
+                <input
+                  ref={startDatePickerRef}
+                  type="date"
+                  value={formData.startDate}
+                  onChange={(e) => handleChange('startDate', e.target.value)}
+                  className="absolute opacity-0 pointer-events-none"
+                  style={{ width: 0, height: 0 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => startDatePickerRef.current?.showPicker?.() || startDatePickerRef.current?.click()}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded transition-colors"
+                >
+                  <Calendar size={18} className="text-indigo-500 dark:text-indigo-400" />
+                </button>
+              </div>
               {errors.startDate && (
                 <p className="text-xs text-rose-500 flex items-center gap-1">
                   <AlertCircle size={12} /> {errors.startDate}
                 </p>
               )}
-              {formData.startDate && formData.frequency && (
+              {formData.startDate && formData.frequency && formData.startDate.match(/^\d{4}-\d{2}-\d{2}$/) && (
                 <p className="text-xs text-zinc-500">
                   Nästa betalning: {calculateNextPayment(formData.startDate, formData.frequency)}
                 </p>
@@ -228,18 +272,71 @@ const AddAgreementModal = ({ onClose, onSave, categories = [] }) => {
 
             <div className="space-y-2">
               <label className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
-                <Tag size={14} /> Status *
+                <Calendar size={14} className="text-indigo-500 dark:text-indigo-400" /> Slutdatum
               </label>
-              <select
-                value={formData.status}
-                onChange={(e) => handleChange('status', e.target.value)}
-                className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
-              >
-                <option value="Aktiv">Aktiv</option>
-                <option value="Uppsagd">Uppsagd</option>
-                <option value="Väntar på motpart">Väntar på motpart</option>
-              </select>
+              <div className="relative">
+                <input
+                  ref={endDateRef}
+                  type="text"
+                  value={formData.endDate}
+                  onChange={(e) => {
+                    let value = e.target.value.replace(/\D/g, ''); // Only numbers
+                    
+                    // Limit: 4 digits for year, 2 for month, 2 for day
+                    if (value.length > 8) value = value.slice(0, 8);
+                    
+                    // Format as YYYY-MM-DD while typing
+                    let formatted = '';
+                    if (value.length <= 4) {
+                      formatted = value;
+                    } else if (value.length <= 6) {
+                      formatted = value.slice(0, 4) + '-' + value.slice(4);
+                    } else {
+                      formatted = value.slice(0, 4) + '-' + value.slice(4, 6) + '-' + value.slice(6, 8);
+                    }
+                    
+                    handleChange('endDate', formatted);
+                  }}
+                  placeholder="ÅÅÅÅ-MM-DD"
+                  maxLength={10}
+                  className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                />
+                <input
+                  ref={endDatePickerRef}
+                  type="date"
+                  value={formData.endDate}
+                  onChange={(e) => handleChange('endDate', e.target.value)}
+                  className="absolute opacity-0 pointer-events-none"
+                  style={{ width: 0, height: 0 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => endDatePickerRef.current?.showPicker?.() || endDatePickerRef.current?.click()}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded transition-colors"
+                >
+                  <Calendar size={18} className="text-indigo-500 dark:text-indigo-400" />
+                </button>
+              </div>
+              <p className="text-xs text-zinc-500">
+                Valfritt - lämna tomt för pågående avtal
+              </p>
             </div>
+          </div>
+
+          {/* Status */}
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
+              <Tag size={14} /> Status *
+            </label>
+            <select
+              value={formData.status}
+              onChange={(e) => handleChange('status', e.target.value)}
+              className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="Aktiv">Aktiv</option>
+              <option value="Uppsagd">Uppsagd</option>
+              <option value="Väntar på motpart">Väntar på motpart</option>
+            </select>
           </div>
 
           {/* Kategori & Ikon */}

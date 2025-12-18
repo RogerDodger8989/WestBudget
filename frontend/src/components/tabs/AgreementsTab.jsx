@@ -204,7 +204,7 @@ const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreeme
           <div className="col-span-2 hidden sm:block">Nästa Betalning</div>
           <div className="col-span-1 text-center">Notering</div>
           <div className="col-span-1 text-center">Bild</div>
-          <div className="col-span-2 sm:col-span-2 text-right">Status</div>
+          <div className="col-span-2 sm:col-span-2 text-left">Status</div>
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -244,7 +244,7 @@ const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreeme
 
                 <div className="col-span-2 hidden sm:block">
                   <div className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-                    <CalendarClock size={14} className="text-zinc-400" />
+                    <CalendarClock size={14} className="text-indigo-500 dark:text-indigo-400" />
                     {(() => {
                       const nextPayment = agreement.next_payment || agreement.nextPayment;
                       if (!nextPayment) return 'Ingen datum';
@@ -316,7 +316,12 @@ const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreeme
                   })()}
                 </div>
 
-                <div className="col-span-2 sm:col-span-2 flex justify-end">
+                <div className="col-span-2 sm:col-span-2 flex justify-start items-center gap-2">
+                  {agreement.start_date && agreement.end_date && (
+                    <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-mono whitespace-nowrap">
+                      {agreement.start_date} → {agreement.end_date}
+                    </span>
+                  )}
                   <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase border ${
                     agreement.status === 'Aktiv' 
                       ? 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20' 

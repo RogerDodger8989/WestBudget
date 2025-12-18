@@ -146,5 +146,36 @@ export const api = {
       body: JSON.stringify(settings),
     });
     return handleResponse(res);
-  }
+  },
+
+  // --- Category Rules ---
+  getCategoryRules: async () => {
+    const res = await fetch(`${API_BASE_URL}/category-rules`);
+    return handleResponse(res);
+  },
+
+  createCategoryRule: async (data) => {
+    const res = await fetch(`${API_BASE_URL}/category-rules`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse(res);
+  },
+
+  updateCategoryRule: async (id, data) => {
+    const res = await fetch(`${API_BASE_URL}/category-rules/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse(res);
+  },
+
+  deleteCategoryRule: async (id) => {
+    const res = await fetch(`${API_BASE_URL}/category-rules/${id}`, {
+      method: 'DELETE',
+    });
+    return handleResponse(res);
+  },
 };

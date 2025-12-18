@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS agreements (
     icon TEXT DEFAULT '📄',
     notice TEXT DEFAULT '',
     images TEXT DEFAULT '[]',
+    start_date TEXT,
+    end_date TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -47,6 +49,16 @@ CREATE TABLE IF NOT EXISTS categories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT UNIQUE NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Category rules table for auto-categorization
+CREATE TABLE IF NOT EXISTS category_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    description_pattern TEXT NOT NULL,
+    category TEXT NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Indexes for performance

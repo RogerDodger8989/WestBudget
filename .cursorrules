@@ -66,11 +66,15 @@ Grid: Use CSS Grid for dashboards (grid-cols-1 md:grid-cols-3).
 
 Responsiveness: Always ensure the layout works on mobile (flex-col) but prioritize Desktop/Tablet landscape view since it's an Electron app.
 
+Text Alignment: Always use left alignment (text-left, justify-start) for status columns, dates, and content. Right alignment (text-right, justify-end) should only be used for action buttons in modals/footers, or for numerical values like amounts that benefit from right alignment for comparison.
+
 Coding Rules
 
 Dark Mode First: Always include dark: classes for every color definition.
 
 Lucide Icons: Use explicit imports: import { Wallet, Settings } from 'lucide-react';.
+
+Calendar Icons: All Calendar and CalendarClock icons MUST use indigo color: className="text-indigo-500 dark:text-indigo-400". This applies to all calendar icons throughout the application, including labels, date picker buttons, and date-related UI elements.
 
 State Management: Use useState for UI states (modals, tabs, hover effects).
 
