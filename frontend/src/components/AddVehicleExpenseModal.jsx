@@ -1,16 +1,16 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { DollarSign, X, Calendar, Tag, FileText, AlertCircle, Car, Gauge } from 'lucide-react';
 import { api } from '../api';
 
-const AddVehicleExpenseModal = ({ onClose, onSave, vehicles = [], vehicleId = null }) => {
+const AddVehicleExpenseModal = ({ onClose, onSave, vehicles = [], vehicleId = null, expense = null }) => {
   const [formData, setFormData] = useState({
-    vehicle_id: vehicleId || '',
-    category: '',
-    amount: '',
-    date: new Date().toISOString().split('T')[0],
-    description: '',
-    note: '',
-    odometer_at_purchase: ''
+    vehicle_id: expense?.vehicle_id || vehicleId || '',
+    category: expense?.category || '',
+    amount: expense?.amount || '',
+    date: expense?.date || new Date().toISOString().split('T')[0],
+    description: expense?.description || '',
+    note: expense?.note || '',
+    odometer_at_purchase: expense?.odometer_at_purchase || ''
   });
 
   const [errors, setErrors] = useState({});
@@ -93,11 +93,13 @@ const AddVehicleExpenseModal = ({ onClose, onSave, vehicles = [], vehicleId = nu
         odometer_at_purchase: formData.odometer_at_purchase ? parseInt(formData.odometer_at_purchase) : null
       };
 
-      await onSave(expenseData);
+      await onSave(expenseData, expense?.id);
+      // Stäng bara modalen om det lyckades (ingen catch här)
       onClose();
     } catch (error) {
       console.error('Error saving vehicle expense:', error);
       setErrors({ submit: error.message || 'Kunde inte spara kostnad' });
+      // Stäng INTE modalen vid fel - låt användaren se felet
     } finally {
       setLoading(false);
     }
@@ -107,14 +109,18 @@ const AddVehicleExpenseModal = ({ onClose, onSave, vehicles = [], vehicleId = nu
   const selectedVehicle = vehicles.find(v => v.id === parseInt(formData.vehicle_id));
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 px-6 py-4 flex items-center justify-between z-10">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      
+      <div className="relative w-full max-w-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[90vh]">
+        <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl">
               <DollarSign className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
             </div>
-            <h2 className="text-xl font-bold text-zinc-900 dark:text-white">Lägg till Fordonskostnad</h2>
+            <h2 className="text-xl font-bold text-zinc-900 dark:text-white">
+              {expense ? 'Redigera Fordonskostnad' : 'Lägg till Fordonskostnad'}
+            </h2>
           </div>
           <button
             onClick={onClose}
@@ -124,7 +130,7 @@ const AddVehicleExpenseModal = ({ onClose, onSave, vehicles = [], vehicleId = nu
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6 min-h-0">
           {errors.submit && (
             <div className="p-3 bg-rose-100 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800 rounded-xl flex items-center gap-2 text-rose-700 dark:text-rose-400">
               <AlertCircle className="w-4 h-4" />
@@ -221,7 +227,7 @@ const AddVehicleExpenseModal = ({ onClose, onSave, vehicles = [], vehicleId = nu
                   onChange={(e) => handleChange('date', e.target.value)}
                   placeholder="YYYY-MM-DD"
                   maxLength={10}
-                  className={`w-full bg-zinc-50 dark:bg-zinc-800 border rounded-xl px-4 py-3 pl-10 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-mono ${
+                  className={`w-full bg-zinc-50 dark:bg-zinc-800 border rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-mono ${
                     errors.date ? 'border-rose-500' : 'border-zinc-200 dark:border-zinc-700'
                   }`}
                 />
@@ -235,11 +241,15 @@ const AddVehicleExpenseModal = ({ onClose, onSave, vehicles = [], vehicleId = nu
                     }
                   }}
                   className="absolute opacity-0 pointer-events-none"
+                  style={{ width: 0, height: 0 }}
                 />
-                <Calendar
-                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-500 dark:text-indigo-400 cursor-pointer"
-                  onClick={() => datePickerRef.current?.showPicker()}
-                />
+                <button
+                  type="button"
+                  onClick={() => datePickerRef.current?.showPicker?.() || datePickerRef.current?.click()}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded transition-colors"
+                >
+                  <Calendar size={18} className="text-indigo-500 dark:text-indigo-400" />
+                </button>
               </div>
               {errors.date && (
                 <p className="mt-1 text-xs text-rose-500">{errors.date}</p>
@@ -317,7 +327,7 @@ const AddVehicleExpenseModal = ({ onClose, onSave, vehicles = [], vehicleId = nu
                   Sparar...
                 </>
               ) : (
-                'Spara Kostnad'
+                expense ? 'Uppdatera Kostnad' : 'Spara Kostnad'
               )}
             </button>
           </div>

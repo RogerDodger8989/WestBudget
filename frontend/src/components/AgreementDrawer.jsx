@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Tag, FileText, UploadCloud, Trash2, ChevronRight, Calendar, DollarSign, Building2, Image as ImageIcon } from 'lucide-react';
+import { X, Tag, FileText, UploadCloud, Trash2, ChevronRight, Calendar, DollarSign, Building2, Image as ImageIcon, Car } from 'lucide-react';
 import { formatAmount } from '../utils/formatAmount';
 
-const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, categories }) => {
+const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, categories, vehicles = [] }) => {
   const fileInputRef = useRef(null);
   const [formData, setFormData] = useState({
     name: agreement.name || '',
@@ -32,10 +32,14 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
   const [images, setImages] = useState(parseImages(agreement.images)); // Array med bildsökvägar
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [linkedVehicleId, setLinkedVehicleId] = useState(null);
   const startDatePickerRef = useRef(null);
   const endDatePickerRef = useRef(null);
   const nextPaymentPickerRef = useRef(null);
 
+  // Hitta kopplat fordon (om det finns)
+  const linkedVehicle = vehicles.find(v => v.agreement_id === agreement.id);
+  
   // Uppdatera state när agreement ändras
   useEffect(() => {
     setFormData({
@@ -52,7 +56,14 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
       end_date: agreement.end_date || ''
     });
     setImages(parseImages(agreement.images));
-  }, [agreement]);
+    
+    // Uppdatera linkedVehicleId
+    if (linkedVehicle) {
+      setLinkedVehicleId(linkedVehicle.id);
+    } else {
+      setLinkedVehicleId(null);
+    }
+  }, [agreement, vehicles, linkedVehicle]);
 
   // Beräkna nästa betalning vid ändring av startdatum eller frekvens
   const calculateNextPayment = (currentDate, frequency) => {
@@ -130,7 +141,8 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
     try {
       await onSave(agreement.id, {
         ...formData,
-        images: images // Inkludera bilderna i uppdateringen
+        images: images, // Inkludera bilderna i uppdateringen
+        linked_vehicle_id: linkedVehicleId // Skicka med kopplat fordon
       });
     } finally {
       setIsSaving(false);
@@ -456,6 +468,40 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
             <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 rotate-90 pointer-events-none" />
           </div>
         </div>
+
+        {/* Koppla till fordon (om försäkring) */}
+        {formData.category === 'Försäkring' && vehicles && vehicles.length > 0 && (
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
+              <Car size={14} /> Koppla till fordon
+            </label>
+            <div className="relative">
+              <select
+                value={linkedVehicleId || ''}
+                onChange={(e) => {
+                  const vehicleId = e.target.value ? parseInt(e.target.value) : null;
+                  setLinkedVehicleId(vehicleId);
+                }}
+                className="w-full appearance-none bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none cursor-pointer"
+              >
+                <option value="">Ingen koppling</option>
+                {vehicles
+                  .filter(v => v.status === 'Aktiv')
+                  .map(vehicle => (
+                    <option key={vehicle.id} value={vehicle.id}>
+                      {vehicle.make_model} ({vehicle.registration_number})
+                    </option>
+                  ))}
+              </select>
+              <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 rotate-90 pointer-events-none" />
+            </div>
+            {linkedVehicle && (
+              <p className="text-xs text-zinc-500 mt-1">
+                Kopplad till: {linkedVehicle.make_model} ({linkedVehicle.registration_number})
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Ikon */}
         <div className="space-y-2">

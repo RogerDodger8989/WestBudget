@@ -7,7 +7,7 @@ import AgreementFilterModal from '../AgreementFilterModal';
 import { useToast } from '../../contexts/ToastContext';
 import { api } from '../../api';
 
-const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreement, setSelectedAgreement, setEditingNoteAgreementId, reloadData }) => {
+const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreement, setSelectedAgreement, setEditingNoteAgreementId, reloadData, vehicles = [] }) => {
   const { showToast } = useToast();
   const [lightboxImages, setLightboxImages] = useState(null);
   const [lightboxIndex, setLightboxIndex] = useState(0);
@@ -796,6 +796,17 @@ const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreeme
                   <span className="px-2 py-1 rounded text-xs font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700">
                     {agreement.category}
                   </span>
+                  {agreement.category === 'Försäkring' && vehicles && vehicles.length > 0 && (() => {
+                    const linkedVehicle = vehicles.find(v => v.agreement_id === agreement.id);
+                    if (linkedVehicle) {
+                      return (
+                        <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-1 font-medium">
+                          🚗 {linkedVehicle.make_model} ({linkedVehicle.registration_number})
+                        </p>
+                      );
+                    }
+                    return null;
+                  })()}
                 </div>
 
                 <div className="col-span-2 sm:col-span-2">

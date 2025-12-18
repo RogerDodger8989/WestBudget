@@ -27,8 +27,8 @@ const CustomDateRangeModal = ({ isOpen, onClose, onApply, currentStartDate, curr
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       
-      <div className="relative w-full max-w-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl">
-        <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
+      <div className="relative w-full max-w-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[90vh]">
+        <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between flex-shrink-0">
           <h2 className="text-xl font-bold text-zinc-900 dark:text-white">Välj Datumperiod</h2>
           <button 
             onClick={onClose}
@@ -38,7 +38,7 @@ const CustomDateRangeModal = ({ isOpen, onClose, onApply, currentStartDate, curr
           </button>
         </div>
 
-        <div className="p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto p-6 space-y-6 min-h-0">
           {/* Från datum */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center gap-2">

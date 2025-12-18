@@ -140,34 +140,41 @@ const VehiclesTab = ({
     }
   };
 
-  // Handle export
-  const handleExport = () => {
-    const headers = ['Datum', 'Fordon', 'Registreringsnummer', 'Kategori', 'Belopp', 'Beskrivning', 'Notering'];
-    const rows = filteredExpenses.map(e => {
-      const vehicle = vehicles.find(v => v.id === e.vehicle_id);
-      return [
-        e.date || '',
-        vehicle?.make_model || '',
-        vehicle?.registration_number || '',
-        e.category || '',
-        e.amount || 0,
-        e.description || '',
-        e.note || ''
-      ];
-    });
+  // Handle CSV export
+  const handleExportCSV = () => {
+    if (filteredExpenses.length === 0) {
+      showToast('Inga kostnader att exportera', { type: 'info' });
+      return;
+    }
 
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
-    ].join('\n');
-
-    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    
     const startDate = customStartDate || (dateRange === 'month' ? new Date().toISOString().split('T')[0].slice(0, 7) + '-01' : '');
     const endDate = customEndDate || new Date().toISOString().split('T')[0];
     const filename = `Westbudget Fordonskostnader ${startDate.replace(/-/g, '')}-${endDate.replace(/-/g, '')}.csv`;
+
+    const headers = ['Datum', 'Fordon', 'Registreringsnummer', 'Kategori', 'Belopp', 'Beskrivning', 'Mätarställning', 'Notering'];
+    
+    const csvRows = [
+      headers.join(','),
+      ...filteredExpenses.map(e => {
+        const vehicle = vehicles.find(v => v.id === e.vehicle_id);
+        const row = [
+          e.date || '',
+          `"${(vehicle?.make_model || '').replace(/"/g, '""')}"`,
+          `"${(vehicle?.registration_number || '').replace(/"/g, '""')}"`,
+          `"${(e.category || '').replace(/"/g, '""')}"`,
+          e.amount || 0,
+          `"${(e.description || '').replace(/"/g, '""')}"`,
+          e.odometer_at_purchase || '',
+          `"${(e.note || '').replace(/"/g, '""')}"`
+        ];
+        return row.join(',');
+      })
+    ];
+
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
     
     link.setAttribute('href', url);
     link.setAttribute('download', filename);
@@ -175,6 +182,96 @@ const VehiclesTab = ({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    
+    showToast(`Exporterade ${filteredExpenses.length} kostnader`, { type: 'success' });
+  };
+
+  // Handle PDF export
+  const handleExportPDF = () => {
+    if (filteredExpenses.length === 0) {
+      showToast('Inga kostnader att exportera', { type: 'info' });
+      return;
+    }
+
+    // Create HTML content for PDF
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>WestBudget Fordonskostnader Rapport</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; }
+            h1 { color: #333; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 12px; }
+            th { background-color: #f2f2f2; font-weight: bold; }
+            .stats { margin: 20px 0; padding: 15px; background-color: #f9f9f9; border-radius: 5px; }
+            .stats h3 { margin-top: 0; }
+            .positive { color: #10b981; }
+            .negative { color: #ef4444; }
+          </style>
+        </head>
+        <body>
+          <h1>WestBudget Fordonskostnader Rapport</h1>
+          <p>Genererad: ${new Date().toLocaleDateString('sv-SE')}</p>
+          
+          <div class="stats">
+            <h3>Sammanfattning</h3>
+            <p><strong>Drivmedel:</strong> ${formatAmount(stats.fuel)}</p>
+            <p><strong>Service & Underhåll:</strong> ${formatAmount(stats.service)}</p>
+            <p><strong>Totalt:</strong> ${formatAmount(stats.total)}</p>
+            <p><strong>Antal Kostnader:</strong> ${filteredExpenses.length} st</p>
+          </div>
+
+          <h2>Kostnadslista</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Datum</th>
+                <th>Fordon</th>
+                <th>Registreringsnummer</th>
+                <th>Kategori</th>
+                <th>Belopp</th>
+                <th>Beskrivning</th>
+                <th>Mätarställning</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredExpenses.map(e => {
+                const vehicle = vehicles.find(v => v.id === e.vehicle_id);
+                const amount = parseFloat(e.amount) || 0;
+                const amountClass = amount >= 0 ? 'positive' : 'negative';
+                return `
+                  <tr>
+                    <td>${e.date || ''}</td>
+                    <td>${vehicle?.make_model || ''}</td>
+                    <td>${vehicle?.registration_number || ''}</td>
+                    <td>${e.category || ''}</td>
+                    <td class="${amountClass}">${formatAmount(amount)}</td>
+                    <td>${(e.description || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</td>
+                    <td>${e.odometer_at_purchase || ''}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+
+    // Open print dialog
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+    
+    // Wait for content to load, then print
+    printWindow.onload = () => {
+      setTimeout(() => {
+        printWindow.print();
+        showToast(`PDF-rapport genererad för ${filteredExpenses.length} kostnader`, { type: 'success' });
+      }, 250);
+    };
   };
 
   // Update indeterminate state
@@ -206,10 +303,16 @@ const VehiclesTab = ({
         </div>
         <div className="flex gap-3">
           <button
-            onClick={handleExport}
+            onClick={handleExportCSV}
             className="flex items-center gap-2 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm"
           >
-            <Download size={16} /> Exportera
+            <Download size={16} /> Exportera CSV
+          </button>
+          <button
+            onClick={handleExportPDF}
+            className="flex items-center gap-2 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm"
+          >
+            <Download size={16} /> Exportera PDF
           </button>
         </div>
       </div>
@@ -301,10 +404,12 @@ const VehiclesTab = ({
                         <span className="text-zinc-700 dark:text-zinc-300">{vehicle.next_inspection}</span>
                       </div>
                     )}
-                    {vehicle.insurance_company && (
+                    {vehicle.agreement_id && agreements && (
                       <div className="flex justify-between">
-                        <span className="text-zinc-500">Försäkring</span>
-                        <span className="text-zinc-700 dark:text-zinc-300">{vehicle.insurance_type ? `${vehicle.insurance_type}, ` : ''}{vehicle.insurance_company}</span>
+                        <span className="text-zinc-500">Försäkringsavtal</span>
+                        <span className="text-indigo-600 dark:text-indigo-400 font-medium">
+                          {agreements.find(a => a.id === vehicle.agreement_id)?.name || 'Okänt avtal'}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -331,10 +436,9 @@ const VehiclesTab = ({
               </div>
               <button
                 onClick={onAddExpense}
-                className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-colors"
-                title="Lägg till kostnad"
+                className="flex items-center gap-2 bg-zinc-900 dark:bg-indigo-600 hover:bg-zinc-800 dark:hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-all shadow-lg hover:shadow-xl active:scale-95"
               >
-                <Plus size={18} />
+                <Plus size={16} /> Lägg till utgift
               </button>
             </div>
           </div>

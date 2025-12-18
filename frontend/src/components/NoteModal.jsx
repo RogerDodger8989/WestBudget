@@ -13,8 +13,8 @@ const NoteModal = ({ transaction, onClose, onSave }) => {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       
-      <div className="relative w-full max-w-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-        <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
+      <div className="relative w-full max-w-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[90vh]">
+        <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between flex-shrink-0">
           <h2 className="text-lg font-bold text-zinc-900 dark:text-white flex items-center gap-2">
             <MessageSquare size={18} className="text-indigo-500" />
             Anteckning
@@ -24,7 +24,7 @@ const NoteModal = ({ transaction, onClose, onSave }) => {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 min-h-0">
           <div className="mb-4">
             <p className="text-sm text-zinc-500 mb-2">Transaktion:</p>
             <p className="font-medium text-zinc-900 dark:text-white">{transaction.title}</p>

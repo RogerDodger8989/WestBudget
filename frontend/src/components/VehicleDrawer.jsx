@@ -94,8 +94,9 @@ const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agre
   const handleSave = async () => {
     setIsSaving(true);
     try {
+      const { insurance_company, insurance_type, ...saveData } = formData;
       await onSave(vehicle.id, {
-        ...formData,
+        ...saveData,
         images: images,
         odometer: formData.odometer ? parseInt(formData.odometer) : 0,
         next_service_odometer: formData.next_service_odometer ? parseInt(formData.next_service_odometer) : null,
@@ -261,34 +262,6 @@ const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agre
             >
               <Calendar size={18} className="text-indigo-500 dark:text-indigo-400" />
             </button>
-          </div>
-        </div>
-
-        {/* Försäkring */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
-              <Building2 size={14} /> Försäkringsbolag
-            </label>
-            <input
-              type="text"
-              value={formData.insurance_company || ''}
-              onChange={(e) => handleChange('insurance_company', e.target.value)}
-              className="w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
-              Försäkringstyp
-            </label>
-            <input
-              type="text"
-              value={formData.insurance_type || ''}
-              onChange={(e) => handleChange('insurance_type', e.target.value)}
-              placeholder="Halv, Hel, etc."
-              className="w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
-            />
           </div>
         </div>
 

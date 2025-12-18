@@ -19,6 +19,8 @@ import CustomDateRangeModal from './CustomDateRangeModal';
 import AddVehicleModal from './AddVehicleModal';
 import VehicleDrawer from './VehicleDrawer';
 import AddVehicleExpenseModal from './AddVehicleExpenseModal';
+import VehicleExpenseDrawer from './VehicleExpenseDrawer';
+import AddTransactionModal from './AddTransactionModal';
 
 const DashboardLayout = ({ 
   onLogout, 
@@ -52,6 +54,7 @@ const DashboardLayout = ({
   const [isAddVehicleModalOpen, setIsAddVehicleModalOpen] = useState(false);
   const [isAddVehicleExpenseModalOpen, setIsAddVehicleExpenseModalOpen] = useState(false);
   const [selectedVehicleExpense, setSelectedVehicleExpense] = useState(null);
+  const [isAddTransactionModalOpen, setIsAddTransactionModalOpen] = useState(false);
   
   // Toast system
   const { showToast } = useToast();
@@ -235,6 +238,45 @@ const DashboardLayout = ({
     }
   };
 
+  const handleAddTransaction = async (transactionData) => {
+    try {
+      const created = await api.createTransaction(transactionData);
+      
+      // Update transactions list
+      if (setTransactions) {
+        setTransactions(prev => [created, ...prev]);
+      }
+      
+      // Reload data to ensure consistency
+      if (reloadData) {
+        await reloadData();
+      }
+      
+      showToast('Faktura skapad!', {
+        type: 'success',
+        description: `${created.title} har lagts till`,
+        undo: true,
+        undoAction: async () => {
+          try {
+            await api.deleteTransaction(created.id);
+            if (setTransactions) {
+              setTransactions(prev => prev.filter(t => t.id !== created.id));
+            }
+            if (reloadData) {
+              await reloadData();
+            }
+            showToast('Faktura borttagen', { type: 'success' });
+          } catch (err) {
+            showToast('Kunde inte ångra: ' + (err.message || 'Okänt fel'), { type: 'error' });
+          }
+        }
+      });
+    } catch (err) {
+      console.error('❌ Kunde inte skapa transaktion:', err);
+      throw new Error(err.message || 'Kunde inte skapa faktura');
+    }
+  };
+
   const handleUndoLastImport = async (idsToDelete = null) => {
     const ids = idsToDelete || lastImportIds;
     
@@ -314,8 +356,27 @@ const DashboardLayout = ({
       const oldAgreement = agreements.find(a => a.id === agreementId);
       const oldData = oldAgreement ? { ...oldAgreement } : null;
       
+      // Hantera koppling till fordon om det finns
+      const { linked_vehicle_id, ...agreementUpdates } = updates;
+      
       // Uppdatera i backend
-      await api.updateAgreement(agreementId, updates);
+      await api.updateAgreement(agreementId, agreementUpdates);
+      
+      // Uppdatera fordonets agreement_id om koppling finns
+      if (linked_vehicle_id !== undefined) {
+        // Ta bort koppling från alla andra fordon som var kopplade till detta avtal
+        const previouslyLinkedVehicles = vehicles.filter(v => v.agreement_id === agreementId);
+        for (const vehicle of previouslyLinkedVehicles) {
+          if (vehicle.id !== linked_vehicle_id) {
+            await api.updateVehicle(vehicle.id, { agreement_id: null });
+          }
+        }
+        
+        // Koppla det valda fordonet till detta avtal
+        if (linked_vehicle_id) {
+          await api.updateVehicle(linked_vehicle_id, { agreement_id: agreementId });
+        }
+      }
       
       console.log('✅ Avtal uppdaterat!');
       
@@ -490,22 +551,49 @@ const DashboardLayout = ({
   };
 
   // Vehicle expense handlers
-  const handleAddVehicleExpense = async (expenseData) => {
+  const handleAddVehicleExpense = async (expenseData, expenseId = null) => {
     try {
-      const newExpense = await api.createVehicleExpense(expenseData);
-      if (reloadData) await reloadData();
-      setIsAddVehicleExpenseModalOpen(false);
-      showToast('Kostnad sparat!', {
-        type: 'success',
-        undo: true,
-        undoAction: async () => {
-          await api.deleteVehicleExpense(newExpense.id);
-          if (reloadData) await reloadData();
-        }
-      });
+      if (expenseId) {
+        // Uppdatera befintlig kostnad
+        const oldExpense = vehicleExpenses.find(e => e.id === expenseId);
+        await api.updateVehicleExpense(expenseId, expenseData);
+        if (reloadData) await reloadData();
+        setSelectedVehicleExpense(null);
+        showToast('Kostnad uppdaterad!', {
+          type: 'success',
+          undo: true,
+          undoAction: async () => {
+            if (oldExpense) {
+              await api.updateVehicleExpense(expenseId, oldExpense);
+              if (reloadData) await reloadData();
+            }
+          }
+        });
+      } else {
+        // Skapa ny kostnad
+        console.log('💾 Sparar fordonskostnad:', expenseData);
+        const newExpense = await api.createVehicleExpense(expenseData);
+        console.log('✅ Kostnad sparad:', newExpense);
+        if (reloadData) await reloadData();
+        setIsAddVehicleExpenseModalOpen(false);
+        showToast('Kostnad sparat!', {
+          type: 'success',
+          undo: true,
+          undoAction: async () => {
+            await api.deleteVehicleExpense(newExpense.id);
+            if (reloadData) await reloadData();
+          }
+        });
+      }
     } catch (error) {
       console.error('❌ Kunde inte spara kostnad:', error);
-      showToast('Kunde inte spara kostnad', { type: 'error' });
+      const errorMessage = error.message || 'Okänt fel';
+      showToast('Kunde inte spara kostnad: ' + errorMessage, { 
+        type: 'error',
+        description: 'Kontrollera att alla fält är korrekt ifyllda'
+      });
+      // Kasta felet vidare så att modalen kan hantera det
+      throw error;
     }
   };
 
@@ -659,6 +747,14 @@ const DashboardLayout = ({
         />
       )}
 
+      {isAddTransactionModalOpen && (
+        <AddTransactionModal
+          onClose={() => setIsAddTransactionModalOpen(false)}
+          onSave={handleAddTransaction}
+          categories={categories}
+        />
+      )}
+
       {isAddVehicleModalOpen && (
         <AddVehicleModal
           onClose={() => setIsAddVehicleModalOpen(false)}
@@ -677,18 +773,19 @@ const DashboardLayout = ({
 
       <div 
         className={`fixed inset-0 bg-black/20 backdrop-blur-sm z-40 transition-opacity duration-300 ${
-          (selectedTransaction || selectedAgreement || selectedVehicle) ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          (selectedTransaction || selectedAgreement || selectedVehicle || selectedVehicleExpense) ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
         onClick={() => {
           setSelectedTransaction(null);
           setSelectedAgreement(null);
           setSelectedVehicle(null);
+          setSelectedVehicleExpense(null);
         }}
       />
       
       <div 
         className={`fixed inset-y-0 right-0 w-full sm:w-[400px] bg-white dark:bg-zinc-900 shadow-2xl z-50 transform transition-transform duration-300 ease-in-out border-l border-zinc-200 dark:border-zinc-800 ${
-          (selectedTransaction || selectedAgreement || selectedVehicle) ? 'translate-x-0' : 'translate-x-full'
+          (selectedTransaction || selectedAgreement || selectedVehicle || selectedVehicleExpense) ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
         {selectedTransaction && (
@@ -708,6 +805,7 @@ const DashboardLayout = ({
             onDelete={handleDeleteAgreement}
             onImageUpload={handleAgreementImageUpload}
             categories={categories}
+            vehicles={vehicles}
           />
         )}
 
@@ -719,6 +817,25 @@ const DashboardLayout = ({
             onDelete={handleDeleteVehicle}
             onImageUpload={handleVehicleImageUpload}
             agreements={agreements}
+          />
+        )}
+
+        {selectedVehicleExpense && (
+          <VehicleExpenseDrawer
+            expense={selectedVehicleExpense}
+            onClose={() => setSelectedVehicleExpense(null)}
+            onSave={handleUpdateVehicleExpense}
+            onDelete={async (id) => {
+              try {
+                await api.deleteVehicleExpense(id);
+                if (reloadData) await reloadData();
+                setSelectedVehicleExpense(null);
+                showToast('Kostnad raderad!', { type: 'success' });
+              } catch (error) {
+                showToast('Kunde inte radera kostnad', { type: 'error' });
+              }
+            }}
+            vehicles={vehicles}
           />
         )}
       </div>
@@ -734,7 +851,7 @@ const DashboardLayout = ({
       />
 
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-zinc-50/50 dark:bg-zinc-950/50 transition-colors duration-500">
-        <Topbar agreements={agreements} />
+        <Topbar agreements={agreements} vehicles={vehicles} />
 
         <div className="flex-1 overflow-y-auto p-8">
           <div className="max-w-7xl mx-auto space-y-8">
@@ -761,6 +878,7 @@ const DashboardLayout = ({
                 setSelectedTransaction={setSelectedTransaction}
                 setEditingNoteTransactionId={setEditingNoteTransactionId}
                 setIsImportModalOpen={setIsImportModalOpen}
+                setIsAddTransactionModalOpen={setIsAddTransactionModalOpen}
                 dateRange={dateRange}
                 setDateRange={setDateRange}
                 customStartDate={customStartDate}
@@ -780,6 +898,7 @@ const DashboardLayout = ({
                 getTitle={getTitle}
                 loading={loading}
                 categories={categories}
+                vehicles={vehicles}
                 onAddAgreement={() => setIsAddAgreementModalOpen(true)}
                 setSelectedAgreement={setSelectedAgreement}
                 setEditingNoteAgreementId={setEditingNoteAgreementId}

@@ -74,8 +74,6 @@ const AddVehicleModal = ({ onClose, onSave, agreements = [] }) => {
         make_model: formData.make_model.trim(),
         odometer: formData.odometer ? parseInt(formData.odometer) : 0,
         next_inspection: formData.next_inspection || null,
-        insurance_company: formData.insurance_company.trim() || null,
-        insurance_type: formData.insurance_type.trim() || null,
         status: formData.status,
         category: formData.category,
         note: formData.note.trim() || null,
@@ -100,9 +98,11 @@ const AddVehicleModal = ({ onClose, onSave, agreements = [] }) => {
   );
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 px-6 py-4 flex items-center justify-between z-10">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      
+      <div className="relative w-full max-w-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[90vh]">
+        <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl">
               <Car className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
@@ -117,7 +117,7 @@ const AddVehicleModal = ({ onClose, onSave, agreements = [] }) => {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6 min-h-0">
           {errors.submit && (
             <div className="p-3 bg-rose-100 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800 rounded-xl flex items-center gap-2 text-rose-700 dark:text-rose-400">
               <AlertCircle className="w-4 h-4" />
@@ -228,34 +228,6 @@ const AddVehicleModal = ({ onClose, onSave, agreements = [] }) => {
               <Calendar
                 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-500 dark:text-indigo-400 cursor-pointer"
                 onClick={() => inspectionDatePickerRef.current?.showPicker()}
-              />
-            </div>
-          </div>
-
-          {/* Försäkring */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                Försäkringsbolag
-              </label>
-              <input
-                type="text"
-                value={formData.insurance_company}
-                onChange={(e) => handleChange('insurance_company', e.target.value)}
-                placeholder="If, Trygg-Hansa, etc."
-                className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                Försäkringstyp
-              </label>
-              <input
-                type="text"
-                value={formData.insurance_type}
-                onChange={(e) => handleChange('insurance_type', e.target.value)}
-                placeholder="Halv, Hel, etc."
-                className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
               />
             </div>
           </div>

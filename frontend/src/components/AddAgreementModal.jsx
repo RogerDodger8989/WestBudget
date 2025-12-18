@@ -111,7 +111,7 @@ const AddAgreementModal = ({ onClose, onSave, categories = [] }) => {
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       
       <div className="relative w-full max-w-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[90vh]">
-        <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
+        <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between flex-shrink-0">
           <h2 className="text-xl font-bold text-zinc-900 dark:text-white flex items-center gap-2">
             <FileText size={20} className="text-indigo-500" />
             Lägg till Nytt Avtal
@@ -121,7 +121,7 @@ const AddAgreementModal = ({ onClose, onSave, categories = [] }) => {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6 min-h-0">
           
           {/* Tjänst & Leverantör */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

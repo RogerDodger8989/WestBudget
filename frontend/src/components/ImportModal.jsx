@@ -544,7 +544,7 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
         
         <div className="relative w-full max-w-4xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[90vh]">
           
-          <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
+          <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between flex-shrink-0">
             <h2 className="text-xl font-bold text-zinc-900 dark:text-white">
               {step === 1 ? 'Importera Transaktioner' : 'Granska Import'}
             </h2>
@@ -574,7 +574,7 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
             </div>
           </div>
 
-          <div className="p-6 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto p-6 min-h-0">
             {step === 1 ? (
               <div className="space-y-6">
                 <div className="space-y-2">
@@ -1297,14 +1297,14 @@ const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories, onCateg
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       
       <div className="relative w-full max-w-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[90vh]">
-        <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
+        <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between flex-shrink-0">
           <h2 className="text-xl font-bold text-zinc-900 dark:text-white">Kategoriregler</h2>
           <button onClick={handleClose} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors">
             <X size={20} className="text-zinc-500" />
           </button>
         </div>
 
-        <div className="p-6 overflow-y-auto space-y-4">
+        <div className="flex-1 overflow-y-auto p-6 space-y-4 min-h-0">
           {/* Add new rule */}
           <div className="p-4 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-3">Lägg till ny regel</h3>

@@ -1,42 +1,93 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Bell, X } from 'lucide-react';
 
-const NotificationBell = ({ agreements }) => {
+const NotificationBell = ({ agreements = [], vehicles = [] }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [readNotifications, setReadNotifications] = useState(new Set());
 
-  // Calculate upcoming payments (within 7 days)
+  // Calculate upcoming payments (within 7 days) and service reminders
   const notifications = useMemo(() => {
-    if (!agreements || agreements.length === 0) return [];
-    
+    const allNotifications = [];
     const now = new Date();
     const sevenDaysFromNow = new Date(now);
     sevenDaysFromNow.setDate(now.getDate() + 7);
     
-    const upcoming = agreements
-      .filter(a => a.status === 'Aktiv' && (a.next_payment || a.nextPayment))
-      .map(a => {
-        const nextPayment = a.next_payment || a.nextPayment;
-        if (!nextPayment) return null;
-        
-        const paymentDate = new Date(nextPayment);
-        if (paymentDate >= now && paymentDate <= sevenDaysFromNow) {
-          const daysUntil = Math.ceil((paymentDate - now) / (1000 * 60 * 60 * 24));
-          return {
-            id: a.id,
-            type: 'payment',
-            message: `${a.name} - Nästa betalning om ${daysUntil} ${daysUntil === 1 ? 'dag' : 'dagar'}`,
-            date: paymentDate,
-            agreement: a
-          };
-        }
-        return null;
-      })
-      .filter(Boolean)
-      .sort((a, b) => a.date - b.date);
+    // Agreement payment reminders
+    if (agreements && agreements.length > 0) {
+      const upcomingPayments = agreements
+        .filter(a => a.status === 'Aktiv' && (a.next_payment || a.nextPayment))
+        .map(a => {
+          const nextPayment = a.next_payment || a.nextPayment;
+          if (!nextPayment) return null;
+          
+          const paymentDate = new Date(nextPayment);
+          if (paymentDate >= now && paymentDate <= sevenDaysFromNow) {
+            const daysUntil = Math.ceil((paymentDate - now) / (1000 * 60 * 60 * 24));
+            return {
+              id: `agreement-${a.id}`,
+              type: 'payment',
+              message: `${a.name} - Nästa betalning om ${daysUntil} ${daysUntil === 1 ? 'dag' : 'dagar'}`,
+              date: paymentDate,
+              agreement: a
+            };
+          }
+          return null;
+        })
+        .filter(Boolean);
+      
+      allNotifications.push(...upcomingPayments);
+    }
     
-    return upcoming;
-  }, [agreements]);
+    // Vehicle service reminders
+    if (vehicles && vehicles.length > 0) {
+      const activeVehicles = vehicles.filter(v => v.status === 'Aktiv');
+      
+      // Service reminders based on date
+      const serviceDateReminders = activeVehicles
+        .filter(v => v.next_service_date)
+        .map(v => {
+          const serviceDate = new Date(v.next_service_date);
+          if (serviceDate >= now && serviceDate <= sevenDaysFromNow) {
+            const daysUntil = Math.ceil((serviceDate - now) / (1000 * 60 * 60 * 24));
+            return {
+              id: `vehicle-service-date-${v.id}`,
+              type: 'service',
+              message: `${v.make_model} (${v.registration_number}) - Service om ${daysUntil} ${daysUntil === 1 ? 'dag' : 'dagar'}`,
+              date: serviceDate,
+              vehicle: v
+            };
+          }
+          return null;
+        })
+        .filter(Boolean);
+      
+      allNotifications.push(...serviceDateReminders);
+      
+      // Service reminders based on odometer (within 500 mil)
+      const serviceOdometerReminders = activeVehicles
+        .filter(v => v.next_service_odometer && v.odometer)
+        .map(v => {
+          const remainingMiles = v.next_service_odometer - v.odometer;
+          if (remainingMiles > 0 && remainingMiles <= 500) {
+            return {
+              id: `vehicle-service-odometer-${v.id}`,
+              type: 'service',
+              message: `${v.make_model} (${v.registration_number}) - Service om ${remainingMiles} mil`,
+              date: new Date(now.getTime() + (remainingMiles * 24 * 60 * 60 * 1000)), // Estimate based on average usage
+              vehicle: v,
+              odometerBased: true
+            };
+          }
+          return null;
+        })
+        .filter(Boolean);
+      
+      allNotifications.push(...serviceOdometerReminders);
+    }
+    
+    // Sort by date (soonest first)
+    return allNotifications.sort((a, b) => a.date - b.date);
+  }, [agreements, vehicles]);
 
   const unreadCount = notifications.filter(n => !readNotifications.has(n.id)).length;
 
@@ -101,6 +152,18 @@ const NotificationBell = ({ agreements }) => {
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            {notification.type === 'service' && (
+                              <span className="px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs font-medium rounded">
+                                Service
+                              </span>
+                            )}
+                            {notification.type === 'payment' && (
+                              <span className="px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 text-xs font-medium rounded">
+                                Betalning
+                              </span>
+                            )}
+                          </div>
                           <p className={`text-sm ${isRead ? 'text-zinc-600 dark:text-zinc-400' : 'text-zinc-900 dark:text-white font-medium'}`}>
                             {notification.message}
                           </p>

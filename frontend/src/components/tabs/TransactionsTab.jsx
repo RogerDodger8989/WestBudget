@@ -13,6 +13,7 @@ const TransactionsTab = ({
   setSelectedTransaction, 
   setEditingNoteTransactionId,
   setIsImportModalOpen,
+  setIsAddTransactionModalOpen,
   dateRange,
   setDateRange,
   customStartDate,
@@ -401,7 +402,10 @@ const TransactionsTab = ({
           >
             <Download size={16} /> Exportera
           </button>
-          <button className="bg-zinc-900 dark:bg-indigo-600 hover:bg-zinc-800 dark:hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-all shadow-lg hover:shadow-xl active:scale-95">
+          <button 
+            onClick={() => setIsAddTransactionModalOpen(true)}
+            className="bg-zinc-900 dark:bg-indigo-600 hover:bg-zinc-800 dark:hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-all shadow-lg hover:shadow-xl active:scale-95"
+          >
             Ny Faktura
           </button>
         </div>
