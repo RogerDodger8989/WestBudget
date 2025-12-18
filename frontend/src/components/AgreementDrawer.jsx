@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { X, Tag, FileText, UploadCloud, Trash2, ChevronRight, Calendar, DollarSign, Building2, Image as ImageIcon } from 'lucide-react';
 import { formatAmount } from '../utils/formatAmount';
 
-const AgreementDrawer = ({ agreement, onClose, onSave, onImageUpload, categories }) => {
+const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, categories }) => {
   const fileInputRef = useRef(null);
   const [formData, setFormData] = useState({
     name: agreement.name || '',
@@ -31,6 +31,7 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onImageUpload, categories
 
   const [images, setImages] = useState(parseImages(agreement.images)); // Array med bildsökvägar
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const startDatePickerRef = useRef(null);
   const endDatePickerRef = useRef(null);
   const nextPaymentPickerRef = useRef(null);
@@ -133,6 +134,21 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onImageUpload, categories
       });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!onDelete) return;
+    
+    // Bekräfta radering
+    const confirmed = window.confirm(`Är du säker på att du vill radera "${agreement.name}"? Detta kan inte ångras.`);
+    if (!confirmed) return;
+    
+    setIsDeleting(true);
+    try {
+      await onDelete(agreement.id);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -575,13 +591,22 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onImageUpload, categories
       <div className="p-6 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 flex gap-3">
         <button 
           onClick={handleSave}
-          disabled={isSaving}
+          disabled={isSaving || isDeleting}
           className="flex-1 bg-zinc-900 dark:bg-white text-white dark:text-black font-semibold py-3 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isSaving ? 'Sparar...' : 'Spara Ändringar'}
         </button>
-        <button className="p-3 bg-rose-100 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 rounded-xl hover:bg-rose-200 dark:hover:bg-rose-900/40 transition-colors">
-          <Trash2 size={20} />
+        <button 
+          onClick={handleDelete}
+          disabled={isSaving || isDeleting}
+          className="p-3 bg-rose-100 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 rounded-xl hover:bg-rose-200 dark:hover:bg-rose-900/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Radera avtal"
+        >
+          {isDeleting ? (
+            <div className="w-5 h-5 border-2 border-rose-600 border-t-transparent rounded-full animate-spin" />
+          ) : (
+            <Trash2 size={20} />
+          )}
         </button>
       </div>
     </div>

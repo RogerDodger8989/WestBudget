@@ -1,12 +1,13 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { formatAmount } from '../../utils/formatAmount';
-import { RefreshCw, FileText, AlertTriangle, Search, Filter, CalendarClock, Download, Plus, CheckCircle2, Check, ArrowUp, ArrowDown, ChevronUp, ChevronDown } from 'lucide-react';
+import { RefreshCw, FileText, AlertTriangle, Search, Filter, CalendarClock, Download, Plus, CheckCircle2, Check, ArrowUp, ArrowDown, ChevronUp, ChevronDown, Trash2 } from 'lucide-react';
 import StatCard from '../StatCard';
 import ImageLightbox from '../ImageLightbox';
 import AgreementFilterModal from '../AgreementFilterModal';
 import { useToast } from '../../contexts/ToastContext';
+import { api } from '../../api';
 
-const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreement, setSelectedAgreement, setEditingNoteAgreementId }) => {
+const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreement, setSelectedAgreement, setEditingNoteAgreementId, reloadData }) => {
   const { showToast } = useToast();
   const [lightboxImages, setLightboxImages] = useState(null);
   const [lightboxIndex, setLightboxIndex] = useState(0);
@@ -24,6 +25,7 @@ const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreeme
   const [sortColumn, setSortColumn] = useState(null); // 'cost', 'nextPayment', 'provider', 'category'
   const [sortDirection, setSortDirection] = useState('asc'); // 'asc' or 'desc'
   const [selectedAgreements, setSelectedAgreements] = useState(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
   const selectAllCheckboxRef = useRef(null);
 
   // Parse images from agreement
@@ -189,7 +191,114 @@ const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreeme
     setSelectedAgreements(newSelected);
   };
 
-  // Beräkna statistik
+  // Radera valda avtal
+  const handleDeleteSelected = async () => {
+    if (selectedAgreements.size === 0) {
+      showToast('Välj minst ett avtal att radera', { type: 'info' });
+      return;
+    }
+
+    const idsToDelete = Array.from(selectedAgreements);
+    const agreementsToDelete = sortedAgreements.filter(a => idsToDelete.includes(a.id));
+    
+    // Bekräfta radering
+    const confirmed = window.confirm(
+      `Är du säker på att du vill radera ${idsToDelete.length} avtal?\n\n` +
+      agreementsToDelete.map(a => `• ${a.name}`).join('\n') +
+      '\n\nDetta kan inte ångras.'
+    );
+    
+    if (!confirmed) return;
+
+    // Save for undo
+    const deletedAgreements = agreementsToDelete.map(a => ({ ...a }));
+
+    setIsDeleting(true);
+    try {
+      // Delete all selected agreements
+      const deletePromises = idsToDelete.map(id => api.deleteAgreement(id));
+      await Promise.all(deletePromises);
+
+      // Clear selection
+      setSelectedAgreements(new Set());
+
+      // Reload data
+      if (reloadData) {
+        await reloadData();
+      }
+
+      // Show toast with undo
+      showToast(`${idsToDelete.length} avtal raderade!`, {
+        type: 'success',
+        undo: true,
+        undoAction: async () => {
+          try {
+            // Recreate all deleted agreements
+            const recreatePromises = deletedAgreements.map(agreement => 
+              api.createAgreement({
+                name: agreement.name,
+                provider: agreement.provider,
+                cost: agreement.cost,
+                frequency: agreement.frequency,
+                next_payment: agreement.next_payment || agreement.nextPayment,
+                status: agreement.status,
+                category: agreement.category,
+                icon: agreement.icon,
+                notice: agreement.notice,
+                start_date: agreement.start_date,
+                end_date: agreement.end_date,
+                images: agreement.images
+              })
+            );
+            await Promise.all(recreatePromises);
+            
+            if (reloadData) {
+              await reloadData();
+            }
+            
+            showToast('Radering ångrad', { type: 'success' });
+          } catch (err) {
+            console.error('Kunde inte ångra radering:', err);
+            showToast('Kunde inte ångra radering', { type: 'error' });
+          }
+        }
+      });
+    } catch (error) {
+      console.error('❌ Kunde inte radera avtal:', error);
+      showToast('Kunde inte radera avtal. Försök igen.', { type: 'error' });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // Beräkna statistik baserat på filtrerade avtal
+  const filteredStats = useMemo(() => {
+    const activeFilteredAgreements = sortedAgreements.filter(a => a.status === 'Aktiv');
+    const totalMonthlyCost = activeFilteredAgreements.reduce((sum, a) => {
+      const cost = parseFloat(a.cost) || 0;
+      // Convert to monthly if needed
+      let monthlyCost = cost;
+      if (a.frequency === 'Kvartalsvis') monthlyCost = cost / 3;
+      else if (a.frequency === 'Årligen') monthlyCost = cost / 12;
+      return sum + monthlyCost;
+    }, 0);
+    
+    const totalYearlyCost = activeFilteredAgreements.reduce((sum, a) => {
+      const cost = parseFloat(a.cost) || 0;
+      // Convert to yearly if needed
+      let yearlyCost = cost;
+      if (a.frequency === 'Månadsvis') yearlyCost = cost * 12;
+      else if (a.frequency === 'Kvartalsvis') yearlyCost = cost * 4;
+      return sum + yearlyCost;
+    }, 0);
+
+    return {
+      totalMonthlyCost,
+      totalYearlyCost
+    };
+  }, [sortedAgreements]);
+
+  // Beräkna statistik (alla aktiva avtal)
   const stats = useMemo(() => {
     const activeAgreements = agreements.filter(a => a.status === 'Aktiv');
     const totalMonthlyCost = activeAgreements.reduce((sum, a) => {
@@ -210,16 +319,27 @@ const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreeme
       return sum + yearlyCost;
     }, 0);
 
-    // Cost per category
+    // Cost per category (both monthly and yearly)
     const costByCategory = {};
     activeAgreements.forEach(a => {
       const cost = parseFloat(a.cost) || 0;
+      
+      // Calculate monthly cost
+      let monthlyCost = cost;
+      if (a.frequency === 'Kvartalsvis') monthlyCost = cost / 3;
+      else if (a.frequency === 'Årligen') monthlyCost = cost / 12;
+      
+      // Calculate yearly cost
       let yearlyCost = cost;
       if (a.frequency === 'Månadsvis') yearlyCost = cost * 12;
       else if (a.frequency === 'Kvartalsvis') yearlyCost = cost * 4;
       
       const category = a.category || 'Övrigt';
-      costByCategory[category] = (costByCategory[category] || 0) + yearlyCost;
+      if (!costByCategory[category]) {
+        costByCategory[category] = { monthly: 0, yearly: 0 };
+      }
+      costByCategory[category].monthly += monthlyCost;
+      costByCategory[category].yearly += yearlyCost;
     });
 
     return {
@@ -435,12 +555,20 @@ const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreeme
           <h3 className="text-lg font-semibold text-zinc-900 dark:text-white mb-4">Kostnad per Kategori</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {Object.entries(stats.costByCategory)
-              .sort(([, a], [, b]) => b - a)
-              .map(([category, cost]) => (
+              .sort(([, a], [, b]) => b.yearly - a.yearly)
+              .map(([category, costs]) => (
                 <div key={category} className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700">
-                  <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">{category}</p>
-                  <p className="text-xl font-bold text-zinc-900 dark:text-white">{formatAmount(cost)}</p>
-                  <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-1">per år</p>
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-3">{category}</p>
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex-1">
+                      <p className="text-xl font-bold text-zinc-900 dark:text-white">{formatAmount(costs.yearly)}</p>
+                      <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">per år</p>
+                    </div>
+                    <div className="flex-1 text-right">
+                      <p className="text-xl font-bold text-zinc-900 dark:text-white">{formatAmount(costs.monthly)}</p>
+                      <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">per månad</p>
+                    </div>
+                  </div>
                 </div>
               ))}
           </div>
@@ -542,6 +670,37 @@ const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreeme
                 <span className="absolute -top-1 -right-1 w-4 h-4 bg-indigo-600 dark:bg-indigo-500 rounded-full border-2 border-white dark:border-zinc-900"></span>
               )}
             </button>
+            {selectedAgreements.size > 0 && (
+              <button 
+                onClick={handleDeleteSelected}
+                disabled={isDeleting}
+                className="flex items-center gap-2 px-3 py-2 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-lg text-sm font-medium text-rose-700 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title={`Radera ${selectedAgreements.size} valda avtal`}
+              >
+                {isDeleting ? (
+                  <div className="w-4 h-4 border-2 border-rose-600 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Trash2 size={16} />
+                )}
+                Radera valda ({selectedAgreements.size})
+              </button>
+            )}
+          </div>
+          <div className="flex gap-2 w-full sm:w-auto items-center">
+            {/* Kompakt översikt */}
+            <div className="hidden md:flex items-center gap-3 px-3 py-1.5 bg-zinc-100 dark:bg-zinc-800/50 rounded-lg border border-zinc-200 dark:border-zinc-700">
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-rose-500"></div>
+                <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Månadskostnad:</span>
+                <span className="text-xs font-semibold text-rose-600 dark:text-rose-400">{formatAmount(filteredStats.totalMonthlyCost)}</span>
+              </div>
+              <div className="w-px h-4 bg-zinc-300 dark:bg-zinc-700"></div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-rose-500"></div>
+                <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Årskostnad:</span>
+                <span className="text-xs font-semibold text-rose-600 dark:text-rose-400">{formatAmount(filteredStats.totalYearlyCost)}</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -611,7 +770,19 @@ const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreeme
                 onClick={() => setSelectedAgreement(agreement)}
                 className="grid grid-cols-12 gap-4 px-6 py-4 border-b border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-50 dark:hover:bg-zinc-800/40 transition-colors items-center group cursor-pointer"
               >
-                <div className="col-span-4 sm:col-span-3 flex items-center gap-3">
+                <div className="col-span-1 flex items-center justify-center">
+                  <input
+                    type="checkbox"
+                    checked={selectedAgreements.has(agreement.id)}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      handleToggleAgreement(agreement.id);
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                  />
+                </div>
+                <div className="col-span-3 sm:col-span-2 flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-lg shadow-sm border border-zinc-200 dark:border-zinc-700">
                     {agreement.icon}
                   </div>

@@ -1,10 +1,24 @@
 import React, { useState } from 'react';
 import { Wallet, Key, ShieldCheck, ChevronRight } from 'lucide-react';
 import ThemeToggle from './ThemeToggle';
+import { api } from '../api';
 
 const LicenseGate = ({ onUnlock, isDarkMode, toggleTheme }) => {
   const [key, setKey] = useState('');
   const [loading, setLoading] = useState(false);
+  
+  const handleThemeToggle = async () => {
+    const newTheme = !isDarkMode;
+    toggleTheme();
+    // Spara tema-inställningen
+    try {
+      await api.saveSettings({
+        default_theme: newTheme ? 'dark' : 'light'
+      });
+    } catch (error) {
+      console.error('Kunde inte spara tema-inställning:', error);
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -19,7 +33,7 @@ const LicenseGate = ({ onUnlock, isDarkMode, toggleTheme }) => {
     <div className="min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden transition-colors duration-500">
       
       <div className="absolute top-6 right-6 z-20">
-        <ThemeToggle isDark={isDarkMode} toggle={toggleTheme} />
+        <ThemeToggle isDark={isDarkMode} toggle={handleThemeToggle} />
       </div>
 
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0 pointer-events-none">

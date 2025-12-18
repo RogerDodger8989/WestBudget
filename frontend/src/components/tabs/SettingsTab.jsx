@@ -5,10 +5,11 @@ import { useToast } from '../../contexts/ToastContext';
 import CategoryEditForm from '../CategoryEditForm';
 import MergeCategoryModal from '../MergeCategoryModal';
 
-const SettingsTab = ({ getTitle, reloadData }) => {
+const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme }) => {
   const { showToast } = useToast();
   const [receiptPath, setReceiptPath] = useState('C:\\Users\\Documents\\Kvitton');
   const [agreementImagesPath, setAgreementImagesPath] = useState('C:\\Users\\Documents\\Avtal\\Bilder');
+  const [defaultTheme, setDefaultTheme] = useState('dark'); // 'dark' or 'light'
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState([]);
@@ -71,12 +72,31 @@ const SettingsTab = ({ getTitle, reloadData }) => {
       if (settings.agreement_images_path) {
         setAgreementImagesPath(settings.agreement_images_path);
       }
+      
+      if (settings.default_theme) {
+        setDefaultTheme(settings.default_theme);
+      } else {
+        // Om ingen inställning finns, använd nuvarande tema
+        const currentTheme = isDarkMode ? 'dark' : 'light';
+        setDefaultTheme(currentTheme);
+      }
     } catch (error) {
       console.error('Kunde inte ladda inställningar:', error);
     } finally {
       setLoading(false);
     }
   };
+  
+  // Uppdatera defaultTheme när isDarkMode ändras (om det ändras via sidofältet)
+  useEffect(() => {
+    if (!loading) {
+      const currentTheme = isDarkMode ? 'dark' : 'light';
+      // Uppdatera bara om det inte redan är korrekt
+      if (defaultTheme !== currentTheme) {
+        setDefaultTheme(currentTheme);
+      }
+    }
+  }, [isDarkMode]);
 
   const loadCategories = async () => {
     try {
@@ -288,7 +308,8 @@ const SettingsTab = ({ getTitle, reloadData }) => {
     try {
       await api.saveSettings({
         receipt_storage_path: receiptPath,
-        agreement_images_path: agreementImagesPath
+        agreement_images_path: agreementImagesPath,
+        default_theme: defaultTheme
       });
       
       setSaved(true);
@@ -296,7 +317,7 @@ const SettingsTab = ({ getTitle, reloadData }) => {
       showToast('Inställningar sparade!', { type: 'success' });
     } catch (error) {
       console.error('❌ Kunde inte spara inställningar:', error);
-      alert('Kunde inte spara inställningar. Kontrollera att servern körs.');
+      showToast('Kunde inte spara inställningar. Kontrollera att servern körs.', { type: 'error' });
     }
   };
 
@@ -936,14 +957,69 @@ const SettingsTab = ({ getTitle, reloadData }) => {
           </div>
 
           <div className="space-y-4">
-            {/* Dark Mode Toggle */}
+            {/* Default Theme Selection */}
             <div className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl">
               <div>
-                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Mörkt tema</p>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">Växla mellan ljust och mörkt läge</p>
+                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Standardtema vid start</p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">Välj standardtema när appen startar</p>
               </div>
-              <div className="text-xs text-zinc-500">
-                (Använd växlaren i sidofältet)
+              <div className="flex gap-2">
+                <button
+                  onClick={async () => {
+                    setDefaultTheme('light');
+                    // Ändra temat omedelbart om det inte redan är ljust
+                    if (isDarkMode && toggleTheme) {
+                      await toggleTheme();
+                    }
+                    // Spara inställningen
+                    try {
+                      await api.saveSettings({
+                        receipt_storage_path: receiptPath,
+                        agreement_images_path: agreementImagesPath,
+                        default_theme: 'light'
+                      });
+                      showToast('Tema ändrat till ljust!', { type: 'success' });
+                    } catch (error) {
+                      console.error('❌ Kunde inte spara tema-inställning:', error);
+                      showToast('Kunde inte spara tema-inställning.', { type: 'error' });
+                    }
+                  }}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                    defaultTheme === 'light'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-300 dark:hover:bg-zinc-600'
+                  }`}
+                >
+                  Ljust
+                </button>
+                <button
+                  onClick={async () => {
+                    setDefaultTheme('dark');
+                    // Ändra temat omedelbart om det inte redan är mörkt
+                    if (!isDarkMode && toggleTheme) {
+                      await toggleTheme();
+                    }
+                    // Spara inställningen
+                    try {
+                      await api.saveSettings({
+                        receipt_storage_path: receiptPath,
+                        agreement_images_path: agreementImagesPath,
+                        default_theme: 'dark'
+                      });
+                      showToast('Tema ändrat till mörkt!', { type: 'success' });
+                    } catch (error) {
+                      console.error('❌ Kunde inte spara tema-inställning:', error);
+                      showToast('Kunde inte spara tema-inställning.', { type: 'error' });
+                    }
+                  }}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                    defaultTheme === 'dark'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-300 dark:hover:bg-zinc-600'
+                  }`}
+                >
+                  Mörkt
+                </button>
               </div>
             </div>
 

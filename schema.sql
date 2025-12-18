@@ -61,12 +61,54 @@ CREATE TABLE IF NOT EXISTS category_rules (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Vehicles table
+CREATE TABLE IF NOT EXISTS vehicles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    registration_number TEXT UNIQUE NOT NULL,
+    make_model TEXT NOT NULL,
+    odometer INTEGER DEFAULT 0,
+    next_inspection TEXT,
+    insurance_company TEXT,
+    insurance_type TEXT,
+    status TEXT NOT NULL DEFAULT 'Aktiv' CHECK(status IN ('Aktiv', 'Inaktiv', 'Såld')),
+    category TEXT DEFAULT 'Personbil',
+    note TEXT DEFAULT '',
+    images TEXT DEFAULT '[]',
+    agreement_id INTEGER, -- Link to agreements table for insurance
+    next_service_odometer INTEGER, -- Next service at this odometer reading
+    next_service_date TEXT, -- Next service date
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (agreement_id) REFERENCES agreements(id)
+);
+
+-- Vehicle expenses table
+CREATE TABLE IF NOT EXISTS vehicle_expenses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vehicle_id INTEGER NOT NULL,
+    category TEXT NOT NULL,
+    amount REAL NOT NULL,
+    date TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    receipt_path TEXT,
+    note TEXT DEFAULT '',
+    odometer_at_purchase INTEGER, -- Odometer reading when expense was made
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type);
 CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category);
 CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
 CREATE INDEX IF NOT EXISTS idx_agreements_status ON agreements(status);
 CREATE INDEX IF NOT EXISTS idx_settings_key ON settings(key);
+CREATE INDEX IF NOT EXISTS idx_vehicles_status ON vehicles(status);
+CREATE INDEX IF NOT EXISTS idx_vehicles_registration ON vehicles(registration_number);
+CREATE INDEX IF NOT EXISTS idx_vehicle_expenses_vehicle_id ON vehicle_expenses(vehicle_id);
+CREATE INDEX IF NOT EXISTS idx_vehicle_expenses_category ON vehicle_expenses(category);
+CREATE INDEX IF NOT EXISTS idx_vehicle_expenses_date ON vehicle_expenses(date);
 
 -- Insert default categories
 INSERT OR IGNORE INTO categories (name) VALUES 

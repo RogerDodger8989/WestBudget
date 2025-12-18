@@ -13,8 +13,28 @@ function AppContent() {
   const [transactions, setTransactions] = useState([]);
   const [agreements, setAgreements] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [vehicles, setVehicles] = useState([]);
+  const [vehicleExpenses, setVehicleExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Load default theme from settings on mount
+  useEffect(() => {
+    const loadDefaultTheme = async () => {
+      try {
+        const settings = await api.getSettings();
+        if (settings.default_theme) {
+          setIsDarkMode(settings.default_theme === 'dark');
+        }
+      } catch (error) {
+        console.error('Kunde inte ladda tema-inställning:', error);
+        // Använd dark som default om det misslyckas
+        setIsDarkMode(true);
+      }
+    };
+    
+    loadDefaultTheme();
+  }, []);
 
   // Load data from API on mount - använder din api.js
   useEffect(() => {
@@ -29,15 +49,19 @@ function AppContent() {
       setError(null);
       
       // Använder dina API-funktioner från api.js
-      const [transData, agrData, catData] = await Promise.all([
+      const [transData, agrData, catData, vehData, vehExpData] = await Promise.all([
         api.getTransactions(),
         api.getAgreements(),
-        api.getCategories()
+        api.getCategories(),
+        api.getVehicles(),
+        api.getVehicleExpenses()
       ]);
       
       setTransactions(transData);
       setAgreements(agrData);
       setCategories(catData);
+      setVehicles(vehData);
+      setVehicleExpenses(vehExpData);
       
       console.log('✅ Data laddad från backend!');
       console.log('📊 Transaktioner:', transData.length);
@@ -88,11 +112,26 @@ function AppContent() {
             <DashboardLayout 
               onLogout={() => setIsAuthenticated(false)} 
               isDarkMode={isDarkMode}
-              toggleTheme={() => setIsDarkMode(!isDarkMode)}
+              toggleTheme={async () => {
+                const newTheme = !isDarkMode;
+                setIsDarkMode(newTheme);
+                // Spara tema-inställningen
+                try {
+                  await api.saveSettings({
+                    default_theme: newTheme ? 'dark' : 'light'
+                  });
+                } catch (error) {
+                  console.error('Kunde inte spara tema-inställning:', error);
+                }
+              }}
               transactions={transactions}
               setTransactions={setTransactions}
               agreements={agreements}
               categories={categories}
+              vehicles={vehicles}
+              setVehicles={setVehicles}
+              vehicleExpenses={vehicleExpenses}
+              setVehicleExpenses={setVehicleExpenses}
               loading={loading}
               reloadData={loadData}
             />
@@ -101,7 +140,18 @@ function AppContent() {
           <LicenseGate 
             onUnlock={handleLogin} 
             isDarkMode={isDarkMode}
-            toggleTheme={() => setIsDarkMode(!isDarkMode)}
+            toggleTheme={async () => {
+              const newTheme = !isDarkMode;
+              setIsDarkMode(newTheme);
+              // Spara tema-inställningen
+              try {
+                await api.saveSettings({
+                  default_theme: newTheme ? 'dark' : 'light'
+                });
+              } catch (error) {
+                console.error('Kunde inte spara tema-inställning:', error);
+              }
+            }}
           />
         )}
       </div>

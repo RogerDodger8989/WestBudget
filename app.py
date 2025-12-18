@@ -26,17 +26,26 @@ CORS(app, resources={
     }
 }, supports_credentials=True)
 
-# Add CORS headers manually for all routes as fallback
+# Add CORS headers manually for all routes as fallback (only if not already set by Flask-CORS)
 @app.after_request
 def after_request(response):
     origin = request.headers.get('Origin')
     allowed_origins = ["http://localhost:5100", "http://192.168.1.232:5100", "http://localhost:3000"]
     
-    if origin in allowed_origins:
-        response.headers.add('Access-Control-Allow-Origin', origin)
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With')
-    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS,PATCH')
-    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    # Only add headers if they don't already exist (to avoid duplicates)
+    if 'Access-Control-Allow-Origin' not in response.headers:
+        if origin in allowed_origins:
+            response.headers['Access-Control-Allow-Origin'] = origin
+    
+    if 'Access-Control-Allow-Headers' not in response.headers:
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,X-Requested-With'
+    
+    if 'Access-Control-Allow-Methods' not in response.headers:
+        response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS,PATCH'
+    
+    if 'Access-Control-Allow-Credentials' not in response.headers:
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+    
     return response
 
 # Ensure upload folder exists
@@ -73,6 +82,55 @@ def init_db():
         if 'end_date' not in columns:
             print("⚠️  Adding end_date column to agreements table...")
             cursor.execute('ALTER TABLE agreements ADD COLUMN end_date TEXT')
+            conn.commit()
+        
+        # Check if vehicles table exists, if not create it
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='vehicles'")
+        if not cursor.fetchone():
+            print("⚠️  Creating vehicles table...")
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS vehicles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    registration_number TEXT UNIQUE NOT NULL,
+                    make_model TEXT NOT NULL,
+                    odometer INTEGER DEFAULT 0,
+                    next_inspection TEXT,
+                    insurance_company TEXT,
+                    insurance_type TEXT,
+                    status TEXT NOT NULL DEFAULT 'Aktiv' CHECK(status IN ('Aktiv', 'Inaktiv', 'Såld')),
+                    category TEXT DEFAULT 'Personbil',
+                    note TEXT DEFAULT '',
+                    images TEXT DEFAULT '[]',
+                    agreement_id INTEGER,
+                    next_service_odometer INTEGER,
+                    next_service_date TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (agreement_id) REFERENCES agreements(id)
+                )
+            ''')
+            conn.commit()
+        
+        # Check if vehicle_expenses table exists, if not create it
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='vehicle_expenses'")
+        if not cursor.fetchone():
+            print("⚠️  Creating vehicle_expenses table...")
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS vehicle_expenses (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    vehicle_id INTEGER NOT NULL,
+                    category TEXT NOT NULL,
+                    amount REAL NOT NULL,
+                    date TEXT NOT NULL,
+                    description TEXT DEFAULT '',
+                    receipt_path TEXT,
+                    note TEXT DEFAULT '',
+                    odometer_at_purchase INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
+                )
+            ''')
             conn.commit()
     
     conn.close()
@@ -1100,6 +1158,444 @@ def delete_category_rule(rule_id):
 
 
 # ============================================================================
+# VEHICLE ENDPOINTS
+# ============================================================================
+
+@app.route('/api/vehicles', methods=['GET'])
+def get_vehicles():
+    """Get all vehicles"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM vehicles ORDER BY registration_number')
+    vehicles = []
+    
+    for row in cursor.fetchall():
+        vehicle = dict(row)
+        # Parse images if it exists
+        if 'images' in vehicle and vehicle['images']:
+            try:
+                import json
+                vehicle['images'] = json.loads(vehicle['images'])
+            except:
+                vehicle['images'] = []
+        else:
+            vehicle['images'] = []
+        vehicles.append(vehicle)
+    
+    conn.close()
+    return jsonify(vehicles), 200
+
+
+@app.route('/api/vehicles/<int:vehicle_id>', methods=['GET'])
+def get_vehicle(vehicle_id):
+    """Get a specific vehicle"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM vehicles WHERE id = ?', (vehicle_id,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if row:
+        vehicle = dict(row)
+        # Parse images
+        if 'images' in vehicle and vehicle['images']:
+            try:
+                import json
+                vehicle['images'] = json.loads(vehicle['images'])
+            except:
+                vehicle['images'] = []
+        else:
+            vehicle['images'] = []
+        return jsonify(vehicle), 200
+    
+    return jsonify({'error': 'Vehicle not found'}), 404
+
+
+@app.route('/api/vehicles', methods=['POST'])
+def create_vehicle():
+    """Create a new vehicle"""
+    data = request.get_json()
+    
+    required_fields = ['registration_number', 'make_model']
+    if not all(field in data for field in required_fields):
+        return jsonify({'error': 'Missing required fields'}), 400
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Check if registration number already exists
+    cursor.execute('SELECT id FROM vehicles WHERE registration_number = ?', (data['registration_number'],))
+    if cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Registration number already exists'}), 400
+    
+    cursor.execute('''
+        INSERT INTO vehicles (
+            registration_number, make_model, odometer, next_inspection,
+            insurance_company, insurance_type, status, category, note,
+            agreement_id, next_service_odometer, next_service_date
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        data['registration_number'],
+        data['make_model'],
+        data.get('odometer', 0),
+        data.get('next_inspection', ''),
+        data.get('insurance_company', ''),
+        data.get('insurance_type', ''),
+        data.get('status', 'Aktiv'),
+        data.get('category', 'Personbil'),
+        data.get('note', ''),
+        data.get('agreement_id'),
+        data.get('next_service_odometer'),
+        data.get('next_service_date', '')
+    ))
+    
+    vehicle_id = cursor.lastrowid
+    conn.commit()
+    
+    cursor.execute('SELECT * FROM vehicles WHERE id = ?', (vehicle_id,))
+    new_vehicle = dict(cursor.fetchone())
+    
+    conn.close()
+    
+    return jsonify(new_vehicle), 201
+
+
+@app.route('/api/vehicles/<int:vehicle_id>', methods=['PUT'])
+def update_vehicle(vehicle_id):
+    """Update a vehicle"""
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Check if vehicle exists
+    cursor.execute('SELECT id FROM vehicles WHERE id = ?', (vehicle_id,))
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Vehicle not found'}), 404
+    
+    # Check if registration number is being changed and if it already exists
+    if 'registration_number' in data:
+        cursor.execute('SELECT id FROM vehicles WHERE registration_number = ? AND id != ?', 
+                      (data['registration_number'], vehicle_id))
+        if cursor.fetchone():
+            conn.close()
+            return jsonify({'error': 'Registration number already exists'}), 400
+    
+    # Build update query dynamically
+    update_fields = []
+    values = []
+    
+    allowed_fields = [
+        'registration_number', 'make_model', 'odometer', 'next_inspection',
+        'insurance_company', 'insurance_type', 'status', 'category', 'note',
+        'agreement_id', 'next_service_odometer', 'next_service_date'
+    ]
+    
+    for field in allowed_fields:
+        if field in data:
+            update_fields.append(f"{field} = ?")
+            values.append(data[field])
+    
+    if 'images' in data:
+        import json
+        images_json = json.dumps(data['images']) if isinstance(data['images'], list) else data['images']
+        update_fields.append("images = ?")
+        values.append(images_json)
+    
+    if not update_fields:
+        conn.close()
+        return jsonify({'error': 'No valid fields to update'}), 400
+    
+    update_fields.append("updated_at = ?")
+    values.append(datetime.now().isoformat())
+    values.append(vehicle_id)
+    
+    cursor.execute(f'''
+        UPDATE vehicles 
+        SET {', '.join(update_fields)}
+        WHERE id = ?
+    ''', values)
+    
+    conn.commit()
+    
+    cursor.execute('SELECT * FROM vehicles WHERE id = ?', (vehicle_id,))
+    updated_vehicle = dict(cursor.fetchone())
+    
+    # Parse images
+    if 'images' in updated_vehicle and updated_vehicle['images']:
+        try:
+            updated_vehicle['images'] = json.loads(updated_vehicle['images'])
+        except:
+            updated_vehicle['images'] = []
+    else:
+        updated_vehicle['images'] = []
+    
+    conn.close()
+    
+    return jsonify(updated_vehicle), 200
+
+
+@app.route('/api/vehicles/<int:vehicle_id>', methods=['DELETE'])
+def delete_vehicle(vehicle_id):
+    """Delete a vehicle"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('DELETE FROM vehicles WHERE id = ?', (vehicle_id,))
+    
+    if cursor.rowcount == 0:
+        conn.close()
+        return jsonify({'error': 'Vehicle not found'}), 404
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'message': 'Vehicle deleted successfully'}), 200
+
+
+@app.route('/api/vehicles/<int:vehicle_id>/upload-image', methods=['POST'])
+def upload_vehicle_image(vehicle_id):
+    """Upload an image for a vehicle"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+        
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        if not allowed_file(file.filename):
+            return jsonify({'error': 'File type not allowed'}), 400
+        
+        # Get vehicle images storage path from settings or use default
+        conn_settings = get_db()
+        cursor_settings = conn_settings.cursor()
+        cursor_settings.execute('SELECT value FROM settings WHERE key = ?', ('vehicle_images_path',))
+        result_settings = cursor_settings.fetchone()
+        conn_settings.close()
+        
+        if result_settings:
+            vehicle_folder = result_settings['value']
+        else:
+            # Default: uploads/vehicles
+            vehicle_folder = os.path.join(app.config['UPLOAD_FOLDER'], 'vehicles')
+        
+        # Create directory if it doesn't exist
+        os.makedirs(vehicle_folder, exist_ok=True)
+        
+        # Secure filename and save
+        filename = secure_filename(file.filename)
+        file_path = os.path.join(vehicle_folder, filename)
+        file.save(file_path)
+        
+        # Get current images
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT images FROM vehicles WHERE id = ?', (vehicle_id,))
+        row = cursor.fetchone()
+        
+        if not row:
+            conn.close()
+            return jsonify({'error': 'Vehicle not found'}), 404
+        
+        import json
+        current_images = []
+        if row['images']:
+            try:
+                current_images = json.loads(row['images'])
+            except:
+                current_images = []
+        
+        # Store full path in database (or relative path if using default)
+        if result_settings and result_settings['value'] != os.path.join(app.config['UPLOAD_FOLDER'], 'vehicles'):
+            # Custom path - store full path
+            image_path = file_path
+        else:
+            # Default path - store relative path
+            image_path = os.path.join('vehicles', filename).replace('\\', '/')
+        
+        current_images.append(image_path)
+        
+        # Update vehicle
+        cursor.execute('UPDATE vehicles SET images = ?, updated_at = ? WHERE id = ?',
+                      (json.dumps(current_images), datetime.now().isoformat(), vehicle_id))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'message': 'Image uploaded successfully', 'image_path': image_path}), 200
+        
+    except Exception as e:
+        print(f"❌ [Backend] Error uploading vehicle image: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================================================
+# VEHICLE EXPENSES ENDPOINTS
+# ============================================================================
+
+@app.route('/api/vehicle-expenses', methods=['GET'])
+def get_vehicle_expenses():
+    """Get all vehicle expenses, optionally filtered by vehicle_id"""
+    vehicle_id = request.args.get('vehicle_id', type=int)
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    if vehicle_id:
+        cursor.execute('SELECT * FROM vehicle_expenses WHERE vehicle_id = ? ORDER BY date DESC', (vehicle_id,))
+    else:
+        cursor.execute('SELECT * FROM vehicle_expenses ORDER BY date DESC')
+    
+    expenses = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    
+    return jsonify(expenses), 200
+
+
+@app.route('/api/vehicle-expenses/<int:expense_id>', methods=['GET'])
+def get_vehicle_expense(expense_id):
+    """Get a specific vehicle expense"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM vehicle_expenses WHERE id = ?', (expense_id,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if row:
+        return jsonify(dict(row)), 200
+    
+    return jsonify({'error': 'Vehicle expense not found'}), 404
+
+
+@app.route('/api/vehicle-expenses', methods=['POST'])
+def create_vehicle_expense():
+    """Create a new vehicle expense"""
+    data = request.get_json()
+    
+    required_fields = ['vehicle_id', 'category', 'amount', 'date']
+    if not all(field in data for field in required_fields):
+        return jsonify({'error': 'Missing required fields'}), 400
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Verify vehicle exists
+    cursor.execute('SELECT id FROM vehicles WHERE id = ?', (data['vehicle_id'],))
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Vehicle not found'}), 404
+    
+    cursor.execute('''
+        INSERT INTO vehicle_expenses (
+            vehicle_id, category, amount, date, description,
+            receipt_path, note, odometer_at_purchase
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        data['vehicle_id'],
+        data['category'],
+        data['amount'],
+        data['date'],
+        data.get('description', ''),
+        data.get('receipt_path', ''),
+        data.get('note', ''),
+        data.get('odometer_at_purchase')
+    ))
+    
+    expense_id = cursor.lastrowid
+    conn.commit()
+    
+    cursor.execute('SELECT * FROM vehicle_expenses WHERE id = ?', (expense_id,))
+    new_expense = dict(cursor.fetchone())
+    
+    conn.close()
+    
+    return jsonify(new_expense), 201
+
+
+@app.route('/api/vehicle-expenses/<int:expense_id>', methods=['PUT'])
+def update_vehicle_expense(expense_id):
+    """Update a vehicle expense"""
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Check if expense exists
+    cursor.execute('SELECT id FROM vehicle_expenses WHERE id = ?', (expense_id,))
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Vehicle expense not found'}), 404
+    
+    # Build update query dynamically
+    update_fields = []
+    values = []
+    
+    allowed_fields = [
+        'vehicle_id', 'category', 'amount', 'date', 'description',
+        'receipt_path', 'note', 'odometer_at_purchase'
+    ]
+    
+    for field in allowed_fields:
+        if field in data:
+            update_fields.append(f"{field} = ?")
+            values.append(data[field])
+    
+    if not update_fields:
+        conn.close()
+        return jsonify({'error': 'No valid fields to update'}), 400
+    
+    update_fields.append("updated_at = ?")
+    values.append(datetime.now().isoformat())
+    values.append(expense_id)
+    
+    cursor.execute(f'''
+        UPDATE vehicle_expenses 
+        SET {', '.join(update_fields)}
+        WHERE id = ?
+    ''', values)
+    
+    conn.commit()
+    
+    cursor.execute('SELECT * FROM vehicle_expenses WHERE id = ?', (expense_id,))
+    updated_expense = dict(cursor.fetchone())
+    
+    conn.close()
+    
+    return jsonify(updated_expense), 200
+
+
+@app.route('/api/vehicle-expenses/<int:expense_id>', methods=['DELETE'])
+def delete_vehicle_expense(expense_id):
+    """Delete a vehicle expense"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('DELETE FROM vehicle_expenses WHERE id = ?', (expense_id,))
+    
+    if cursor.rowcount == 0:
+        conn.close()
+        return jsonify({'error': 'Vehicle expense not found'}), 404
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'message': 'Vehicle expense deleted successfully'}), 200
+
+
+# ============================================================================
 # ROOT & HEALTH CHECK
 # ============================================================================
 
@@ -1113,7 +1609,9 @@ def index():
             'agreements': '/api/agreements',
             'settings': '/api/settings',
             'upload': '/api/upload',
-            'categories': '/api/categories'
+            'categories': '/api/categories',
+            'vehicles': '/api/vehicles',
+            'vehicle-expenses': '/api/vehicle-expenses'
         }
     }), 200
 

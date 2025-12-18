@@ -185,4 +185,90 @@ export const api = {
     });
     return handleResponse(res);
   },
+
+  // --- Vehicles ---
+  getVehicles: async () => {
+    const res = await fetch(`${API_BASE_URL}/vehicles`);
+    return handleResponse(res);
+  },
+
+  getVehicle: async (id) => {
+    const res = await fetch(`${API_BASE_URL}/vehicles/${id}`);
+    return handleResponse(res);
+  },
+
+  createVehicle: async (data) => {
+    const res = await fetch(`${API_BASE_URL}/vehicles`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse(res);
+  },
+
+  updateVehicle: async (id, data) => {
+    const res = await fetch(`${API_BASE_URL}/vehicles/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse(res);
+  },
+
+  deleteVehicle: async (id) => {
+    const res = await fetch(`${API_BASE_URL}/vehicles/${id}`, {
+      method: 'DELETE',
+    });
+    return handleResponse(res);
+  },
+
+  uploadVehicleImage: async (vehicleId, file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const res = await fetch(`${API_BASE_URL}/vehicles/${vehicleId}/upload-image`, {
+      method: 'POST',
+      body: formData,
+    });
+    return handleResponse(res);
+  },
+
+  // --- Vehicle Expenses ---
+  getVehicleExpenses: async (vehicleId = null) => {
+    const url = vehicleId 
+      ? `${API_BASE_URL}/vehicle-expenses?vehicle_id=${vehicleId}`
+      : `${API_BASE_URL}/vehicle-expenses`;
+    const res = await fetch(url);
+    return handleResponse(res);
+  },
+
+  getVehicleExpense: async (id) => {
+    const res = await fetch(`${API_BASE_URL}/vehicle-expenses/${id}`);
+    return handleResponse(res);
+  },
+
+  createVehicleExpense: async (data) => {
+    const res = await fetch(`${API_BASE_URL}/vehicle-expenses`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse(res);
+  },
+
+  updateVehicleExpense: async (id, data) => {
+    const res = await fetch(`${API_BASE_URL}/vehicle-expenses/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse(res);
+  },
+
+  deleteVehicleExpense: async (id) => {
+    const res = await fetch(`${API_BASE_URL}/vehicle-expenses/${id}`, {
+      method: 'DELETE',
+    });
+    return handleResponse(res);
+  },
 };
