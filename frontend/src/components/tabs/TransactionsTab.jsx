@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { Search, Filter, Import, ArrowDown, Download, Calendar } from 'lucide-react';
 import TransactionItem from '../TransactionItem';
 import DateRangeBtn from '../DateRangeBtn';
@@ -14,6 +14,41 @@ const TransactionsTab = ({
   getTitle,
   loading 
 }) => {
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Filtrera transaktioner baserat på sökfråga
+  const filteredTransactions = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return transactions;
+    }
+
+    const query = searchQuery.toLowerCase().trim();
+    
+    return transactions.filter(t => {
+      // Sök i title
+      if (t.title?.toLowerCase().includes(query)) return true;
+      
+      // Sök i amount (som sträng)
+      if (t.amount?.toLowerCase().includes(query)) return true;
+      
+      // Sök i category
+      if (t.category?.toLowerCase().includes(query)) return true;
+      
+      // Sök i note
+      if (t.note?.toLowerCase().includes(query)) return true;
+      
+      // Sök i id (som sträng)
+      if (String(t.id).includes(query)) return true;
+      
+      // Sök i date (formaterat)
+      if (t.date?.toLowerCase().includes(query)) return true;
+      
+      // Sök i status
+      if (t.status?.toLowerCase().includes(query)) return true;
+      
+      return false;
+    });
+  }, [transactions, searchQuery]);
   return (
     <div className="animate-fade-in space-y-6">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -44,7 +79,9 @@ const TransactionsTab = ({
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
               <input 
                 type="text" 
-                placeholder="Sök..." 
+                placeholder="Sök titel, belopp, kategori, ID..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9 pr-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm w-full sm:w-64 focus:ring-2 focus:ring-indigo-500 outline-none" 
               />
             </div>
@@ -87,8 +124,12 @@ const TransactionsTab = ({
         <div className="flex-1 overflow-y-auto">
           {loading ? (
             <div className="text-center py-12">Laddar transaktioner...</div>
+          ) : filteredTransactions.length === 0 ? (
+            <div className="text-center py-12 text-zinc-500">
+              {searchQuery ? `Inga transaktioner matchar "${searchQuery}"` : 'Inga transaktioner hittades'}
+            </div>
           ) : (
-            transactions.map(t => (
+            filteredTransactions.map(t => (
               <TransactionItem 
                 key={t.id} 
                 data={t} 

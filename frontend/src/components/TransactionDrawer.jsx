@@ -1,7 +1,16 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { X, Tag, FileText, CheckCircle, UploadCloud, Trash2, ChevronRight } from 'lucide-react';
 
-const TransactionDrawer = ({ transaction, onClose, onCategoryChange, categories }) => {
+const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUpload, categories }) => {
+  const fileInputRef = useRef(null);
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files[0];
+    if (file && onReceiptUpload) {
+      onReceiptUpload(transaction.id, file);
+    }
+  };
+
   return (
     <div className="h-full flex flex-col">
       <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-start justify-between bg-zinc-50 dark:bg-zinc-900/50">
@@ -66,13 +75,31 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, categories 
             )}
           </div>
           
-          <div className="border-2 border-dashed border-zinc-300 dark:border-zinc-700 hover:border-indigo-500 dark:hover:border-indigo-500 rounded-xl p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-colors bg-zinc-50 dark:bg-zinc-800/30 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 group">
+          <input 
+            ref={fileInputRef}
+            type="file" 
+            accept=".pdf,.png,.jpg,.jpeg,.gif"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+          
+          <div 
+            onClick={() => fileInputRef.current?.click()}
+            className="border-2 border-dashed border-zinc-300 dark:border-zinc-700 hover:border-indigo-500 dark:hover:border-indigo-500 rounded-xl p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-colors bg-zinc-50 dark:bg-zinc-800/30 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 group"
+          >
             <div className="w-12 h-12 bg-white dark:bg-zinc-800 rounded-full flex items-center justify-center mb-3 shadow-sm group-hover:scale-110 transition-transform">
               <UploadCloud className="w-6 h-6 text-zinc-400 group-hover:text-indigo-500" />
             </div>
             <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Klicka för att ladda upp</p>
-            <p className="text-xs text-zinc-500 mt-1">eller dra och släpp filen här</p>
+            <p className="text-xs text-zinc-500 mt-1">PDF, PNG, JPG (max 16MB)</p>
           </div>
+          
+          {transaction.receipt_path && (
+            <div className="mt-2 p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-100 dark:border-emerald-800">
+              <p className="text-xs text-emerald-700 dark:text-emerald-300 font-medium">Kvitto sparat:</p>
+              <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1 font-mono truncate">{transaction.receipt_path}</p>
+            </div>
+          )}
         </div>
 
         <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-xl p-4 space-y-3 border border-zinc-100 dark:border-zinc-800">

@@ -1,14 +1,29 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Bell, Search } from 'lucide-react';
 
-const Topbar = () => {
+const Topbar = ({ onSearch, searchQuery: externalSearchQuery }) => {
+  const [localSearchQuery, setLocalSearchQuery] = useState('');
+  const searchQuery = externalSearchQuery !== undefined ? externalSearchQuery : localSearchQuery;
+
+  const handleSearchChange = (e) => {
+    const value = e.target.value;
+    if (externalSearchQuery === undefined) {
+      setLocalSearchQuery(value);
+    }
+    if (onSearch) {
+      onSearch(value);
+    }
+  };
+
   return (
     <header className="h-20 border-b border-zinc-200 dark:border-zinc-900 flex items-center justify-between px-8 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-sm sticky top-0 z-20 transition-colors duration-500">
       <div className="relative">
         <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500" />
         <input 
           type="text" 
-          placeholder="Sök transaktioner..." 
+          placeholder="Sök transaktioner, belopp, ID..." 
+          value={searchQuery}
+          onChange={handleSearchChange}
           className="bg-zinc-100 dark:bg-zinc-900/50 border-none rounded-full py-2.5 pl-10 pr-4 text-sm text-zinc-900 dark:text-zinc-300 placeholder-zinc-500 dark:placeholder-zinc-600 w-64 focus:ring-2 focus:ring-indigo-500/50 focus:bg-white dark:focus:bg-zinc-900 transition-all"
         />
       </div>

@@ -76,6 +76,8 @@ State Management: Use useState for UI states (modals, tabs, hover effects).
 
 No "Alerts": Never use the browser alert(). Build custom UI notifications or modals.
 
+Toast Notifications: Use the toast system for user feedback. Import useToast hook and call showToast(message, options). Options include: type ('success', 'error', 'info'), description, undo (boolean), undoAction (function). Toasts auto-dismiss after 5 seconds with a progress bar. Always provide undo functionality for destructive actions.
+
 Robustness: Always handle empty states (e.g., if a list is empty, show a nice "No items found" message).
 
 Specific Features Logic

@@ -1,5 +1,5 @@
-import React from 'react';
-import { Fuel, Wrench, Gauge, Car, Calendar, Download } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Fuel, Wrench, Gauge, Car, Calendar, Download, Search } from 'lucide-react';
 import StatCard from '../StatCard';
 import TransactionItem from '../TransactionItem';
 import DateRangeBtn from '../DateRangeBtn';
@@ -13,9 +13,34 @@ const VehiclesTab = ({
   getTitle,
   loading 
 }) => {
-  const vehicleTransactions = transactions.filter(t => 
-    ['Drivmedel', 'Underhåll', 'Försäkring', 'Resor'].includes(t.category)
-  );
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Filtrera fordonsrelaterade transaktioner
+  const vehicleTransactions = useMemo(() => {
+    return transactions.filter(t => 
+      ['Drivmedel', 'Underhåll', 'Försäkring', 'Resor'].includes(t.category)
+    );
+  }, [transactions]);
+
+  // Filtrera baserat på sökfråga
+  const filteredVehicleTransactions = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return vehicleTransactions;
+    }
+
+    const query = searchQuery.toLowerCase().trim();
+    
+    return vehicleTransactions.filter(t => {
+      if (t.title?.toLowerCase().includes(query)) return true;
+      if (t.amount?.toLowerCase().includes(query)) return true;
+      if (t.category?.toLowerCase().includes(query)) return true;
+      if (t.note?.toLowerCase().includes(query)) return true;
+      if (String(t.id).includes(query)) return true;
+      if (t.date?.toLowerCase().includes(query)) return true;
+      if (t.status?.toLowerCase().includes(query)) return true;
+      return false;
+    });
+  }, [vehicleTransactions, searchQuery]);
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -74,12 +99,28 @@ const VehiclesTab = ({
         </div>
 
         <div className="lg:col-span-2 bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 flex flex-col shadow-sm dark:shadow-none">
-          <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-6">Fordonskostnader</h3>
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Fordonskostnader</h3>
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+              <input 
+                type="text" 
+                placeholder="Sök..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 pr-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm w-48 focus:ring-2 focus:ring-indigo-500 outline-none" 
+              />
+            </div>
+          </div>
           <div className="space-y-4 flex-1">
             {loading ? (
               <div className="text-center py-12">Laddar fordonskostnader...</div>
+            ) : filteredVehicleTransactions.length === 0 ? (
+              <div className="text-center py-12 text-zinc-500">
+                {searchQuery ? `Inga fordonskostnader matchar "${searchQuery}"` : 'Inga fordonskostnader hittades'}
+              </div>
             ) : (
-              vehicleTransactions.map(t => (
+              filteredVehicleTransactions.map(t => (
                 <TransactionItem 
                   key={t.id} 
                   data={t} 

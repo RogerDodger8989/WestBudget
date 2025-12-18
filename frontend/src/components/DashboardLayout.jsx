@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { api } from '../api';
+import { useToast } from '../contexts/ToastContext';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import OverviewTab from './tabs/OverviewTab';
@@ -8,8 +10,11 @@ import VehiclesTab from './tabs/VehiclesTab';
 import ReportsTab from './tabs/ReportsTab';
 import SettingsTab from './tabs/SettingsTab';
 import TransactionDrawer from './TransactionDrawer';
+import AgreementDrawer from './AgreementDrawer';
 import NoteModal from './NoteModal';
+import AgreementNoteModal from './AgreementNoteModal';
 import ImportModal from './ImportModal';
+import AddAgreementModal from './AddAgreementModal';
 
 const DashboardLayout = ({ 
   onLogout, 
@@ -27,22 +32,119 @@ const DashboardLayout = ({
   const [dateRange, setDateRange] = useState('month');
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [editingNoteTransactionId, setEditingNoteTransactionId] = useState(null);
+  const [editingNoteAgreementId, setEditingNoteAgreementId] = useState(null);
   const [selectedTransaction, setSelectedTransaction] = useState(null);
+  const [selectedAgreement, setSelectedAgreement] = useState(null);
+  const [isAddAgreementModalOpen, setIsAddAgreementModalOpen] = useState(false);
+  
+  // Toast system
+  const { showToast } = useToast();
 
-  const handleCategoryChange = (id, newCategory) => {
-    setTransactions(transactions.map(t => 
-      t.id === id ? { ...t, category: newCategory } : t
-    ));
-    if (selectedTransaction && selectedTransaction.id === id) {
-      setSelectedTransaction({ ...selectedTransaction, category: newCategory });
+  const handleCategoryChange = async (id, newCategory) => {
+    // Spara gamla kategorin för undo
+    const oldTransaction = transactions.find(t => t.id === id);
+    const oldCategory = oldTransaction?.category || '';
+    
+    try {
+      // Uppdatera i backend
+      await api.updateTransaction(id, { category: newCategory });
+      
+      // Uppdatera lokalt state
+      setTransactions(transactions.map(t => 
+        t.id === id ? { ...t, category: newCategory } : t
+      ));
+      if (selectedTransaction && selectedTransaction.id === id) {
+        setSelectedTransaction({ ...selectedTransaction, category: newCategory });
+      }
+      
+      showToast('Kategori uppdaterad!', {
+        type: 'success',
+        undo: true,
+        undoAction: async () => {
+          try {
+            await api.updateTransaction(id, { category: oldCategory });
+            setTransactions(transactions.map(t => 
+              t.id === id ? { ...t, category: oldCategory } : t
+            ));
+            if (selectedTransaction && selectedTransaction.id === id) {
+              setSelectedTransaction({ ...selectedTransaction, category: oldCategory });
+            }
+          } catch (err) {
+            console.error('Kunde inte ångra:', err);
+          }
+        }
+      });
+    } catch (error) {
+      console.error('Kunde inte uppdatera kategori:', error);
+      showToast('Kunde inte uppdatera kategori.', { type: 'error' });
     }
   };
 
-  const handleNoteSave = (id, newNote) => {
-    setTransactions(transactions.map(t => 
-      t.id === id ? { ...t, note: newNote } : t
-    ));
-    setEditingNoteTransactionId(null);
+  const handleNoteSave = async (id, newNote) => {
+    try {
+      // Spara gamla noteringen för undo
+      const oldTransaction = transactions.find(t => t.id === id);
+      const oldNote = oldTransaction?.note || '';
+      
+      // Spara notering till backend
+      await api.updateTransaction(id, { note: newNote });
+      
+      // Uppdatera lokalt state
+      setTransactions(transactions.map(t => 
+        t.id === id ? { ...t, note: newNote } : t
+      ));
+      setEditingNoteTransactionId(null);
+      
+      showToast('Notering sparad!', { 
+        type: 'success',
+        undo: true,
+        undoAction: async () => {
+          try {
+            await api.updateTransaction(id, { note: oldNote });
+            setTransactions(transactions.map(t => 
+              t.id === id ? { ...t, note: oldNote } : t
+            ));
+          } catch (err) {
+            console.error('Kunde inte ångra:', err);
+          }
+        }
+      });
+    } catch (error) {
+      console.error('❌ Kunde inte spara notering:', error);
+      showToast('Kunde inte spara notering. Försök igen.', { type: 'error' });
+    }
+  };
+
+  // Ny funktion för kvittohantering
+  const handleReceiptUpload = async (transactionId, file) => {
+    try {
+      console.log('📤 Laddar upp kvitto för transaktion:', transactionId);
+      
+      // Ladda upp filen till backend
+      const result = await api.uploadReceipt(file);
+      
+      // Uppdatera transaktionen med kvittosökväg
+      await api.updateTransaction(transactionId, {
+        receipt: true,
+        receipt_path: result.file_path
+      });
+      
+      // Uppdatera lokalt state
+      setTransactions(transactions.map(t => 
+        t.id === transactionId 
+          ? { ...t, receipt: true, receipt_path: result.file_path } 
+          : t
+      ));
+      
+      console.log('✅ Kvitto uppladdat:', result.file_path);
+      showToast(`Kvitto sparat: ${result.filename}`, { type: 'success' });
+      
+      // Ladda om data för att säkerställa synkronisering
+      if (reloadData) reloadData();
+    } catch (error) {
+      console.error('❌ Kunde inte ladda upp kvitto:', error);
+      showToast('Kunde inte ladda upp kvitto. Kontrollera att servern körs.', { type: 'error' });
+    }
   };
 
   const handleImportTransactions = (newTransactions) => {
@@ -53,6 +155,151 @@ const DashboardLayout = ({
     }));
     setTransactions([...transactionsWithIds, ...transactions]);
     setIsImportModalOpen(false);
+  };
+
+  const handleAddAgreement = async (agreementData) => {
+    try {
+      console.log('💾 Sparar nytt avtal:', agreementData);
+      
+      // Spara till backend
+      const newAgreement = await api.createAgreement(agreementData);
+      
+      console.log('✅ Avtal sparat:', newAgreement);
+      
+      // Ladda om data för att få det nya avtalet med ID
+      if (reloadData) {
+        await reloadData();
+      }
+      
+      // Stäng modalen
+      setIsAddAgreementModalOpen(false);
+      
+      // Visa toast med undo
+      showToast('Avtal sparat!', {
+        type: 'success',
+        undo: true,
+        undoAction: async () => {
+          try {
+            await api.deleteAgreement(newAgreement.id);
+            if (reloadData) await reloadData();
+            showToast('Avtal ångrat', { type: 'info' });
+          } catch (err) {
+            console.error('Kunde inte ångra:', err);
+            showToast('Kunde inte ångra avtal', { type: 'error' });
+          }
+        }
+      });
+    } catch (error) {
+      console.error('❌ Kunde inte spara avtal:', error);
+      showToast('Kunde inte spara avtal. Kontrollera att servern körs.', { type: 'error' });
+    }
+  };
+
+  const handleUpdateAgreement = async (agreementId, updates) => {
+    try {
+      console.log('💾 Uppdaterar avtal:', agreementId, updates);
+      
+      // Spara gamla data för undo
+      const oldAgreement = agreements.find(a => a.id === agreementId);
+      const oldData = oldAgreement ? { ...oldAgreement } : null;
+      
+      // Uppdatera i backend
+      await api.updateAgreement(agreementId, updates);
+      
+      console.log('✅ Avtal uppdaterat!');
+      
+      // Ladda om data
+      if (reloadData) {
+        await reloadData();
+      }
+      
+      // Stäng drawer eller modal
+      setSelectedAgreement(null);
+      setEditingNoteAgreementId(null);
+      
+      showToast('Ändringar sparade!', { 
+        type: 'success',
+        undo: true,
+        undoAction: async () => {
+          try {
+            if (oldData) {
+              // Återställ alla fält som ändrades
+              const restoreData = {};
+              Object.keys(updates).forEach(key => {
+                if (oldData[key] !== undefined) {
+                  restoreData[key] = oldData[key];
+                }
+              });
+              await api.updateAgreement(agreementId, restoreData);
+              if (reloadData) await reloadData();
+            }
+          } catch (err) {
+            console.error('Kunde inte ångra:', err);
+          }
+        }
+      });
+    } catch (error) {
+      console.error('❌ Kunde inte uppdatera avtal:', error);
+      showToast('Kunde inte spara ändringar. Kontrollera att servern körs.', { type: 'error' });
+    }
+  };
+
+  const handleAgreementNoteSave = async (agreementId, updates) => {
+    try {
+      // Spara gamla noteringen för undo
+      const oldAgreement = agreements.find(a => a.id === agreementId);
+      const oldNotice = oldAgreement?.notice || '';
+      
+      await api.updateAgreement(agreementId, updates);
+      
+      // Ladda om data
+      if (reloadData) {
+        await reloadData();
+      }
+      
+      setEditingNoteAgreementId(null);
+      showToast('Notering sparad!', { 
+        type: 'success',
+        undo: true,
+        undoAction: async () => {
+          try {
+            await api.updateAgreement(agreementId, { notice: oldNotice });
+            if (reloadData) await reloadData();
+          } catch (err) {
+            console.error('Kunde inte ångra:', err);
+          }
+        }
+      });
+    } catch (error) {
+      console.error('❌ Kunde inte spara notering:', error);
+      showToast('Kunde inte spara notering. Försök igen.', { type: 'error' });
+    }
+  };
+
+  const getAgreementForNote = () => {
+    return agreements.find(a => a.id === editingNoteAgreementId);
+  };
+
+  const handleAgreementImageUpload = async (agreementId, file) => {
+    try {
+      console.log('📤 [DashboardLayout] Laddar upp bild för avtal:', agreementId, 'Fil:', file.name, 'Storlek:', file.size);
+      
+      const result = await api.uploadAgreementImage(agreementId, file);
+      
+      console.log('✅ [DashboardLayout] Bild uppladdat, resultat:', result);
+      
+      // Ladda om data för att få uppdaterad bildlista
+      if (reloadData) {
+        console.log('🔄 Laddar om data...');
+        await reloadData();
+      }
+      
+      return result;
+    } catch (error) {
+      console.error('❌ [DashboardLayout] Kunde inte ladda upp bild:', error);
+      console.error('❌ Error details:', error.message, error.stack);
+      throw error;
+    }
   };
 
   const getTitle = () => {
@@ -72,7 +319,6 @@ const DashboardLayout = ({
 
   return (
     <div className="flex h-screen overflow-hidden bg-zinc-100 dark:bg-black transition-colors duration-500">
-      
       {isImportModalOpen && (
         <ImportModal 
           onClose={() => setIsImportModalOpen(false)} 
@@ -88,16 +334,35 @@ const DashboardLayout = ({
         />
       )}
 
+      {editingNoteAgreementId && (
+        <AgreementNoteModal
+          agreement={getAgreementForNote()}
+          onClose={() => setEditingNoteAgreementId(null)}
+          onSave={handleAgreementNoteSave}
+        />
+      )}
+
+      {isAddAgreementModalOpen && (
+        <AddAgreementModal
+          onClose={() => setIsAddAgreementModalOpen(false)}
+          onSave={handleAddAgreement}
+          categories={categories}
+        />
+      )}
+
       <div 
         className={`fixed inset-0 bg-black/20 backdrop-blur-sm z-40 transition-opacity duration-300 ${
-          selectedTransaction ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          (selectedTransaction || selectedAgreement) ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
-        onClick={() => setSelectedTransaction(null)}
+        onClick={() => {
+          setSelectedTransaction(null);
+          setSelectedAgreement(null);
+        }}
       />
       
       <div 
         className={`fixed inset-y-0 right-0 w-full sm:w-[400px] bg-white dark:bg-zinc-900 shadow-2xl z-50 transform transition-transform duration-300 ease-in-out border-l border-zinc-200 dark:border-zinc-800 ${
-          selectedTransaction ? 'translate-x-0' : 'translate-x-full'
+          (selectedTransaction || selectedAgreement) ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
         {selectedTransaction && (
@@ -105,6 +370,16 @@ const DashboardLayout = ({
             transaction={selectedTransaction} 
             onClose={() => setSelectedTransaction(null)} 
             onCategoryChange={handleCategoryChange}
+            onReceiptUpload={handleReceiptUpload}
+            categories={categories}
+          />
+        )}
+        {selectedAgreement && (
+          <AgreementDrawer
+            agreement={selectedAgreement}
+            onClose={() => setSelectedAgreement(null)}
+            onSave={handleUpdateAgreement}
+            onImageUpload={handleAgreementImageUpload}
             categories={categories}
           />
         )}
@@ -155,6 +430,10 @@ const DashboardLayout = ({
                 agreements={agreements}
                 getTitle={getTitle}
                 loading={loading}
+                categories={categories}
+                onAddAgreement={() => setIsAddAgreementModalOpen(true)}
+                setSelectedAgreement={setSelectedAgreement}
+                setEditingNoteAgreementId={setEditingNoteAgreementId}
               />
             )}
 
@@ -182,6 +461,7 @@ const DashboardLayout = ({
             {activeTab === 'settings' && (
               <SettingsTab 
                 getTitle={getTitle}
+                reloadData={reloadData}
               />
             )}
 

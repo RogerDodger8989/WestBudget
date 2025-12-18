@@ -7,14 +7,16 @@ const StatCard = ({ title, amount, change, trend, icon }) => (
       <div className="p-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-xl group-hover:scale-110 transition-transform duration-300">
         {React.cloneElement(icon, { size: 20 })}
       </div>
-      <div className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full ${
-        trend === 'up' 
-          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400' 
-          : 'bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400'
-      }`}>
-        {trend === 'up' ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
-        {change}
-      </div>
+      {change && (
+        <div className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full ${
+          trend === 'up' 
+            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400' 
+            : 'bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400'
+        }`}>
+          {trend === 'up' ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
+          {change}
+        </div>
+      )}
     </div>
     <div>
       <h3 className="text-zinc-500 dark:text-zinc-500 text-sm font-medium mb-1">{title}</h3>

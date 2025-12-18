@@ -1,7 +1,7 @@
 // API Service Layer for WestBudget
 // Handles all HTTP requests to Flask backend
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API_BASE_URL = 'http://192.168.1.232:5000/api';
 
 // Helper function for handling API requests
 async function apiRequest(endpoint, options = {}) {
@@ -19,7 +19,7 @@ async function apiRequest(endpoint, options = {}) {
     const response = await fetch(url, config);
     
     if (!response.ok) {
-      const error = await response.json();
+      const error = await response.json().catch(() => ({ error: 'Request failed' }));
       throw new Error(error.error || `HTTP error! status: ${response.status}`);
     }
     
@@ -47,25 +47,16 @@ export const transactionAPI = {
     body: JSON.stringify(transaction),
   }),
   
-  // Create multiple transactions (bulk import)
-  createBulk: (transactions) => apiRequest('/transactions/bulk', {
-    method: 'POST',
-    body: JSON.stringify({ transactions }),
-  }),
-  
-  // Update transaction
-  update: (id, transaction) => apiRequest(`/transactions/${id}`, {
+  // Update transaction (CRUCIAL for notes, category, receipt_path)
+  update: (id, updates) => apiRequest(`/transactions/${id}`, {
     method: 'PUT',
-    body: JSON.stringify(transaction),
+    body: JSON.stringify(updates),
   }),
   
   // Delete transaction
   delete: (id) => apiRequest(`/transactions/${id}`, {
     method: 'DELETE',
   }),
-  
-  // Get transactions by category
-  getByCategory: (category) => apiRequest(`/transactions/category/${encodeURIComponent(category)}`),
 };
 
 // ============================================================================
@@ -86,9 +77,9 @@ export const agreementAPI = {
   }),
   
   // Update agreement
-  update: (id, agreement) => apiRequest(`/agreements/${id}`, {
+  update: (id, updates) => apiRequest(`/agreements/${id}`, {
     method: 'PUT',
-    body: JSON.stringify(agreement),
+    body: JSON.stringify(updates),
   }),
   
   // Delete agreement
@@ -98,82 +89,67 @@ export const agreementAPI = {
 };
 
 // ============================================================================
-// CATEGORY API
+// SETTINGS API
 // ============================================================================
 
-export const categoryAPI = {
+export const settingsAPI = {
+  // Get all settings
+  get: () => apiRequest('/settings'),
+  
+  // Update settings
+  update: (settings) => apiRequest('/settings', {
+    method: 'POST',
+    body: JSON.stringify(settings),
+  }),
+};
+
+// ============================================================================
+// FILE UPLOAD API
+// ============================================================================
+
+export const uploadAPI = {
+  // Upload a receipt file
+  uploadReceipt: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/upload`, {
+        method: 'POST',
+        body: formData,
+        // Don't set Content-Type header - browser will set it with boundary
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Upload failed');
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Upload error:', error);
+      throw error;
+    }
+  },
+};
+
+// ============================================================================
+// CATEGORIES API
+// ============================================================================
+
+export const categoriesAPI = {
   // Get all categories
   getAll: () => apiRequest('/categories'),
-  
-  // Create new category
-  create: (name) => apiRequest('/categories', {
-    method: 'POST',
-    body: JSON.stringify({ name }),
-  }),
-  
-  // Delete category
-  delete: (id) => apiRequest(`/categories/${id}`, {
-    method: 'DELETE',
-  }),
 };
 
 // ============================================================================
-// STATISTICS API
+// DEFAULT EXPORT
 // ============================================================================
-
-export const statsAPI = {
-  // Get overview statistics
-  getOverview: () => apiRequest('/stats/overview'),
-  
-  // Get category breakdown
-  getCategoryStats: () => apiRequest('/stats/categories'),
-};
-
-// ============================================================================
-// UTILITY FUNCTIONS
-// ============================================================================
-
-// Helper to format amount for display
-export function formatAmount(amount, type = 'expense') {
-  const absAmount = Math.abs(amount);
-  const formatted = absAmount.toLocaleString('sv-SE', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  });
-  
-  const sign = type === 'income' ? '+' : '-';
-  return `${sign}${formatted} kr`;
-}
-
-// Helper to parse amount from string (e.g., "-1,234 kr" -> -1234)
-export function parseAmount(amountString) {
-  const cleaned = amountString.replace(/[^\d,-]/g, '').replace(',', '');
-  return parseFloat(cleaned);
-}
-
-// Convert transaction for API (from app format to backend format)
-export function prepareTransactionForAPI(transaction) {
-  const amountValue = typeof transaction.amount === 'string' 
-    ? parseAmount(transaction.amount) 
-    : transaction.amount;
-  
-  return {
-    title: transaction.title,
-    date: transaction.date,
-    amount: amountValue,
-    amount_display: transaction.amount,
-    type: transaction.type,
-    category: transaction.category,
-    status: transaction.status || 'Väntar',
-    receipt: transaction.receipt || false,
-    note: transaction.note || '',
-  };
-}
 
 export default {
   transactions: transactionAPI,
   agreements: agreementAPI,
-  categories: categoryAPI,
-  stats: statsAPI,
+  settings: settingsAPI,
+  upload: uploadAPI,
+  categories: categoriesAPI,
 };
-
