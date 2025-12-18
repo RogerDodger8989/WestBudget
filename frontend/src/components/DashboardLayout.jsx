@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../api';
 import { useToast } from '../contexts/ToastContext';
 import Sidebar from './Sidebar';
@@ -13,6 +13,7 @@ import TransactionDrawer from './TransactionDrawer';
 import AgreementDrawer from './AgreementDrawer';
 import NoteModal from './NoteModal';
 import AgreementNoteModal from './AgreementNoteModal';
+import VehicleExpenseNoteModal from './VehicleExpenseNoteModal';
 import ImportModal from './ImportModal';
 import AddAgreementModal from './AddAgreementModal';
 import CustomDateRangeModal from './CustomDateRangeModal';
@@ -46,6 +47,7 @@ const DashboardLayout = ({
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [editingNoteTransactionId, setEditingNoteTransactionId] = useState(null);
   const [editingNoteAgreementId, setEditingNoteAgreementId] = useState(null);
+  const [editingNoteVehicleExpenseId, setEditingNoteVehicleExpenseId] = useState(null);
   const [selectedTransaction, setSelectedTransaction] = useState(null);
   const [selectedAgreement, setSelectedAgreement] = useState(null);
   const [isAddAgreementModalOpen, setIsAddAgreementModalOpen] = useState(false);
@@ -58,6 +60,26 @@ const DashboardLayout = ({
   
   // Toast system
   const { showToast } = useToast();
+
+  // Ladda om data när vehicles-fliken öppnas (bara en gång per flik-öppning)
+  const vehiclesTabLoadedRef = useRef(false);
+  const previousTabRef = useRef(activeTab);
+  
+  useEffect(() => {
+    // Om vi byter till vehicles-fliken och inte redan laddat för denna öppning
+    if (activeTab === 'vehicles' && previousTabRef.current !== 'vehicles' && reloadData) {
+      console.log('🔄 Laddar om data för vehicles-fliken...');
+      reloadData();
+      vehiclesTabLoadedRef.current = true;
+    }
+    
+    // Om vi lämnar vehicles-fliken, återställ flaggan
+    if (previousTabRef.current === 'vehicles' && activeTab !== 'vehicles') {
+      vehiclesTabLoadedRef.current = false;
+    }
+    
+    previousTabRef.current = activeTab;
+  }, [activeTab, reloadData]);
 
   const handleCategoryChange = async (id, newCategory) => {
     // Spara gamla kategorin för undo
@@ -574,14 +596,21 @@ const DashboardLayout = ({
         console.log('💾 Sparar fordonskostnad:', expenseData);
         const newExpense = await api.createVehicleExpense(expenseData);
         console.log('✅ Kostnad sparad:', newExpense);
-        if (reloadData) await reloadData();
+        
+        // Ladda om data för att visa den nya kostnaden
+        if (reloadData) {
+          await reloadData();
+        }
+        
         setIsAddVehicleExpenseModalOpen(false);
         showToast('Kostnad sparat!', {
           type: 'success',
           undo: true,
           undoAction: async () => {
             await api.deleteVehicleExpense(newExpense.id);
-            if (reloadData) await reloadData();
+            if (reloadData) {
+              await reloadData();
+            }
           }
         });
       }
@@ -655,6 +684,38 @@ const DashboardLayout = ({
     return agreements.find(a => a.id === editingNoteAgreementId);
   };
 
+  const handleVehicleExpenseNoteSave = async (expenseId, updates) => {
+    try {
+      // Spara gamla noteringen för undo
+      const oldExpense = vehicleExpenses.find(e => e.id === expenseId);
+      const oldNote = oldExpense?.note || '';
+      
+      await api.updateVehicleExpense(expenseId, updates);
+      
+      // Ladda om data
+      if (reloadData) {
+        await reloadData();
+      }
+      
+      setEditingNoteVehicleExpenseId(null);
+      showToast('Notering sparad!', { 
+        type: 'success',
+        undo: true,
+        undoAction: async () => {
+          try {
+            await api.updateVehicleExpense(expenseId, { note: oldNote });
+            if (reloadData) await reloadData();
+          } catch (err) {
+            console.error('Kunde inte ångra:', err);
+          }
+        }
+      });
+    } catch (error) {
+      console.error('❌ Kunde inte spara notering:', error);
+      showToast('Kunde inte spara notering. Försök igen.', { type: 'error' });
+    }
+  };
+
   const handleAgreementImageUpload = async (agreementId, file) => {
     try {
       console.log('📤 [DashboardLayout] Laddar upp bild för avtal:', agreementId, 'Fil:', file.name, 'Storlek:', file.size);
@@ -724,6 +785,19 @@ const DashboardLayout = ({
           onSave={handleAgreementNoteSave}
         />
       )}
+
+      {editingNoteVehicleExpenseId && (() => {
+        const expense = vehicleExpenses.find(e => e.id === editingNoteVehicleExpenseId);
+        const vehicle = vehicles.find(v => v.id === expense?.vehicle_id);
+        return expense ? (
+          <VehicleExpenseNoteModal
+            expense={expense}
+            vehicle={vehicle}
+            onClose={() => setEditingNoteVehicleExpenseId(null)}
+            onSave={handleVehicleExpenseNoteSave}
+          />
+        ) : null;
+      })()}
 
       {isAddAgreementModalOpen && (
         <AddAgreementModal
@@ -931,6 +1005,7 @@ const DashboardLayout = ({
                     showToast('Kunde inte radera kostnad', { type: 'error' });
                   }
                 }}
+                setEditingNoteVehicleExpenseId={setEditingNoteVehicleExpenseId}
                 reloadData={reloadData}
               />
             )}

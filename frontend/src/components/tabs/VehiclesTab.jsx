@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { Fuel, Wrench, Gauge, Car, Calendar, Download, Search, Plus, Filter, Trash2, Check, Eye } from 'lucide-react';
+import { Fuel, Wrench, Gauge, Car, Calendar, Download, Search, Plus, Filter, Trash2, Check, Eye, MessageSquare } from 'lucide-react';
 import StatCard from '../StatCard';
 import DateRangeBtn from '../DateRangeBtn';
+import VehicleExpenseFilterModal from '../VehicleExpenseFilterModal';
 import { filterByDateRange } from '../../utils/filterByDateRange';
 import { formatAmount, getAmountClassName } from '../../utils/formatAmount';
 import { useToast } from '../../contexts/ToastContext';
@@ -23,6 +24,7 @@ const VehiclesTab = ({
   onAddExpense,
   onEditExpense,
   onDeleteExpense,
+  setEditingNoteVehicleExpenseId,
   reloadData
 }) => {
   const { showToast } = useToast();
@@ -30,6 +32,13 @@ const VehiclesTab = ({
   const [selectedVehicleId, setSelectedVehicleId] = useState(null);
   const [selectedExpenses, setSelectedExpenses] = useState(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+  const [filters, setFilters] = useState({
+    vehicle: 'all',
+    category: 'all',
+    minAmount: '',
+    maxAmount: ''
+  });
   const selectAllCheckboxRef = useRef(null);
 
   // Filtrera expenses baserat på datum
@@ -37,21 +46,47 @@ const VehiclesTab = ({
     return filterByDateRange(vehicleExpenses, dateRange, customStartDate, customEndDate);
   }, [vehicleExpenses, dateRange, customStartDate, customEndDate]);
 
-  // Filtrera expenses baserat på valt fordon
-  const vehicleFilteredExpenses = useMemo(() => {
-    if (!selectedVehicleId) return dateFilteredExpenses;
-    return dateFilteredExpenses.filter(e => e.vehicle_id === selectedVehicleId);
-  }, [dateFilteredExpenses, selectedVehicleId]);
+  // Filtrera expenses baserat på filter (fordon, kategori, belopp)
+  const filterFilteredExpenses = useMemo(() => {
+    let filtered = [...dateFilteredExpenses];
+
+    // Filtrera på fordon
+    if (filters.vehicle !== 'all') {
+      filtered = filtered.filter(e => e.vehicle_id === parseInt(filters.vehicle));
+    }
+
+    // Filtrera på kategori
+    if (filters.category !== 'all') {
+      filtered = filtered.filter(e => e.category === filters.category);
+    }
+
+    // Filtrera på belopp
+    if (filters.minAmount) {
+      const min = parseFloat(filters.minAmount);
+      if (!isNaN(min)) {
+        filtered = filtered.filter(e => Math.abs(parseFloat(e.amount) || 0) >= min);
+      }
+    }
+
+    if (filters.maxAmount) {
+      const max = parseFloat(filters.maxAmount);
+      if (!isNaN(max)) {
+        filtered = filtered.filter(e => Math.abs(parseFloat(e.amount) || 0) <= max);
+      }
+    }
+
+    return filtered;
+  }, [dateFilteredExpenses, filters]);
 
   // Filtrera baserat på sökfråga
   const filteredExpenses = useMemo(() => {
     if (!searchQuery.trim()) {
-      return vehicleFilteredExpenses;
+      return filterFilteredExpenses;
     }
 
     const query = searchQuery.toLowerCase().trim();
     
-    return vehicleFilteredExpenses.filter(e => {
+    return filterFilteredExpenses.filter(e => {
       const vehicle = vehicles.find(v => v.id === e.vehicle_id);
       if (vehicle?.make_model?.toLowerCase().includes(query)) return true;
       if (vehicle?.registration_number?.toLowerCase().includes(query)) return true;
@@ -63,7 +98,7 @@ const VehiclesTab = ({
       if (String(e.id).includes(query)) return true;
       return false;
     });
-  }, [vehicleFilteredExpenses, searchQuery, vehicles]);
+  }, [filterFilteredExpenses, searchQuery, vehicles]);
 
   // Beräkna statistik
   const stats = useMemo(() => {
@@ -288,6 +323,16 @@ const VehiclesTab = ({
   const activeVehicles = vehicles.filter(v => v.status === 'Aktiv');
 
   return (
+    <>
+      {isFilterModalOpen && (
+        <VehicleExpenseFilterModal
+          isOpen={isFilterModalOpen}
+          onClose={() => setIsFilterModalOpen(false)}
+          vehicles={vehicles}
+          filters={filters}
+          onFiltersChange={setFilters}
+        />
+      )}
     <div className="animate-fade-in space-y-6">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
@@ -435,6 +480,19 @@ const VehiclesTab = ({
                 />
               </div>
               <button
+                onClick={() => setIsFilterModalOpen(true)}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm relative ${
+                  filters.vehicle !== 'all' || filters.category !== 'all' || filters.minAmount || filters.maxAmount
+                    ? 'bg-indigo-600 text-white hover:bg-indigo-500'
+                    : 'bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700'
+                }`}
+              >
+                <Filter size={16} />
+                {(filters.vehicle !== 'all' || filters.category !== 'all' || filters.minAmount || filters.maxAmount) && (
+                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-white rounded-full border-2 border-indigo-600" />
+                )}
+              </button>
+              <button
                 onClick={onAddExpense}
                 className="flex items-center gap-2 bg-zinc-900 dark:bg-indigo-600 hover:bg-zinc-800 dark:hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-all shadow-lg hover:shadow-xl active:scale-95"
               >
@@ -497,10 +555,11 @@ const VehiclesTab = ({
                     />
                   </div>
                   <div className="col-span-2">Datum</div>
-                  <div className="col-span-3">Fordon</div>
+                  <div className="col-span-2">Fordon</div>
                   <div className="col-span-2">Kategori</div>
                   <div className="col-span-2 text-right">Belopp</div>
-                  <div className="col-span-2 text-right">Åtgärder</div>
+                  <div className="col-span-1 text-center">Notering</div>
+                  <div className="col-span-1 text-right">Åtgärder</div>
                 </div>
 
                 {/* Expense rows */}
@@ -529,7 +588,7 @@ const VehiclesTab = ({
                       <div className="col-span-2 flex items-center text-sm text-zinc-700 dark:text-zinc-300">
                         {expense.date}
                       </div>
-                      <div className="col-span-3 flex items-center">
+                      <div className="col-span-2 flex items-center">
                         <div>
                           <div className="text-sm font-medium text-zinc-900 dark:text-white">
                             {vehicle?.make_model || 'Okänt fordon'}
@@ -545,10 +604,32 @@ const VehiclesTab = ({
                       <div className={`col-span-2 text-right text-sm font-medium ${getAmountClassName(-expense.amount)}`}>
                         {formatAmount(-expense.amount)}
                       </div>
-                      <div className="col-span-2 flex items-center justify-end gap-2">
-                        {expense.note && (
-                          <Eye size={14} className="text-zinc-400" title="Har notering" />
-                        )}
+                      {/* Notering-kolumn */}
+                      <div className="col-span-1 flex justify-center">
+                        {(() => {
+                          const hasNote = expense.note && expense.note.trim().length > 0;
+                          
+                          return (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (setEditingNoteVehicleExpenseId) {
+                                  setEditingNoteVehicleExpenseId(expense.id);
+                                }
+                              }}
+                              className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${
+                                hasNote
+                                  ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 hover:scale-110 cursor-pointer'
+                                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 hover:text-indigo-500 cursor-pointer'
+                              }`}
+                              title={hasNote ? expense.note : "Lägg till notering"}
+                            >
+                              {hasNote ? <Check size={14} /> : <Plus size={14} />}
+                            </button>
+                          );
+                        })()}
+                      </div>
+                      <div className="col-span-1 flex items-center justify-end">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -568,6 +649,7 @@ const VehiclesTab = ({
         </div>
       </div>
     </div>
+    </>
   );
 };
 
