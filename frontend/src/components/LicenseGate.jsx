@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Wallet, Key, ShieldCheck, ChevronRight } from 'lucide-react';
 import ThemeToggle from './ThemeToggle';
 import { api } from '../api';
+import logo from '../logo.png';
 
 const LicenseGate = ({ onUnlock, isDarkMode, toggleTheme }) => {
   const [key, setKey] = useState('');
@@ -44,9 +45,11 @@ const LicenseGate = ({ onUnlock, isDarkMode, toggleTheme }) => {
       <div className="w-full max-w-md z-10">
         <div className="bg-white/80 dark:bg-zinc-900/50 backdrop-blur-xl border border-zinc-200 dark:border-zinc-800 rounded-2xl p-8 shadow-2xl shadow-zinc-200/50 dark:shadow-black/50 transition-all duration-500">
           <div className="flex justify-center mb-6">
-            <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
-              <Wallet className="w-8 h-8 text-white" />
-            </div>
+            <img 
+              src={logo} 
+              alt="WestBudget" 
+              className="w-16 h-16 object-contain"
+            />
           </div>
           
           <h1 className="text-2xl font-bold text-center text-zinc-900 dark:text-white mb-2 transition-colors">WestBudget</h1>

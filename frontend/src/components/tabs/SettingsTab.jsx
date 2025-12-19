@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Settings, FolderOpen, Save, CheckCircle, Image as ImageIcon, Tag, Plus, Edit2, Trash2, X, Merge, AlertCircle, Loader2 } from 'lucide-react';
+import { Settings, FolderOpen, Save, CheckCircle, Image as ImageIcon, Tag, Plus, Edit2, Trash2, X, Merge, AlertCircle, Loader2, Download, Upload, Database } from 'lucide-react';
 import { api } from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import CategoryEditForm from '../CategoryEditForm';
@@ -1044,6 +1044,90 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme }) => {
                 SEK (kr)
               </span>
             </div>
+          </div>
+        </div>
+
+        {/* Backup & Restore Section */}
+        <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
+          <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-4 flex items-center gap-2">
+            <Database size={18} className="text-indigo-500 dark:text-indigo-400" />
+            Backup & Återställning
+          </h3>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
+            Skapa en säkerhetskopia av all din data inklusive transaktioner, avtal, fordon och bilder.
+          </p>
+          
+          <div className="space-y-3">
+            <button
+              onClick={async () => {
+                try {
+                  showToast('Skapar backup...', { type: 'info' });
+                  await api.createBackup();
+                  showToast('Backup skapad och nedladdad!', { type: 'success' });
+                } catch (error) {
+                  console.error('Backup error:', error);
+                  showToast(`Kunde inte skapa backup: ${error.message}`, { type: 'error' });
+                }
+              }}
+              className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-3 rounded-xl text-sm font-medium transition-all shadow-sm"
+            >
+              <Download size={16} />
+              Skapa Backup
+            </button>
+
+            <div className="relative">
+              <input
+                type="file"
+                accept=".zip"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+
+                  if (!file.name.endsWith('.zip')) {
+                    showToast('Ogiltig fil. Välj en ZIP-fil.', { type: 'error' });
+                    return;
+                  }
+
+                  if (!confirm('VARNING: Detta kommer att ersätta all nuvarande data med data från backup-filen. Är du säker?')) {
+                    e.target.value = '';
+                    return;
+                  }
+
+                  try {
+                    showToast('Återställer backup...', { type: 'info' });
+                    const result = await api.restoreBackup(file);
+                    showToast('Backup återställd! Ladda om sidan för att se ändringarna.', { 
+                      type: 'success',
+                      description: result.warning
+                    });
+                    // Reload data after restore
+                    setTimeout(() => {
+                      window.location.reload();
+                    }, 2000);
+                  } catch (error) {
+                    console.error('Restore error:', error);
+                    showToast(`Kunde inte återställa backup: ${error.message}`, { type: 'error' });
+                  } finally {
+                    e.target.value = '';
+                  }
+                }}
+                className="hidden"
+                id="restore-backup-input"
+              />
+              <label
+                htmlFor="restore-backup-input"
+                className="w-full flex items-center justify-center gap-2 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 px-4 py-3 rounded-xl text-sm font-medium transition-all shadow-sm cursor-pointer"
+              >
+                <Upload size={16} />
+                Återställ från Backup
+              </label>
+            </div>
+          </div>
+
+          <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
+            <p className="text-xs text-amber-800 dark:text-amber-300">
+              <strong>Tips:</strong> Backup-filen innehåller databasen och alla bilder. Spara den på en säker plats.
+            </p>
           </div>
         </div>
 

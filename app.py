@@ -1,5 +1,8 @@
 import os
 import sqlite3
+import zipfile
+import shutil
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from flask import Flask, request, jsonify, send_from_directory, send_file
@@ -22,7 +25,7 @@ CORS(app, resources={
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
         "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
         "supports_credentials": True,
-        "expose_headers": ["Content-Type"]
+        "expose_headers": ["Content-Type", "Content-Disposition"]
     }
 }, supports_credentials=True)
 
@@ -45,6 +48,10 @@ def after_request(response):
     
     if 'Access-Control-Allow-Credentials' not in response.headers:
         response.headers['Access-Control-Allow-Credentials'] = 'true'
+    
+    # Expose headers for file downloads
+    if 'Access-Control-Expose-Headers' not in response.headers:
+        response.headers['Access-Control-Expose-Headers'] = 'Content-Type,Content-Disposition'
     
     return response
 
@@ -1619,6 +1626,249 @@ def index():
 @app.route('/health')
 def health():
     return jsonify({'status': 'healthy', 'database': os.path.exists(DATABASE)}), 200
+
+
+# ============================================================================
+# BACKUP & RESTORE ENDPOINTS
+# ============================================================================
+
+@app.route('/api/backup/create', methods=['POST', 'OPTIONS'])
+def create_backup():
+    """Create a backup ZIP file containing database and all images"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        # Create temporary directory for backup
+        temp_dir = tempfile.mkdtemp()
+        backup_dir = os.path.join(temp_dir, 'westbudget_backup')
+        os.makedirs(backup_dir, exist_ok=True)
+        
+        # 1. Copy database
+        if os.path.exists(DATABASE):
+            shutil.copy2(DATABASE, os.path.join(backup_dir, DATABASE))
+            print(f"[Backup] Database copied: {DATABASE}")
+        else:
+            return jsonify({'error': 'Database file not found'}), 404
+        
+        # 2. Copy all images from uploads folder
+        uploads_backup_dir = os.path.join(backup_dir, 'uploads')
+        if os.path.exists(UPLOAD_FOLDER):
+            shutil.copytree(UPLOAD_FOLDER, uploads_backup_dir, dirs_exist_ok=True)
+            print(f"[Backup] Uploads folder copied: {UPLOAD_FOLDER}")
+        
+        # 3. Get custom image paths from settings and copy them too
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get receipt storage path
+        cursor.execute('SELECT value FROM settings WHERE key = ?', ('receipt_storage_path',))
+        receipt_path_result = cursor.fetchone()
+        if receipt_path_result and receipt_path_result['value']:
+            receipt_path = receipt_path_result['value']
+            if os.path.exists(receipt_path) and receipt_path != UPLOAD_FOLDER:
+                # Copy to backup/uploads/receipts
+                receipts_backup = os.path.join(uploads_backup_dir, 'receipts')
+                os.makedirs(receipts_backup, exist_ok=True)
+                for item in os.listdir(receipt_path):
+                    src = os.path.join(receipt_path, item)
+                    dst = os.path.join(receipts_backup, item)
+                    if os.path.isfile(src):
+                        shutil.copy2(src, dst)
+                    elif os.path.isdir(src):
+                        shutil.copytree(src, dst, dirs_exist_ok=True)
+                print(f"[Backup] Custom receipts folder copied: {receipt_path}")
+        
+        # Get agreement images path
+        cursor.execute('SELECT value FROM settings WHERE key = ?', ('agreement_images_path',))
+        agreement_path_result = cursor.fetchone()
+        if agreement_path_result and agreement_path_result['value']:
+            agreement_path = agreement_path_result['value']
+            default_agreement_path = os.path.join(UPLOAD_FOLDER, 'avtal')
+            if os.path.exists(agreement_path) and agreement_path != default_agreement_path:
+                # Copy to backup/uploads/avtal
+                avtal_backup = os.path.join(uploads_backup_dir, 'avtal')
+                os.makedirs(avtal_backup, exist_ok=True)
+                for item in os.listdir(agreement_path):
+                    src = os.path.join(agreement_path, item)
+                    dst = os.path.join(avtal_backup, item)
+                    if os.path.isfile(src):
+                        shutil.copy2(src, dst)
+                    elif os.path.isdir(src):
+                        shutil.copytree(src, dst, dirs_exist_ok=True)
+                print(f"[Backup] Custom agreement images folder copied: {agreement_path}")
+        
+        # Get vehicle images path
+        cursor.execute('SELECT value FROM settings WHERE key = ?', ('vehicle_images_path',))
+        vehicle_path_result = cursor.fetchone()
+        if vehicle_path_result and vehicle_path_result['value']:
+            vehicle_path = vehicle_path_result['value']
+            default_vehicle_path = os.path.join(UPLOAD_FOLDER, 'vehicles')
+            if os.path.exists(vehicle_path) and vehicle_path != default_vehicle_path:
+                # Copy to backup/uploads/vehicles
+                vehicles_backup = os.path.join(uploads_backup_dir, 'vehicles')
+                os.makedirs(vehicles_backup, exist_ok=True)
+                for item in os.listdir(vehicle_path):
+                    src = os.path.join(vehicle_path, item)
+                    dst = os.path.join(vehicles_backup, item)
+                    if os.path.isfile(src):
+                        shutil.copy2(src, dst)
+                    elif os.path.isdir(src):
+                        shutil.copytree(src, dst, dirs_exist_ok=True)
+                print(f"[Backup] Custom vehicle images folder copied: {vehicle_path}")
+        
+        conn.close()
+        
+        # 4. Create ZIP file
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        zip_filename = f'westbudget_backup_{timestamp}.zip'
+        zip_path = os.path.join(temp_dir, zip_filename)
+        
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for root, dirs, files in os.walk(backup_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, backup_dir)
+                    zipf.write(file_path, arcname)
+        
+        print(f"[Backup] ZIP file created: {zip_path}")
+        
+        # 5. Return ZIP file
+        return send_file(
+            zip_path,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name=zip_filename
+        )
+        
+    except Exception as e:
+        print(f"[Backup] Error creating backup: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Backup failed: {str(e)}'}), 500
+    finally:
+        # Cleanup temporary directory after a delay (to allow file download)
+        # Note: In production, you might want to use a background task for cleanup
+        pass
+
+
+@app.route('/api/backup/restore', methods=['POST', 'OPTIONS'])
+def restore_backup():
+    """Restore from a backup ZIP file"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No backup file provided'}), 400
+        
+        file = request.files['file']
+        
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        if not file.filename.endswith('.zip'):
+            return jsonify({'error': 'Invalid backup file. Must be a ZIP file.'}), 400
+        
+        # Save uploaded ZIP to temporary location
+        temp_dir = tempfile.mkdtemp()
+        zip_path = os.path.join(temp_dir, file.filename)
+        file.save(zip_path)
+        
+        # Extract ZIP
+        extract_dir = os.path.join(temp_dir, 'extracted')
+        os.makedirs(extract_dir, exist_ok=True)
+        
+        with zipfile.ZipFile(zip_path, 'r') as zipf:
+            zipf.extractall(extract_dir)
+        
+        # Find database file
+        db_path = None
+        for root, dirs, files in os.walk(extract_dir):
+            if DATABASE in files:
+                db_path = os.path.join(root, DATABASE)
+                break
+        
+        if not db_path:
+            return jsonify({'error': 'Database file not found in backup'}), 400
+        
+        # Backup current database before restore
+        current_db_backup = f'{DATABASE}.backup_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
+        if os.path.exists(DATABASE):
+            shutil.copy2(DATABASE, current_db_backup)
+            print(f"[Restore] Current database backed up to: {current_db_backup}")
+        
+        # Replace database
+        shutil.copy2(db_path, DATABASE)
+        print(f"[Restore] Database restored from backup")
+        
+        # Restore images
+        uploads_backup = os.path.join(extract_dir, 'uploads')
+        if os.path.exists(uploads_backup):
+            # Remove existing uploads folder
+            if os.path.exists(UPLOAD_FOLDER):
+                shutil.rmtree(UPLOAD_FOLDER)
+            # Copy backup uploads
+            shutil.copytree(uploads_backup, UPLOAD_FOLDER, dirs_exist_ok=True)
+            print(f"[Restore] Uploads folder restored")
+        
+        # Restore custom image paths if they exist in backup
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Check for custom receipt path
+        receipts_backup = os.path.join(uploads_backup, 'receipts')
+        if os.path.exists(receipts_backup):
+            cursor.execute('SELECT value FROM settings WHERE key = ?', ('receipt_storage_path',))
+            result = cursor.fetchone()
+            if result and result['value']:
+                receipt_path = result['value']
+                if os.path.exists(receipt_path):
+                    shutil.rmtree(receipt_path)
+                shutil.copytree(receipts_backup, receipt_path, dirs_exist_ok=True)
+                print(f"[Restore] Custom receipts folder restored: {receipt_path}")
+        
+        # Check for custom agreement images path
+        avtal_backup = os.path.join(uploads_backup, 'avtal')
+        if os.path.exists(avtal_backup):
+            cursor.execute('SELECT value FROM settings WHERE key = ?', ('agreement_images_path',))
+            result = cursor.fetchone()
+            if result and result['value']:
+                agreement_path = result['value']
+                default_agreement_path = os.path.join(UPLOAD_FOLDER, 'avtal')
+                if agreement_path != default_agreement_path and os.path.exists(agreement_path):
+                    shutil.rmtree(agreement_path)
+                    shutil.copytree(avtal_backup, agreement_path, dirs_exist_ok=True)
+                    print(f"[Restore] Custom agreement images folder restored: {agreement_path}")
+        
+        # Check for custom vehicle images path
+        vehicles_backup = os.path.join(uploads_backup, 'vehicles')
+        if os.path.exists(vehicles_backup):
+            cursor.execute('SELECT value FROM settings WHERE key = ?', ('vehicle_images_path',))
+            result = cursor.fetchone()
+            if result and result['value']:
+                vehicle_path = result['value']
+                default_vehicle_path = os.path.join(UPLOAD_FOLDER, 'vehicles')
+                if vehicle_path != default_vehicle_path and os.path.exists(vehicle_path):
+                    shutil.rmtree(vehicle_path)
+                    shutil.copytree(vehicles_backup, vehicle_path, dirs_exist_ok=True)
+                    print(f"[Restore] Custom vehicle images folder restored: {vehicle_path}")
+        
+        conn.close()
+        
+        # Cleanup
+        shutil.rmtree(temp_dir)
+        
+        return jsonify({
+            'message': 'Backup restored successfully',
+            'warning': 'Please restart the application to see the restored data'
+        }), 200
+        
+    except Exception as e:
+        print(f"[Restore] Error restoring backup: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Restore failed: {str(e)}'}), 500
 
 
 # ============================================================================

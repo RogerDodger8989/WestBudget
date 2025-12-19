@@ -1012,8 +1012,13 @@ const DashboardLayout = ({
 
             {activeTab === 'reports' && (
               <ReportsTab 
+                transactions={transactions}
+                agreements={agreements}
                 dateRange={dateRange}
                 setDateRange={setDateRange}
+                customStartDate={customStartDate}
+                customEndDate={customEndDate}
+                setIsCustomDateModalOpen={setIsCustomDateModalOpen}
                 getTitle={getTitle}
                 loading={loading}
               />

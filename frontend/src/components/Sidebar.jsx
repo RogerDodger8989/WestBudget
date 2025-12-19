@@ -14,6 +14,7 @@ import {
   PanelLeftOpen
 } from 'lucide-react';
 import NavItem from './NavItem';
+import logo from '../logo.png';
 
 const Sidebar = ({ 
   isSidebarCollapsed, 
@@ -30,16 +31,13 @@ const Sidebar = ({
         isSidebarCollapsed ? 'w-20' : 'w-72'
       } bg-white dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-900 flex flex-col transition-all duration-500 ease-in-out relative z-30`}
     >
-      <div className={`p-6 flex items-center ${isSidebarCollapsed ? 'justify-center' : 'justify-between'} h-20`}>
+      <div className={`p-6 flex items-center ${isSidebarCollapsed ? 'justify-center' : 'justify-center'} h-20`}>
         <div className="flex items-center gap-3 overflow-hidden">
-          <div className="w-8 h-8 min-w-[32px] bg-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-600/20">
-            <Wallet className="w-5 h-5 text-white" />
-          </div>
-          <span className={`font-bold text-lg tracking-tight whitespace-nowrap transition-opacity duration-300 ${
-            isSidebarCollapsed ? 'opacity-0 w-0' : 'opacity-100 w-auto text-zinc-900 dark:text-white'
-          }`}>
-            WestBudget
-          </span>
+          <img 
+            src={logo} 
+            alt="WestBudget" 
+            className={`${isSidebarCollapsed ? 'w-8 h-8' : 'w-20 h-20'} object-contain transition-all duration-300`}
+          />
         </div>
       </div>
 

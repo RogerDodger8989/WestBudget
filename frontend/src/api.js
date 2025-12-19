@@ -271,4 +271,50 @@ export const api = {
     });
     return handleResponse(res);
   },
+
+  // --- Backup & Restore ---
+  createBackup: async () => {
+    const response = await fetch(`${API_BASE_URL}/backup/create`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to create backup');
+    }
+
+    // Download the ZIP file
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const timestamp = new Date().toISOString().split('T')[0].replace(/-/g, '');
+    a.href = url;
+    a.download = `westbudget_backup_${timestamp}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+
+    return { success: true };
+  },
+
+  restoreBackup: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${API_BASE_URL}/backup/restore`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to restore backup');
+    }
+
+    return await response.json();
+  },
 };
