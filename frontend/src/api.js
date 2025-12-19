@@ -421,4 +421,77 @@ export const api = {
     });
     return handleResponse(res);
   },
+
+  // --- Loans ---
+  getLoans: async () => {
+    const res = await fetch(`${API_BASE_URL}/loans`);
+    return handleResponse(res);
+  },
+
+  createLoan: async (data) => {
+    const res = await fetch(`${API_BASE_URL}/loans`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse(res);
+  },
+
+  updateLoan: async (id, data) => {
+    const res = await fetch(`${API_BASE_URL}/loans/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse(res);
+  },
+
+  deleteLoan: async (id) => {
+    const res = await fetch(`${API_BASE_URL}/loans/${id}`, {
+      method: 'DELETE',
+    });
+    return handleResponse(res);
+  },
+
+  getLoanPayments: async (loanId) => {
+    const res = await fetch(`${API_BASE_URL}/loans/${loanId}/payments`);
+    return handleResponse(res);
+  },
+
+  createLoanPayment: async (loanId, data) => {
+    const res = await fetch(`${API_BASE_URL}/loans/${loanId}/payments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse(res);
+  },
+
+  getLoanInterestPeriods: async (loanId) => {
+    const res = await fetch(`${API_BASE_URL}/loans/${loanId}/interest-periods`);
+    return handleResponse(res);
+  },
+
+  createLoanInterestPeriod: async (loanId, data) => {
+    const res = await fetch(`${API_BASE_URL}/loans/${loanId}/interest-periods`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse(res);
+  },
+
+  getAmortizationPlan: async (loanId) => {
+    const res = await fetch(`${API_BASE_URL}/loans/${loanId}/amortization-plan`);
+    return handleResponse(res);
+  },
+
+  linkTransactionToLoan: async (data) => {
+    const res = await fetch(`${API_BASE_URL}/loans/link-transaction`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse(res);
+  },
 };

@@ -98,6 +98,56 @@ CREATE TABLE IF NOT EXISTS vehicle_expenses (
     FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
 );
 
+-- Loans table
+CREATE TABLE IF NOT EXISTS loans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    lender TEXT NOT NULL,
+    principal_amount REAL NOT NULL,
+    current_balance REAL NOT NULL,
+    interest_rate REAL NOT NULL, -- Annual interest rate in %
+    monthly_payment REAL NOT NULL, -- Total monthly payment (amortization + interest)
+    amortization_amount REAL NOT NULL, -- Monthly amortization
+    interest_amount REAL NOT NULL, -- Monthly interest
+    start_date TEXT NOT NULL,
+    end_date TEXT, -- Optional: if fixed term loan
+    status TEXT NOT NULL DEFAULT 'Aktiv' CHECK(status IN ('Aktiv', 'Avslutat', 'Pausad')),
+    category TEXT DEFAULT 'Bolån',
+    note TEXT DEFAULT '',
+    agreement_id INTEGER, -- Link to agreements table
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (agreement_id) REFERENCES agreements(id) ON DELETE SET NULL
+);
+
+-- Loan payments table
+CREATE TABLE IF NOT EXISTS loan_payments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    loan_id INTEGER NOT NULL,
+    transaction_id INTEGER, -- Link to transactions table
+    payment_date TEXT NOT NULL,
+    amount REAL NOT NULL, -- Total payment amount
+    principal_paid REAL NOT NULL, -- Amortization portion
+    interest_paid REAL NOT NULL, -- Interest portion
+    extra_payment REAL DEFAULT 0, -- Extra amortization (optional)
+    note TEXT DEFAULT '',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (loan_id) REFERENCES loans(id) ON DELETE CASCADE,
+    FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE SET NULL
+);
+
+-- Loan interest periods table (for variable interest rates)
+CREATE TABLE IF NOT EXISTS loan_interest_periods (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    loan_id INTEGER NOT NULL,
+    start_date TEXT NOT NULL,
+    end_date TEXT, -- NULL means current period
+    interest_rate REAL NOT NULL, -- Interest rate for this period
+    note TEXT DEFAULT '', -- Reason for change (e.g., "Räntesänkning", "Kampanj")
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (loan_id) REFERENCES loans(id) ON DELETE CASCADE
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type);
 CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category);
@@ -109,6 +159,12 @@ CREATE INDEX IF NOT EXISTS idx_vehicles_registration ON vehicles(registration_nu
 CREATE INDEX IF NOT EXISTS idx_vehicle_expenses_vehicle_id ON vehicle_expenses(vehicle_id);
 CREATE INDEX IF NOT EXISTS idx_vehicle_expenses_category ON vehicle_expenses(category);
 CREATE INDEX IF NOT EXISTS idx_vehicle_expenses_date ON vehicle_expenses(date);
+CREATE INDEX IF NOT EXISTS idx_loans_status ON loans(status);
+CREATE INDEX IF NOT EXISTS idx_loans_agreement_id ON loans(agreement_id);
+CREATE INDEX IF NOT EXISTS idx_loan_payments_loan_id ON loan_payments(loan_id);
+CREATE INDEX IF NOT EXISTS idx_loan_payments_transaction_id ON loan_payments(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_loan_payments_date ON loan_payments(payment_date);
+CREATE INDEX IF NOT EXISTS idx_loan_interest_periods_loan_id ON loan_interest_periods(loan_id);
 
 -- Insert default categories
 INSERT OR IGNORE INTO categories (name) VALUES 

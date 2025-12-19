@@ -8,6 +8,7 @@ import TransactionsTab from './tabs/TransactionsTab';
 import AgreementsTab from './tabs/AgreementsTab';
 import VehiclesTab from './tabs/VehiclesTab';
 import SavingsTab from './tabs/SavingsTab';
+import LoansTab from './tabs/LoansTab';
 import ReportsTab from './tabs/ReportsTab';
 import SettingsTab from './tabs/SettingsTab';
 import TransactionDrawer from './TransactionDrawer';
@@ -1041,6 +1042,14 @@ const DashboardLayout = ({
               <SavingsTab 
                 getTitle={getTitle}
                 reloadData={reloadData}
+              />
+            )}
+
+            {activeTab === 'loans' && (
+              <LoansTab 
+                getTitle={getTitle}
+                reloadData={reloadData}
+                agreements={agreements}
               />
             )}
 

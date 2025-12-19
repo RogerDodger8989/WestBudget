@@ -151,6 +151,78 @@ def init_db():
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_vehicle_expenses_transaction_id ON vehicle_expenses(transaction_id)')
                 conn.commit()
         
+        # Check if loans tables exist, if not create them
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='loans'")
+        if not cursor.fetchone():
+            print("⚠️  Creating loans table...")
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS loans (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    lender TEXT NOT NULL,
+                    principal_amount REAL NOT NULL,
+                    current_balance REAL NOT NULL,
+                    interest_rate REAL NOT NULL,
+                    monthly_payment REAL NOT NULL,
+                    amortization_amount REAL NOT NULL,
+                    interest_amount REAL NOT NULL,
+                    start_date TEXT NOT NULL,
+                    end_date TEXT,
+                    status TEXT NOT NULL DEFAULT 'Aktiv' CHECK(status IN ('Aktiv', 'Avslutat', 'Pausad')),
+                    category TEXT DEFAULT 'Bolån',
+                    note TEXT DEFAULT '',
+                    agreement_id INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (agreement_id) REFERENCES agreements(id) ON DELETE SET NULL
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_loans_status ON loans(status)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_loans_agreement_id ON loans(agreement_id)')
+            conn.commit()
+        
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='loan_payments'")
+        if not cursor.fetchone():
+            print("⚠️  Creating loan_payments table...")
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS loan_payments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    loan_id INTEGER NOT NULL,
+                    transaction_id INTEGER,
+                    payment_date TEXT NOT NULL,
+                    amount REAL NOT NULL,
+                    principal_paid REAL NOT NULL,
+                    interest_paid REAL NOT NULL,
+                    extra_payment REAL DEFAULT 0,
+                    note TEXT DEFAULT '',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (loan_id) REFERENCES loans(id) ON DELETE CASCADE,
+                    FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE SET NULL
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_loan_payments_loan_id ON loan_payments(loan_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_loan_payments_transaction_id ON loan_payments(transaction_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_loan_payments_date ON loan_payments(payment_date)')
+            conn.commit()
+        
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='loan_interest_periods'")
+        if not cursor.fetchone():
+            print("⚠️  Creating loan_interest_periods table...")
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS loan_interest_periods (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    loan_id INTEGER NOT NULL,
+                    start_date TEXT NOT NULL,
+                    end_date TEXT,
+                    interest_rate REAL NOT NULL,
+                    note TEXT DEFAULT '',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (loan_id) REFERENCES loans(id) ON DELETE CASCADE
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_loan_interest_periods_loan_id ON loan_interest_periods(loan_id)')
+            conn.commit()
+        
         # Check if savings tables exist, if not create them
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='savings_goals'")
         if not cursor.fetchone():
@@ -2132,6 +2204,443 @@ def link_transaction_to_savings():
         conn.close()
         print(f"[ERROR] Link transaction failed: {str(e)}")
         return jsonify({'error': f'Link transaction failed: {str(e)}'}), 500
+
+
+# ============================================================================
+# LOANS ENDPOINTS
+# ============================================================================
+
+@app.route('/api/loans', methods=['GET'])
+def get_loans():
+    """Get all loans"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM loans ORDER BY created_at DESC')
+    loans = [dict(row) for row in cursor.fetchall()]
+    
+    conn.close()
+    return jsonify(loans), 200
+
+
+@app.route('/api/loans', methods=['POST'])
+def create_loan():
+    """Create a new loan"""
+    data = request.get_json()
+    
+    required_fields = ['name', 'lender', 'principal_amount', 'current_balance', 'interest_rate', 'monthly_payment', 'amortization_amount', 'interest_amount', 'start_date']
+    if not all(field in data for field in required_fields):
+        return jsonify({'error': 'Missing required fields'}), 400
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        INSERT INTO loans (
+            name, lender, principal_amount, current_balance, interest_rate,
+            monthly_payment, amortization_amount, interest_amount, start_date,
+            end_date, status, category, note, agreement_id
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        data['name'],
+        data['lender'],
+        data['principal_amount'],
+        data['current_balance'],
+        data['interest_rate'],
+        data['monthly_payment'],
+        data['amortization_amount'],
+        data['interest_amount'],
+        data['start_date'],
+        data.get('end_date'),
+        data.get('status', 'Aktiv'),
+        data.get('category', 'Bolån'),
+        data.get('note', ''),
+        data.get('agreement_id')
+    ))
+    
+    loan_id = cursor.lastrowid
+    conn.commit()
+    
+    # Create initial interest period
+    cursor.execute('''
+        INSERT INTO loan_interest_periods (loan_id, start_date, interest_rate, note)
+        VALUES (?, ?, ?, ?)
+    ''', (loan_id, data['start_date'], data['interest_rate'], 'Initial räntesats'))
+    conn.commit()
+    
+    cursor.execute('SELECT * FROM loans WHERE id = ?', (loan_id,))
+    new_loan = dict(cursor.fetchone())
+    
+    conn.close()
+    return jsonify(new_loan), 201
+
+
+@app.route('/api/loans/<int:loan_id>', methods=['PUT'])
+def update_loan(loan_id):
+    """Update a loan"""
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    update_fields = []
+    values = []
+    allowed_fields = ['name', 'lender', 'principal_amount', 'current_balance', 'interest_rate', 
+                     'monthly_payment', 'amortization_amount', 'interest_amount', 'start_date',
+                     'end_date', 'status', 'category', 'note', 'agreement_id']
+    
+    for field in allowed_fields:
+        if field in data:
+            update_fields.append(f'{field} = ?')
+            values.append(data[field])
+    
+    if not update_fields:
+        conn.close()
+        return jsonify({'error': 'No valid fields to update'}), 400
+    
+    update_fields.append('updated_at = ?')
+    values.append(datetime.now().isoformat())
+    values.append(loan_id)
+    
+    cursor.execute(f'''
+        UPDATE loans 
+        SET {', '.join(update_fields)}
+        WHERE id = ?
+    ''', values)
+    
+    conn.commit()
+    
+    cursor.execute('SELECT * FROM loans WHERE id = ?', (loan_id,))
+    updated_loan = cursor.fetchone()
+    
+    conn.close()
+    
+    if updated_loan:
+        return jsonify(dict(updated_loan)), 200
+    return jsonify({'error': 'Loan not found'}), 404
+
+
+@app.route('/api/loans/<int:loan_id>', methods=['DELETE'])
+def delete_loan(loan_id):
+    """Delete a loan"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('DELETE FROM loans WHERE id = ?', (loan_id,))
+    conn.commit()
+    
+    deleted = cursor.rowcount > 0
+    conn.close()
+    
+    if deleted:
+        return jsonify({'message': 'Loan deleted successfully'}), 200
+    return jsonify({'error': 'Loan not found'}), 404
+
+
+@app.route('/api/loans/<int:loan_id>/payments', methods=['GET'])
+def get_loan_payments(loan_id):
+    """Get all payments for a loan"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM loan_payments WHERE loan_id = ? ORDER BY payment_date DESC', (loan_id,))
+    payments = [dict(row) for row in cursor.fetchall()]
+    
+    conn.close()
+    return jsonify(payments), 200
+
+
+@app.route('/api/loans/<int:loan_id>/payments', methods=['POST'])
+def create_loan_payment(loan_id):
+    """Create a loan payment"""
+    data = request.get_json()
+    
+    required_fields = ['payment_date', 'amount', 'principal_paid', 'interest_paid']
+    if not all(field in data for field in required_fields):
+        return jsonify({'error': 'Missing required fields'}), 400
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Verify loan exists
+    cursor.execute('SELECT * FROM loans WHERE id = ?', (loan_id,))
+    loan = cursor.fetchone()
+    if not loan:
+        conn.close()
+        return jsonify({'error': 'Loan not found'}), 404
+    
+    loan_dict = dict(loan)
+    
+    cursor.execute('''
+        INSERT INTO loan_payments (
+            loan_id, transaction_id, payment_date, amount,
+            principal_paid, interest_paid, extra_payment, note
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        loan_id,
+        data.get('transaction_id'),
+        data['payment_date'],
+        data['amount'],
+        data['principal_paid'],
+        data['interest_paid'],
+        data.get('extra_payment', 0),
+        data.get('note', '')
+    ))
+    
+    payment_id = cursor.lastrowid
+    
+    # Update loan balance
+    new_balance = loan_dict['current_balance'] - data['principal_paid'] - data.get('extra_payment', 0)
+    cursor.execute('UPDATE loans SET current_balance = ?, updated_at = ? WHERE id = ?',
+                 (max(0, new_balance), datetime.now().isoformat(), loan_id))
+    
+    conn.commit()
+    
+    cursor.execute('SELECT * FROM loan_payments WHERE id = ?', (payment_id,))
+    new_payment = dict(cursor.fetchone())
+    
+    conn.close()
+    return jsonify(new_payment), 201
+
+
+@app.route('/api/loans/<int:loan_id>/interest-periods', methods=['GET'])
+def get_loan_interest_periods(loan_id):
+    """Get all interest periods for a loan"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM loan_interest_periods WHERE loan_id = ? ORDER BY start_date DESC', (loan_id,))
+    periods = [dict(row) for row in cursor.fetchall()]
+    
+    conn.close()
+    return jsonify(periods), 200
+
+
+@app.route('/api/loans/<int:loan_id>/interest-periods', methods=['POST'])
+def create_loan_interest_period(loan_id):
+    """Create a new interest period (for variable interest rates)"""
+    data = request.get_json()
+    
+    required_fields = ['start_date', 'interest_rate']
+    if not all(field in data for field in required_fields):
+        return jsonify({'error': 'Missing required fields: start_date, interest_rate'}), 400
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Verify loan exists
+    cursor.execute('SELECT id FROM loans WHERE id = ?', (loan_id,))
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Loan not found'}), 404
+    
+    # End previous period if it exists
+    cursor.execute('''
+        UPDATE loan_interest_periods 
+        SET end_date = ?
+        WHERE loan_id = ? AND end_date IS NULL
+    ''', (data['start_date'], loan_id))
+    
+    # Create new period
+    cursor.execute('''
+        INSERT INTO loan_interest_periods (loan_id, start_date, end_date, interest_rate, note)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (
+        loan_id,
+        data['start_date'],
+        data.get('end_date'),
+        data['interest_rate'],
+        data.get('note', '')
+    ))
+    
+    period_id = cursor.lastrowid
+    conn.commit()
+    
+    cursor.execute('SELECT * FROM loan_interest_periods WHERE id = ?', (period_id,))
+    new_period = dict(cursor.fetchone())
+    
+    conn.close()
+    return jsonify(new_period), 201
+
+
+@app.route('/api/loans/<int:loan_id>/amortization-plan', methods=['GET'])
+def get_amortization_plan(loan_id):
+    """Calculate and return amortization plan for a loan"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM loans WHERE id = ?', (loan_id,))
+    loan = cursor.fetchone()
+    if not loan:
+        conn.close()
+        return jsonify({'error': 'Loan not found'}), 404
+    
+    loan_dict = dict(loan)
+    
+    # Get all interest periods
+    cursor.execute('SELECT * FROM loan_interest_periods WHERE loan_id = ? ORDER BY start_date', (loan_id,))
+    periods = [dict(row) for row in cursor.fetchall()]
+    
+    # Get all payments
+    cursor.execute('SELECT * FROM loan_payments WHERE loan_id = ? ORDER BY payment_date', (loan_id,))
+    payments = [dict(row) for row in cursor.fetchall()]
+    
+    conn.close()
+    
+    # Calculate amortization plan
+    def add_months(date, months):
+        """Add months to a date"""
+        month = date.month - 1 + months
+        year = date.year + month // 12
+        month = month % 12 + 1
+        day = min(date.day, [31, 29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month-1])
+        return datetime(year, month, day)
+    
+    plan = []
+    current_balance = loan_dict['current_balance']
+    current_date = datetime.strptime(loan_dict['start_date'], '%Y-%m-%d')
+    end_date = datetime.strptime(loan_dict['end_date'], '%Y-%m-%d') if loan_dict.get('end_date') else None
+    
+    # If no end date, calculate for 30 years or until balance is 0
+    if not end_date:
+        end_date = add_months(current_date, 30 * 12)
+    
+    month = 0
+    while current_balance > 0.01 and current_date <= end_date:
+        # Get current interest rate for this period
+        current_rate = loan_dict['interest_rate']
+        for period in periods:
+            period_start = datetime.strptime(period['start_date'], '%Y-%m-%d')
+            period_end = datetime.strptime(period['end_date'], '%Y-%m-%d') if period.get('end_date') else datetime.now()
+            if period_start <= current_date <= period_end:
+                current_rate = period['interest_rate']
+                break
+        
+        # Calculate monthly interest
+        monthly_interest_rate = current_rate / 100 / 12
+        interest_payment = current_balance * monthly_interest_rate
+        
+        # Get payment for this month if exists
+        payment_for_month = next((p for p in payments if p['payment_date'].startswith(current_date.strftime('%Y-%m'))), None)
+        
+        if payment_for_month:
+            principal_paid = payment_for_month['principal_paid']
+            extra_payment = payment_for_month.get('extra_payment', 0)
+        else:
+            principal_paid = loan_dict['amortization_amount']
+            extra_payment = 0
+        
+        total_payment = interest_payment + principal_paid + extra_payment
+        current_balance = max(0, current_balance - principal_paid - extra_payment)
+        
+        plan.append({
+            'month': month + 1,
+            'date': current_date.strftime('%Y-%m-%d'),
+            'balance': round(current_balance, 2),
+            'principal_paid': round(principal_paid, 2),
+            'interest_paid': round(interest_payment, 2),
+            'extra_payment': round(extra_payment, 2),
+            'total_payment': round(total_payment, 2),
+            'interest_rate': current_rate
+        })
+        
+        current_date = add_months(current_date, 1)
+        month += 1
+        
+        if month > 600:  # Safety limit
+            break
+    
+    return jsonify(plan), 200
+
+
+@app.route('/api/loans/link-transaction', methods=['POST'])
+def link_transaction_to_loan():
+    """Link a transaction to a loan payment"""
+    data = request.get_json()
+    
+    required_fields = ['transaction_id', 'loan_id', 'payment_date', 'amount', 'principal_paid', 'interest_paid']
+    if not all(field in data for field in required_fields):
+        return jsonify({'error': 'Missing required fields'}), 400
+    
+    transaction_id = data['transaction_id']
+    loan_id = data['loan_id']
+    payment_date = data['payment_date']
+    amount = float(data['amount'])
+    principal_paid = float(data['principal_paid'])
+    interest_paid = float(data['interest_paid'])
+    extra_payment = float(data.get('extra_payment', 0))
+    note = data.get('note', '')
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    try:
+        # Check if transaction exists
+        cursor.execute('SELECT * FROM transactions WHERE id = ?', (transaction_id,))
+        transaction = cursor.fetchone()
+        if not transaction:
+            conn.close()
+            return jsonify({'error': 'Transaction not found'}), 404
+        
+        # Check if loan exists
+        cursor.execute('SELECT * FROM loans WHERE id = ?', (loan_id,))
+        loan = cursor.fetchone()
+        if not loan:
+            conn.close()
+            return jsonify({'error': 'Loan not found'}), 404
+        
+        loan_dict = dict(loan)
+        
+        # Check if payment already exists for this transaction
+        cursor.execute('SELECT * FROM loan_payments WHERE transaction_id = ?', (transaction_id,))
+        existing = cursor.fetchone()
+        if existing:
+            conn.close()
+            return jsonify({'error': 'Transaction already linked to a loan payment'}), 400
+        
+        # Create loan payment linked to transaction
+        cursor.execute('''
+            INSERT INTO loan_payments (
+                loan_id, transaction_id, payment_date, amount,
+                principal_paid, interest_paid, extra_payment, note
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            loan_id,
+            transaction_id,
+            payment_date,
+            amount,
+            principal_paid,
+            interest_paid,
+            extra_payment,
+            note or f'Kopplad från transaktion: {dict(transaction)["title"]}'
+        ))
+        
+        payment_id = cursor.lastrowid
+        
+        # Update loan balance
+        new_balance = loan_dict['current_balance'] - principal_paid - extra_payment
+        cursor.execute('UPDATE loans SET current_balance = ?, updated_at = ? WHERE id = ?',
+                     (max(0, new_balance), datetime.now().isoformat(), loan_id))
+        
+        conn.commit()
+        
+        cursor.execute('SELECT * FROM loan_payments WHERE id = ?', (payment_id,))
+        new_payment = dict(cursor.fetchone())
+        
+        conn.close()
+        return jsonify(new_payment), 201
+        
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        print(f"[ERROR] Link transaction to loan failed: {str(e)}")
+        return jsonify({'error': f'Link transaction to loan failed: {str(e)}'}), 500
 
 
 # ============================================================================

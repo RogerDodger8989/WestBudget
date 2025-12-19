@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { X, Tag, FileText, CheckCircle, UploadCloud, Trash2, ChevronRight, PiggyBank, Car } from 'lucide-react';
+import { X, Tag, FileText, CheckCircle, UploadCloud, Trash2, ChevronRight, PiggyBank, Car, Receipt } from 'lucide-react';
 import { formatAmount, getAmountClassName } from '../utils/formatAmount';
 import { api } from '../api';
 import { useToast } from '../contexts/ToastContext';
@@ -11,8 +11,12 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
   const [savingsAccounts, setSavingsAccounts] = useState([]);
   const [selectedSavings, setSelectedSavings] = useState({ type: null, id: null }); // 'goal' or 'account', and id
   const [selectedVehicle, setSelectedVehicle] = useState(null);
+  const [loans, setLoans] = useState([]);
+  const [selectedLoan, setSelectedLoan] = useState(null);
+  const [loanPaymentData, setLoanPaymentData] = useState({ principal_paid: '', interest_paid: '', extra_payment: '' });
   const [isLinking, setIsLinking] = useState(false);
   const [isLinkingVehicle, setIsLinkingVehicle] = useState(false);
+  const [isLinkingLoan, setIsLinkingLoan] = useState(false);
   
   // Parse amount to determine formatting
   const amountValue = typeof transaction.amount === 'string' 
@@ -36,6 +40,17 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
       }
     };
     loadSavings();
+
+    // Load loans
+    const loadLoans = async () => {
+      try {
+        const loansData = await api.getLoans();
+        setLoans(loansData.filter(l => l.status === 'Aktiv'));
+      } catch (error) {
+        console.error('Error loading loans:', error);
+      }
+    };
+    loadLoans();
 
     // Check if transaction is already linked to savings
     const checkExistingLink = async () => {
@@ -408,6 +423,79 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
             )}
             <p className="text-xs text-zinc-400 mt-1">
               Utgifter kan kopplas till fordon för att skapa fordonskostnader
+            </p>
+          </div>
+        )}
+
+        {/* Link to Loan */}
+        {loans.length > 0 && transaction.type === 'expense' && (
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
+              <Receipt size={14} /> Koppla till Lån
+            </label>
+            <div className="relative">
+              <select 
+                value={selectedLoan || ''}
+                onChange={(e) => setSelectedLoan(e.target.value ? parseInt(e.target.value) : null)}
+                className="w-full appearance-none bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all cursor-pointer"
+              >
+                <option value="">Ingen koppling</option>
+                {loans.map(loan => (
+                  <option key={loan.id} value={loan.id}>
+                    {loan.name} - {loan.lender} ({formatAmount(-loan.current_balance)})
+                  </option>
+                ))}
+              </select>
+              <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 rotate-90 pointer-events-none" />
+            </div>
+            {selectedLoan && (
+              <div className="space-y-2 mt-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs text-zinc-500 dark:text-zinc-400 mb-1">Amortering *</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={loanPaymentData.principal_paid}
+                      onChange={(e) => setLoanPaymentData({ ...loanPaymentData, principal_paid: e.target.value })}
+                      placeholder="0.00"
+                      className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-zinc-500 dark:text-zinc-400 mb-1">Ränta *</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={loanPaymentData.interest_paid}
+                      onChange={(e) => setLoanPaymentData({ ...loanPaymentData, interest_paid: e.target.value })}
+                      placeholder="0.00"
+                      className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-zinc-500 dark:text-zinc-400 mb-1">Extra amortering (valfritt)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={loanPaymentData.extra_payment}
+                    onChange={(e) => setLoanPaymentData({ ...loanPaymentData, extra_payment: e.target.value })}
+                    placeholder="0.00"
+                    className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <button
+                  onClick={handleLinkToLoan}
+                  disabled={isLinkingLoan || !loanPaymentData.principal_paid || !loanPaymentData.interest_paid}
+                  className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-400 text-white px-4 py-2 rounded-xl text-sm font-medium transition-all"
+                >
+                  {isLinkingLoan ? 'Kopplar...' : 'Koppla till Lån'}
+                </button>
+              </div>
+            )}
+            <p className="text-xs text-zinc-400 mt-1">
+              Utgifter kan kopplas till lån för att registrera lånebetalningar
             </p>
           </div>
         )}
