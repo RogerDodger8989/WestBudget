@@ -3,6 +3,7 @@ import { Search, Filter, Import, ArrowDown, Download, Calendar, Undo2, Trash2, S
 import TransactionItem from '../TransactionItem';
 import DateRangeBtn from '../DateRangeBtn';
 import ApplyRulesModal from '../ApplyRulesModal';
+import TransactionFilterModal from '../TransactionFilterModal';
 import { api } from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { filterByDateRange } from '../../utils/filterByDateRange';
@@ -33,6 +34,16 @@ const TransactionsTab = ({
   const [selectedTransactions, setSelectedTransactions] = useState(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
   const [isApplyRulesModalOpen, setIsApplyRulesModalOpen] = useState(false);
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+  const [filters, setFilters] = useState({
+    type: 'all',
+    category: 'all',
+    status: 'all',
+    hasReceipt: 'all',
+    hasNote: 'all',
+    minAmount: '',
+    maxAmount: ''
+  });
   const selectAllCheckboxRef = useRef(null);
 
   // Filtrera transaktioner baserat på datum (sorteras redan i filterByDateRange)
@@ -47,28 +58,74 @@ const TransactionsTab = ({
     });
   }, [transactions, dateRange, customStartDate, customEndDate]);
 
-  // Filtrera transaktioner baserat på kategori och status (efter datumfiltrering)
+  // Filtrera transaktioner baserat på filter (efter datumfiltrering)
   const categoryAndStatusFiltered = useMemo(() => {
     let filtered = dateFilteredTransactions;
     
-    // Filtrera på kategori
-    if (selectedCategory && selectedCategory !== 'Alla Kategorier') {
+    // Filtrera på typ
+    if (filters.type && filters.type !== 'all') {
+      filtered = filtered.filter(t => t.type === filters.type);
+    }
+    
+    // Filtrera på kategori (från filter eller selectedCategory för bakåtkompatibilitet)
+    const categoryFilter = filters.category !== 'all' ? filters.category : (selectedCategory !== 'Alla Kategorier' ? selectedCategory : null);
+    if (categoryFilter) {
       filtered = filtered.filter(t => {
         const categoryName = typeof t.category === 'string' ? t.category : t.category?.name || '';
-        return categoryName === selectedCategory;
+        return categoryName === categoryFilter;
       });
     }
     
-    // Filtrera på status
-    if (selectedStatus && selectedStatus !== 'Alla Statusar') {
+    // Filtrera på status (från filter eller selectedStatus för bakåtkompatibilitet)
+    const statusFilter = filters.status !== 'all' ? filters.status : (selectedStatus !== 'Alla Statusar' ? selectedStatus : null);
+    if (statusFilter) {
       filtered = filtered.filter(t => {
         const statusName = t.status || '';
-        return statusName === selectedStatus;
+        return statusName === statusFilter;
+      });
+    }
+    
+    // Filtrera på beloppsintervall
+    if (filters.minAmount) {
+      const minAmount = parseFloat(filters.minAmount);
+      if (!isNaN(minAmount)) {
+        filtered = filtered.filter(t => {
+          const amountStr = t.amount?.toString().replace(/[^\d.,-]/g, '').replace(',', '.') || '0';
+          const amount = parseFloat(amountStr) || 0;
+          return Math.abs(amount) >= minAmount;
+        });
+      }
+    }
+    
+    if (filters.maxAmount) {
+      const maxAmount = parseFloat(filters.maxAmount);
+      if (!isNaN(maxAmount)) {
+        filtered = filtered.filter(t => {
+          const amountStr = t.amount?.toString().replace(/[^\d.,-]/g, '').replace(',', '.') || '0';
+          const amount = parseFloat(amountStr) || 0;
+          return Math.abs(amount) <= maxAmount;
+        });
+      }
+    }
+    
+    // Filtrera på har kvitto
+    if (filters.hasReceipt !== 'all') {
+      filtered = filtered.filter(t => {
+        const hasReceipt = t.receipt === true || t.receipt === 'true' || (typeof t.receipt === 'string' && t.receipt.trim() !== '');
+        return filters.hasReceipt === 'yes' ? hasReceipt : !hasReceipt;
+      });
+    }
+    
+    // Filtrera på har notering
+    if (filters.hasNote !== 'all') {
+      filtered = filtered.filter(t => {
+        const hasNote = t.note && t.note.trim() !== '';
+        return filters.hasNote === 'yes' ? hasNote : !hasNote;
       });
     }
     
     return filtered;
-  }, [dateFilteredTransactions, selectedCategory, selectedStatus]);
+  }, [dateFilteredTransactions, filters, selectedCategory, selectedStatus]);
 
   // Filtrera transaktioner baserat på sökfråga (efter kategori/status-filtrering)
   const filteredTransactions = useMemo(() => {
@@ -337,7 +394,8 @@ const TransactionsTab = ({
                 category: t.category,
                 status: t.status || 'Bokförd',
                 note: t.note || '',
-                receipt: t.receipt || false
+                receipt: t.receipt || false,
+                receipt_path: t.receipt_path || null  // Restore receipt path (backend will move file back from deleted folder)
               });
             });
             await Promise.all(recreatePromises);
@@ -389,6 +447,30 @@ const TransactionsTab = ({
           reloadData={reloadData}
         />
       )}
+      
+      {isFilterModalOpen && (
+        <TransactionFilterModal
+          isOpen={isFilterModalOpen}
+          onClose={() => setIsFilterModalOpen(false)}
+          categories={categories}
+          filters={filters}
+          onFiltersChange={(newFilters) => {
+            setFilters(newFilters);
+            // Update selectedCategory and selectedStatus for backward compatibility
+            if (newFilters.category !== 'all') {
+              setSelectedCategory(newFilters.category);
+            } else {
+              setSelectedCategory('Alla Kategorier');
+            }
+            if (newFilters.status !== 'all') {
+              setSelectedStatus(newFilters.status);
+            } else {
+              setSelectedStatus('Alla Statusar');
+            }
+          }}
+        />
+      )}
+      
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold text-zinc-900 dark:text-white tracking-tight">
@@ -444,7 +526,17 @@ const TransactionsTab = ({
                 className="pl-9 pr-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm w-full sm:w-64 focus:ring-2 focus:ring-indigo-500 outline-none" 
               />
             </div>
-            <button className="p-2 border border-zinc-200 dark:border-zinc-700 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-500">
+            <button 
+              onClick={() => setIsFilterModalOpen(true)}
+              className={`p-2 border rounded-lg transition-colors ${
+                filters.type !== 'all' || filters.category !== 'all' || filters.status !== 'all' || 
+                filters.hasReceipt !== 'all' || filters.hasNote !== 'all' || 
+                filters.minAmount !== '' || filters.maxAmount !== ''
+                  ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400'
+                  : 'border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-500'
+              }`}
+              title="Filtrera transaktioner"
+            >
               <Filter size={18} />
             </button>
             {lastImportIds && lastImportIds.length > 0 && onUndoLastImport && (

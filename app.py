@@ -346,6 +346,33 @@ def create_transaction():
     conn = get_db()
     cursor = conn.cursor()
     
+    # Check if receipt_path points to deleted folder and restore it
+    receipt_path = data.get('receipt_path', None)
+    if receipt_path and 'deleted' in receipt_path.replace('\\', '/') and os.path.exists(receipt_path):
+        try:
+            # Get receipt storage path
+            cursor.execute('SELECT value FROM settings WHERE key = ?', ('receipt_storage_path',))
+            result = cursor.fetchone()
+            storage_path = result['value'] if result else app.config['UPLOAD_FOLDER']
+            
+            # Extract filename from deleted path
+            filename = os.path.basename(receipt_path)
+            # Remove old transaction ID prefix if present (format: {old_id}_{original_filename})
+            if '_' in filename:
+                parts = filename.split('_', 1)
+                if parts[0].isdigit():
+                    filename = parts[1]  # Keep only original filename
+            
+            # Move file back from deleted folder to main receipt folder
+            restored_path = os.path.join(storage_path, filename)
+            if os.path.exists(receipt_path) and not os.path.exists(restored_path):
+                shutil.move(receipt_path, restored_path)
+                receipt_path = restored_path
+                print(f"♻️ [Backend] Återställde kvittofil: {restored_path}")
+        except Exception as e:
+            print(f"⚠️ [Backend] Kunde inte återställa kvittofil: {e}")
+            # Continue with original path
+    
     cursor.execute('''
         INSERT INTO transactions (title, date, amount, type, category, status, receipt, receipt_path, note)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -357,12 +384,33 @@ def create_transaction():
         data['category'],
         data.get('status', 'Väntar'),
         data.get('receipt', False),
-        data.get('receipt_path', None),
+        receipt_path,  # Use potentially restored path
         data.get('note', '')
     ))
     
     transaction_id = cursor.lastrowid
     conn.commit()
+    
+    # If receipt_path was restored, update filename with new transaction ID
+    if receipt_path and os.path.exists(receipt_path):
+        try:
+            filename = os.path.basename(receipt_path)
+            # Check if filename doesn't start with transaction_id
+            if not filename.startswith(f"{transaction_id}_"):
+                # Update filename to include transaction ID
+                new_filename = f"{transaction_id}_{filename}"
+                new_path = os.path.join(os.path.dirname(receipt_path), new_filename)
+                
+                if os.path.exists(receipt_path) and receipt_path != new_path:
+                    shutil.move(receipt_path, new_path)
+                    # Update database with new path
+                    cursor.execute('UPDATE transactions SET receipt_path = ? WHERE id = ?', 
+                                 (new_path, transaction_id))
+                    conn.commit()
+                    receipt_path = new_path
+                    print(f"📝 [Backend] Uppdaterade kvittofilnamn med transaction ID: {new_path}")
+        except Exception as e:
+            print(f"⚠️ [Backend] Kunde inte uppdatera kvittofilnamn: {e}")
     
     cursor.execute('SELECT * FROM transactions WHERE id = ?', (transaction_id,))
     new_transaction = dict(cursor.fetchone())
@@ -423,10 +471,22 @@ def update_transaction(transaction_id):
 
 @app.route('/api/transactions/<int:transaction_id>', methods=['DELETE'])
 def delete_transaction(transaction_id):
-    """Delete a transaction"""
+    """Delete a transaction and move its receipt file to deleted folder (for undo support)"""
     conn = get_db()
     cursor = conn.cursor()
     
+    # Get transaction data before deleting (for undo)
+    cursor.execute('SELECT * FROM transactions WHERE id = ?', (transaction_id,))
+    transaction = cursor.fetchone()
+    
+    if not transaction:
+        conn.close()
+        return jsonify({'error': 'Transaction not found'}), 404
+    
+    receipt_path = transaction['receipt_path'] if transaction else None
+    transaction_data = dict(transaction)  # Save for undo
+    
+    # Delete transaction from database
     cursor.execute('DELETE FROM transactions WHERE id = ?', (transaction_id,))
     conn.commit()
     
@@ -434,8 +494,38 @@ def delete_transaction(transaction_id):
         conn.close()
         return jsonify({'error': 'Transaction not found'}), 404
     
+    # Move receipt file to deleted folder if it exists (instead of deleting for undo support)
+    moved_path = None
+    if receipt_path and os.path.exists(receipt_path):
+        try:
+            # Get receipt storage path
+            cursor.execute('SELECT value FROM settings WHERE key = ?', ('receipt_storage_path',))
+            result = cursor.fetchone()
+            storage_path = result['value'] if result else app.config['UPLOAD_FOLDER']
+            
+            # Create deleted subfolder
+            deleted_folder = os.path.join(storage_path, 'deleted')
+            os.makedirs(deleted_folder, exist_ok=True)
+            
+            # Move file to deleted folder with transaction ID prefix for easy identification
+            filename = os.path.basename(receipt_path)
+            deleted_filename = f"{transaction_id}_{filename}"
+            deleted_path = os.path.join(deleted_folder, deleted_filename)
+            
+            shutil.move(receipt_path, deleted_path)
+            moved_path = deleted_path
+            print(f"🗑️ [Backend] Flyttade kvittofil till deleted-mapp: {deleted_path}")
+        except Exception as e:
+            print(f"⚠️ [Backend] Kunde inte flytta kvittofil {receipt_path}: {e}")
+            # Don't fail the deletion if file move fails
+    
     conn.close()
-    return jsonify({'message': 'Transaction deleted successfully'}), 200
+    return jsonify({
+        'message': 'Transaction deleted successfully',
+        'receipt_path': receipt_path,  # Original path for undo
+        'moved_receipt_path': moved_path,  # New path in deleted folder
+        'transaction_data': transaction_data  # Full transaction data for undo
+    }), 200
 
 
 # ============================================================================
@@ -655,7 +745,7 @@ def update_settings():
 
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
-    """Upload a receipt file"""
+    """Upload a receipt file (legacy endpoint - kept for backward compatibility)"""
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
     
@@ -682,7 +772,7 @@ def upload_file():
     # Create directory if it doesn't exist
     os.makedirs(storage_path, exist_ok=True)
     
-    # Secure filename and save
+    # Secure filename and save (legacy format: timestamp_filename)
     filename = secure_filename(file.filename)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     filename = f"{timestamp}_{filename}"
@@ -695,6 +785,83 @@ def upload_file():
         'file_path': file_path,
         'filename': filename
     }), 200
+
+
+@app.route('/api/transactions/<int:transaction_id>/upload-receipt', methods=['POST'])
+def upload_transaction_receipt(transaction_id):
+    """Upload a receipt file for a specific transaction - filename includes transaction ID"""
+    try:
+        # Verify transaction exists
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT id, receipt_path FROM transactions WHERE id = ?', (transaction_id,))
+        transaction = cursor.fetchone()
+        
+        if not transaction:
+            conn.close()
+            return jsonify({'error': 'Transaction not found'}), 404
+        
+        # Get old receipt path for cleanup
+        old_receipt_path = transaction['receipt_path'] if transaction else None
+        
+        if 'file' not in request.files:
+            conn.close()
+            return jsonify({'error': 'No file provided'}), 400
+        
+        file = request.files['file']
+        
+        if file.filename == '':
+            conn.close()
+            return jsonify({'error': 'No file selected'}), 400
+        
+        if not allowed_file(file.filename):
+            conn.close()
+            return jsonify({'error': 'File type not allowed'}), 400
+        
+        # Get receipt storage path from settings or use default
+        cursor.execute('SELECT value FROM settings WHERE key = ?', ('receipt_storage_path',))
+        result = cursor.fetchone()
+        
+        if result:
+            storage_path = result['value']
+        else:
+            storage_path = app.config['UPLOAD_FOLDER']
+        
+        # Create directory if it doesn't exist
+        os.makedirs(storage_path, exist_ok=True)
+        
+        # Secure filename and save with transaction ID prefix
+        original_filename = secure_filename(file.filename)
+        filename = f"{transaction_id}_{original_filename}"
+        
+        file_path = os.path.join(storage_path, filename)
+        file.save(file_path)
+        
+        # Delete old receipt file if it exists and is different
+        if old_receipt_path and old_receipt_path != file_path and os.path.exists(old_receipt_path):
+            try:
+                os.remove(old_receipt_path)
+                print(f"🗑️ [Backend] Raderade gammalt kvitto: {old_receipt_path}")
+            except Exception as e:
+                print(f"⚠️ [Backend] Kunde inte radera gammalt kvitto: {e}")
+        
+        # Update transaction with new receipt path
+        cursor.execute('UPDATE transactions SET receipt = ?, receipt_path = ?, updated_at = ? WHERE id = ?',
+                      (True, file_path, datetime.now().isoformat(), transaction_id))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'message': 'Receipt uploaded successfully',
+            'file_path': file_path,
+            'filename': filename
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ [Backend] Error uploading receipt: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Upload failed: {str(e)}'}), 500
 
 
 @app.route('/api/agreements/<int:agreement_id>/upload-image', methods=['POST'])

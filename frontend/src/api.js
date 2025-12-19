@@ -46,11 +46,16 @@ export const api = {
   },
 
   // --- Filuppladdning (Kvitton) ---
-  uploadReceipt: async (file) => {
+  uploadReceipt: async (file, transactionId = null) => {
     const formData = new FormData();
     formData.append('file', file);
 
-    const res = await fetch(`${API_BASE_URL}/upload`, {
+    // Use new endpoint with transaction ID if provided, otherwise use legacy endpoint
+    const endpoint = transactionId 
+      ? `${API_BASE_URL}/transactions/${transactionId}/upload-receipt`
+      : `${API_BASE_URL}/upload`;
+
+    const res = await fetch(endpoint, {
       method: 'POST',
       body: formData, // Låt webbläsaren sätta Content-Type för multipart
     });

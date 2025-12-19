@@ -674,7 +674,88 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
             {isLinking ? 'Kopplar...' : selectedSavings.type && selectedSavings.id ? 'Koppla till Sparande' : 'Välj sparande först'}
           </button>
         )}
-        <button className="p-3 bg-rose-100 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 rounded-xl hover:bg-rose-200 dark:hover:bg-rose-900/40 transition-colors">
+        <button 
+          onClick={async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            if (!transaction || !transaction.id) {
+              showToast('Kunde inte radera: Transaktion saknar ID', { type: 'error' });
+              return;
+            }
+
+            // Save transaction data for undo
+            const transactionData = { ...transaction };
+            
+            try {
+              // Delete transaction (backend will move receipt file to deleted folder)
+              await api.deleteTransaction(transaction.id);
+              
+              // Close drawer
+              if (onClose) {
+                onClose();
+              }
+              
+              // Reload data
+              if (reloadData) {
+                await reloadData();
+              }
+              
+              // Show toast with undo
+              showToast('Transaktion raderad!', {
+                type: 'success',
+                undo: true,
+                undoAction: async () => {
+                  try {
+                    // Convert amount from display format to numeric string for API
+                    let amountValue = transactionData.amount;
+                    if (typeof amountValue === 'string') {
+                      // Remove "kr", spaces, and convert comma to dot
+                      amountValue = amountValue.replace(/[^\d.,-]/g, '').replace(',', '.');
+                    }
+                    const numericAmount = parseFloat(amountValue);
+                    
+                    if (isNaN(numericAmount)) {
+                      throw new Error(`Ogiltigt belopp för transaktion "${transactionData.title}"`);
+                    }
+                    
+                    // Recreate transaction with original data (backend will restore receipt file)
+                    await api.createTransaction({
+                      title: transactionData.title,
+                      date: transactionData.date,
+                      amount: numericAmount.toString(),
+                      type: transactionData.type,
+                      category: transactionData.category,
+                      status: transactionData.status || 'Bokförd',
+                      note: transactionData.note || '',
+                      receipt: transactionData.receipt || false,
+                      receipt_path: transactionData.receipt_path || null
+                    });
+                    
+                    if (reloadData) {
+                      await reloadData();
+                    }
+                    
+                    showToast('Transaktion återställd!', { type: 'success' });
+                  } catch (err) {
+                    console.error('Kunde inte återställa transaktion:', err);
+                    showToast('Kunde inte återställa transaktion: ' + (err.message || 'Okänt fel'), {
+                      type: 'error'
+                    });
+                  }
+                },
+                description: 'Klicka på Ångra för att återställa'
+              });
+            } catch (error) {
+              console.error('❌ Kunde inte radera transaktion:', error);
+              showToast('Kunde inte radera transaktion: ' + (error.message || 'Okänt fel'), {
+                type: 'error'
+              });
+            }
+          }}
+          className="p-3 bg-rose-100 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 rounded-xl hover:bg-rose-200 dark:hover:bg-rose-900/40 transition-colors"
+          title="Radera transaktion"
+        >
           <Trash2 size={20} />
         </button>
       </div>

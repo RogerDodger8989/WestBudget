@@ -164,16 +164,14 @@ const DashboardLayout = ({
     try {
       console.log('📤 Laddar upp kvitto för transaktion:', transactionId);
       
-      // Ladda upp filen till backend
-      const result = await api.uploadReceipt(file);
+      // Get old receipt path for undo
+      const oldTransaction = transactions.find(t => t.id === transactionId);
+      const oldReceiptPath = oldTransaction?.receipt_path;
       
-      // Uppdatera transaktionen med kvittosökväg
-      await api.updateTransaction(transactionId, {
-        receipt: true,
-        receipt_path: result.file_path
-      });
+      // Ladda upp filen till backend med transaction ID (ny endpoint)
+      const result = await api.uploadReceipt(file, transactionId);
       
-      // Uppdatera lokalt state
+      // Backend uppdaterar automatiskt transaktionen, men vi uppdaterar lokalt state också
       setTransactions(transactions.map(t => 
         t.id === transactionId 
           ? { ...t, receipt: true, receipt_path: result.file_path } 
@@ -181,7 +179,34 @@ const DashboardLayout = ({
       ));
       
       console.log('✅ Kvitto uppladdat:', result.file_path);
-      showToast(`Kvitto sparat: ${result.filename}`, { type: 'success' });
+      showToast(`Kvitto sparat: ${result.filename}`, { 
+        type: 'success',
+        undo: oldReceiptPath ? true : false,
+        undoAction: async () => {
+          try {
+            // Restore old receipt path
+            await api.updateTransaction(transactionId, {
+              receipt: !!oldReceiptPath,
+              receipt_path: oldReceiptPath || null
+            });
+            // Delete new file
+            if (result.file_path) {
+              // Note: We can't delete the file from frontend, but we can restore the old path
+              // The new file will remain but won't be linked to the transaction
+            }
+            setTransactions(transactions.map(t => 
+              t.id === transactionId 
+                ? { ...t, receipt: !!oldReceiptPath, receipt_path: oldReceiptPath } 
+                : t
+            ));
+            if (reloadData) await reloadData();
+            showToast('Kvittouppladdning ångrad', { type: 'success' });
+          } catch (err) {
+            console.error('Kunde inte ångra:', err);
+            showToast('Kunde inte ångra kvittouppladdning', { type: 'error' });
+          }
+        }
+      });
       
       // Ladda om data för att säkerställa synkronisering
       if (reloadData) reloadData();
@@ -306,6 +331,7 @@ const DashboardLayout = ({
         undo: true,
         undoAction: async () => {
           try {
+            // Delete transaction (backend will move receipt file to deleted folder)
             await api.deleteTransaction(created.id);
             if (setTransactions) {
               setTransactions(prev => prev.filter(t => t.id !== created.id));
@@ -623,7 +649,12 @@ const DashboardLayout = ({
         const newExpense = await api.createVehicleExpense(expenseData);
         console.log('✅ Kostnad sparad:', newExpense);
         
-        // Ladda om data för att visa den nya kostnaden
+        // Uppdatera lokalt state direkt för omedelbar visning
+        if (setVehicleExpenses) {
+          setVehicleExpenses(prev => [newExpense, ...prev]);
+        }
+        
+        // Ladda om data för att säkerställa synkronisering
         if (reloadData) {
           await reloadData();
         }
@@ -633,9 +664,18 @@ const DashboardLayout = ({
           type: 'success',
           undo: true,
           undoAction: async () => {
-            await api.deleteVehicleExpense(newExpense.id);
-            if (reloadData) {
-              await reloadData();
+            try {
+              await api.deleteVehicleExpense(newExpense.id);
+              // Uppdatera lokalt state
+              if (setVehicleExpenses) {
+                setVehicleExpenses(prev => prev.filter(e => e.id !== newExpense.id));
+              }
+              if (reloadData) {
+                await reloadData();
+              }
+              showToast('Kostnad borttagen', { type: 'success' });
+            } catch (err) {
+              showToast('Kunde inte ångra: ' + (err.message || 'Okänt fel'), { type: 'error' });
             }
           }
         });
@@ -930,12 +970,58 @@ const DashboardLayout = ({
             onSave={handleUpdateVehicleExpense}
             onDelete={async (id) => {
               try {
+                // Save expense data for undo
+                const expenseData = { ...selectedVehicleExpense };
+                
                 await api.deleteVehicleExpense(id);
+                
+                // Uppdatera lokalt state direkt
+                if (setVehicleExpenses) {
+                  setVehicleExpenses(prev => prev.filter(e => e.id !== id));
+                }
+                
                 if (reloadData) await reloadData();
                 setSelectedVehicleExpense(null);
-                showToast('Kostnad raderad!', { type: 'success' });
+                
+                showToast('Kostnad raderad!', { 
+                  type: 'success',
+                  undo: true,
+                  undoAction: async () => {
+                    try {
+                      // Recreate deleted expense
+                      const recreated = await api.createVehicleExpense({
+                        vehicle_id: expenseData.vehicle_id,
+                        category: expenseData.category,
+                        amount: expenseData.amount,
+                        date: expenseData.date,
+                        description: expenseData.description,
+                        note: expenseData.note || '',
+                        odometer_at_purchase: expenseData.odometer_at_purchase || null,
+                        receipt_path: expenseData.receipt_path || null
+                      });
+                      
+                      // Uppdatera lokalt state
+                      if (setVehicleExpenses) {
+                        setVehicleExpenses(prev => [recreated, ...prev]);
+                      }
+                      
+                      if (reloadData) {
+                        await reloadData();
+                      }
+                      
+                      showToast('Kostnad återställd!', { type: 'success' });
+                    } catch (err) {
+                      console.error('Kunde inte återställa kostnad:', err);
+                      showToast('Kunde inte återställa kostnad: ' + (err.message || 'Okänt fel'), {
+                        type: 'error'
+                      });
+                    }
+                  },
+                  description: 'Klicka på Ångra för att återställa'
+                });
               } catch (error) {
-                showToast('Kunde inte radera kostnad', { type: 'error' });
+                console.error('❌ Kunde inte radera kostnad:', error);
+                showToast('Kunde inte radera kostnad: ' + (error.message || 'Okänt fel'), { type: 'error' });
               }
             }}
             vehicles={vehicles}
@@ -1027,11 +1113,64 @@ const DashboardLayout = ({
                 onEditExpense={(expense) => setSelectedVehicleExpense(expense)}
                 onDeleteExpense={async (id) => {
                   try {
+                    // Find expense for undo
+                    const expenseToDelete = vehicleExpenses.find(e => e.id === id);
+                    if (!expenseToDelete) {
+                      showToast('Kostnad hittades inte', { type: 'error' });
+                      return;
+                    }
+                    
+                    // Save expense data for undo
+                    const expenseData = { ...expenseToDelete };
+                    
                     await api.deleteVehicleExpense(id);
+                    
+                    // Uppdatera lokalt state direkt
+                    if (setVehicleExpenses) {
+                      setVehicleExpenses(prev => prev.filter(e => e.id !== id));
+                    }
+                    
                     if (reloadData) await reloadData();
-                    showToast('Kostnad raderad!', { type: 'success' });
+                    
+                    showToast('Kostnad raderad!', { 
+                      type: 'success',
+                      undo: true,
+                      undoAction: async () => {
+                        try {
+                          // Recreate deleted expense
+                          const recreated = await api.createVehicleExpense({
+                            vehicle_id: expenseData.vehicle_id,
+                            category: expenseData.category,
+                            amount: expenseData.amount,
+                            date: expenseData.date,
+                            description: expenseData.description,
+                            note: expenseData.note || '',
+                            odometer_at_purchase: expenseData.odometer_at_purchase || null,
+                            receipt_path: expenseData.receipt_path || null
+                          });
+                          
+                          // Uppdatera lokalt state
+                          if (setVehicleExpenses) {
+                            setVehicleExpenses(prev => [recreated, ...prev]);
+                          }
+                          
+                          if (reloadData) {
+                            await reloadData();
+                          }
+                          
+                          showToast('Kostnad återställd!', { type: 'success' });
+                        } catch (err) {
+                          console.error('Kunde inte återställa kostnad:', err);
+                          showToast('Kunde inte återställa kostnad: ' + (err.message || 'Okänt fel'), {
+                            type: 'error'
+                          });
+                        }
+                      },
+                      description: 'Klicka på Ångra för att återställa'
+                    });
                   } catch (error) {
-                    showToast('Kunde inte radera kostnad', { type: 'error' });
+                    console.error('❌ Kunde inte radera kostnad:', error);
+                    showToast('Kunde inte radera kostnad: ' + (error.message || 'Okänt fel'), { type: 'error' });
                   }
                 }}
                 setEditingNoteVehicleExpenseId={setEditingNoteVehicleExpenseId}
