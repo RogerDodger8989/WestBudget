@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { X, Tag, FileText, CheckCircle, UploadCloud, Trash2, ChevronRight, PiggyBank, Car, Receipt } from 'lucide-react';
+import { X, Tag, FileText, CheckCircle, UploadCloud, Trash2, ChevronRight, PiggyBank, Car, Receipt, Plus } from 'lucide-react';
 import { formatAmount, getAmountClassName } from '../utils/formatAmount';
 import { api } from '../api';
 import { useToast } from '../contexts/ToastContext';
@@ -17,6 +17,9 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
   const [isLinking, setIsLinking] = useState(false);
   const [isLinkingVehicle, setIsLinkingVehicle] = useState(false);
   const [isLinkingLoan, setIsLinkingLoan] = useState(false);
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
   
   // Parse amount to determine formatting
   const amountValue = typeof transaction.amount === 'string' 
@@ -45,9 +48,12 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
     const loadLoans = async () => {
       try {
         const loansData = await api.getLoans();
-        setLoans(loansData.filter(l => l.status === 'Aktiv'));
+        const activeLoans = loansData.filter(l => l.status === 'Aktiv');
+        setLoans(activeLoans);
+        console.log('[TransactionDrawer] Loaded loans:', activeLoans.length, activeLoans);
       } catch (error) {
-        console.error('Error loading loans:', error);
+        console.error('[TransactionDrawer] Error loading loans:', error);
+        setLoans([]);
       }
     };
     loadLoans();
@@ -232,6 +238,44 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
     }
   };
 
+  const handleCreateCategory = async () => {
+    const trimmedName = newCategoryName.trim();
+    
+    if (!trimmedName) {
+      showToast('Kategorinamn kan inte vara tomt', { type: 'error' });
+      return;
+    }
+
+    // Kontrollera om kategori redan finns (case-insensitive)
+    const exists = categories.some(cat => cat.toLowerCase() === trimmedName.toLowerCase());
+    if (exists) {
+      showToast('En kategori med detta namn finns redan', { type: 'error' });
+      return;
+    }
+
+    setIsCreatingCategory(true);
+    try {
+      await api.createCategory(trimmedName);
+      showToast('Kategori skapad!', { type: 'success' });
+      
+      // Uppdatera transaktionen med den nya kategorin
+      onCategoryChange(transaction.id, trimmedName);
+      
+      // Reload data för att få uppdaterad kategorilista
+      if (reloadData) {
+        await reloadData();
+      }
+      
+      setIsAddingCategory(false);
+      setNewCategoryName('');
+    } catch (error) {
+      console.error('Error creating category:', error);
+      showToast(error.message || 'Kunde inte skapa kategori. Kategorin kanske redan finns.', { type: 'error' });
+    } finally {
+      setIsCreatingCategory(false);
+    }
+  };
+
   return (
     <div className="h-full flex flex-col">
       <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-start justify-between bg-zinc-50 dark:bg-zinc-900/50">
@@ -265,21 +309,72 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
         </div>
 
         <div className="space-y-2">
-          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
-            <Tag size={14} /> Kategori
-          </label>
-          <div className="relative">
-            <select 
-              value={transaction.category}
-              onChange={(e) => onCategoryChange(transaction.id, e.target.value)}
-              className="w-full appearance-none bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all cursor-pointer"
-            >
-              {categories.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
-            <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 rotate-90 pointer-events-none" />
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
+              <Tag size={14} /> Kategori
+            </label>
+            {!isAddingCategory && (
+              <button
+                onClick={() => setIsAddingCategory(true)}
+                className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 flex items-center gap-1"
+              >
+                <Plus size={12} />
+                Lägg till kategori
+              </button>
+            )}
           </div>
+          
+          {isAddingCategory ? (
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      handleCreateCategory();
+                    } else if (e.key === 'Escape') {
+                      setIsAddingCategory(false);
+                      setNewCategoryName('');
+                    }
+                  }}
+                  placeholder="Nytt kategorinamn"
+                  autoFocus
+                  className="flex-1 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <button
+                  onClick={handleCreateCategory}
+                  disabled={isCreatingCategory || !newCategoryName.trim()}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-400 text-white rounded-xl text-sm font-medium transition-all flex items-center gap-2"
+                >
+                  {isCreatingCategory ? 'Skapar...' : 'Spara'}
+                </button>
+                <button
+                  onClick={() => {
+                    setIsAddingCategory(false);
+                    setNewCategoryName('');
+                  }}
+                  className="px-4 py-2 bg-zinc-200 dark:bg-zinc-700 hover:bg-zinc-300 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-300 rounded-xl text-sm font-medium transition-all"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="relative">
+              <select 
+                value={transaction.category}
+                onChange={(e) => onCategoryChange(transaction.id, e.target.value)}
+                className="w-full appearance-none bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all cursor-pointer"
+              >
+                {categories.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+              <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 rotate-90 pointer-events-none" />
+            </div>
+          )}
         </div>
 
         <div className="space-y-3">
@@ -428,75 +523,105 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
         )}
 
         {/* Link to Loan */}
-        {loans.length > 0 && transaction.type === 'expense' && (
+        {transaction.type === 'expense' && (
           <div className="space-y-2">
             <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
               <Receipt size={14} /> Koppla till Lån
             </label>
-            <div className="relative">
-              <select 
-                value={selectedLoan || ''}
-                onChange={(e) => setSelectedLoan(e.target.value ? parseInt(e.target.value) : null)}
-                className="w-full appearance-none bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all cursor-pointer"
-              >
-                <option value="">Ingen koppling</option>
-                {loans.map(loan => (
-                  <option key={loan.id} value={loan.id}>
-                    {loan.name} - {loan.lender} ({formatAmount(-loan.current_balance)})
-                  </option>
-                ))}
-              </select>
-              <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 rotate-90 pointer-events-none" />
+            
+            <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-3 mb-2 border border-zinc-200 dark:border-zinc-700">
+              <p className="text-xs text-zinc-600 dark:text-zinc-400">
+                <strong>💡 Tips:</strong> Koppla en utgiftstransaktion till ett lån för att registrera en lånebetalning. 
+                Lånets skuld uppdateras automatiskt.
+              </p>
             </div>
+
+            {loans.length === 0 ? (
+              <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-3 border border-amber-200 dark:border-amber-800">
+                <p className="text-xs text-amber-700 dark:text-amber-300">
+                  <strong>ℹ️ Ingen koppling möjlig:</strong> Du har inga aktiva lån ännu. 
+                  Skapa ett lån i fliken "Lån" först.
+                </p>
+              </div>
+            ) : (
+              <div className="relative">
+                <select 
+                  value={selectedLoan || ''}
+                  onChange={(e) => setSelectedLoan(e.target.value ? parseInt(e.target.value) : null)}
+                  className="w-full appearance-none bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all cursor-pointer"
+                >
+                  <option value="">Välj lån...</option>
+                  {loans.map(loan => (
+                    <option key={loan.id} value={loan.id}>
+                      {loan.name} - {loan.lender} (Återstående: {formatAmount(-loan.current_balance)})
+                    </option>
+                  ))}
+                </select>
+                <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 rotate-90 pointer-events-none" />
+              </div>
+            )}
             {selectedLoan && (
               <div className="space-y-2 mt-2">
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs text-zinc-500 dark:text-zinc-400 mb-1">Amortering *</label>
+                <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-3 border border-indigo-200 dark:border-indigo-800">
+                  <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-2">
+                    Fyll i betalningsdetaljer:
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs text-zinc-500 dark:text-zinc-400 mb-1">
+                        Amortering * <span className="text-zinc-400">(betalar av lånet)</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={loanPaymentData.principal_paid}
+                        onChange={(e) => setLoanPaymentData({ ...loanPaymentData, principal_paid: e.target.value })}
+                        placeholder="0.00"
+                        className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-zinc-500 dark:text-zinc-400 mb-1">
+                        Ränta * <span className="text-zinc-400">(räntekostnad)</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={loanPaymentData.interest_paid}
+                        onChange={(e) => setLoanPaymentData({ ...loanPaymentData, interest_paid: e.target.value })}
+                        placeholder="0.00"
+                        className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-2">
+                    <label className="block text-xs text-zinc-500 dark:text-zinc-400 mb-1">
+                      Extra amortering <span className="text-zinc-400">(valfritt)</span>
+                    </label>
                     <input
                       type="number"
                       step="0.01"
-                      value={loanPaymentData.principal_paid}
-                      onChange={(e) => setLoanPaymentData({ ...loanPaymentData, principal_paid: e.target.value })}
+                      value={loanPaymentData.extra_payment}
+                      onChange={(e) => setLoanPaymentData({ ...loanPaymentData, extra_payment: e.target.value })}
                       placeholder="0.00"
                       className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
-                  <div>
-                    <label className="block text-xs text-zinc-500 dark:text-zinc-400 mb-1">Ränta *</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={loanPaymentData.interest_paid}
-                      onChange={(e) => setLoanPaymentData({ ...loanPaymentData, interest_paid: e.target.value })}
-                      placeholder="0.00"
-                      className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs text-zinc-500 dark:text-zinc-400 mb-1">Extra amortering (valfritt)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={loanPaymentData.extra_payment}
-                    onChange={(e) => setLoanPaymentData({ ...loanPaymentData, extra_payment: e.target.value })}
-                    placeholder="0.00"
-                    className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
                 </div>
                 <button
                   onClick={handleLinkToLoan}
                   disabled={isLinkingLoan || !loanPaymentData.principal_paid || !loanPaymentData.interest_paid}
-                  className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-400 text-white px-4 py-2 rounded-xl text-sm font-medium transition-all"
+                  className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-400 disabled:cursor-not-allowed text-white px-4 py-2 rounded-xl text-sm font-medium transition-all"
                 >
                   {isLinkingLoan ? 'Kopplar...' : 'Koppla till Lån'}
                 </button>
+                {loanPaymentData.principal_paid && loanPaymentData.interest_paid && (
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 text-center">
+                    Totalt: {formatAmount(-(parseFloat(loanPaymentData.principal_paid || 0) + parseFloat(loanPaymentData.interest_paid || 0) + parseFloat(loanPaymentData.extra_payment || 0)))}
+                  </p>
+                )}
               </div>
             )}
-            <p className="text-xs text-zinc-400 mt-1">
-              Utgifter kan kopplas till lån för att registrera lånebetalningar
-            </p>
           </div>
         )}
 

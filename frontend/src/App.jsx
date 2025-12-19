@@ -15,6 +15,7 @@ function AppContent() {
   const [categories, setCategories] = useState([]);
   const [vehicles, setVehicles] = useState([]);
   const [vehicleExpenses, setVehicleExpenses] = useState([]);
+  const [loans, setLoans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -49,12 +50,13 @@ function AppContent() {
       setError(null);
       
       // Använder dina API-funktioner från api.js
-      const [transData, agrData, catData, vehData, vehExpData] = await Promise.all([
+      const [transData, agrData, catData, vehData, vehExpData, loansData] = await Promise.all([
         api.getTransactions(),
         api.getAgreements(),
         api.getCategories(),
         api.getVehicles(),
-        api.getVehicleExpenses()
+        api.getVehicleExpenses(),
+        api.getLoans()
       ]);
       
       setTransactions(transData);
@@ -62,6 +64,7 @@ function AppContent() {
       setCategories(catData);
       setVehicles(vehData);
       setVehicleExpenses(vehExpData);
+      setLoans(loansData);
       
       console.log('✅ Data laddad från backend!');
       console.log('📊 Transaktioner:', transData.length);
@@ -132,6 +135,7 @@ function AppContent() {
               setVehicles={setVehicles}
               vehicleExpenses={vehicleExpenses}
               setVehicleExpenses={setVehicleExpenses}
+              loans={loans}
               loading={loading}
               reloadData={loadData}
             />

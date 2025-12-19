@@ -2223,57 +2223,78 @@ def get_loans():
     return jsonify(loans), 200
 
 
-@app.route('/api/loans', methods=['POST'])
+@app.route('/api/loans', methods=['POST', 'OPTIONS'])
 def create_loan():
     """Create a new loan"""
-    data = request.get_json()
+    if request.method == 'OPTIONS':
+        return '', 200
     
-    required_fields = ['name', 'lender', 'principal_amount', 'current_balance', 'interest_rate', 'monthly_payment', 'amortization_amount', 'interest_amount', 'start_date']
-    if not all(field in data for field in required_fields):
-        return jsonify({'error': 'Missing required fields'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        INSERT INTO loans (
-            name, lender, principal_amount, current_balance, interest_rate,
-            monthly_payment, amortization_amount, interest_amount, start_date,
-            end_date, status, category, note, agreement_id
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (
-        data['name'],
-        data['lender'],
-        data['principal_amount'],
-        data['current_balance'],
-        data['interest_rate'],
-        data['monthly_payment'],
-        data['amortization_amount'],
-        data['interest_amount'],
-        data['start_date'],
-        data.get('end_date'),
-        data.get('status', 'Aktiv'),
-        data.get('category', 'Bolån'),
-        data.get('note', ''),
-        data.get('agreement_id')
-    ))
-    
-    loan_id = cursor.lastrowid
-    conn.commit()
-    
-    # Create initial interest period
-    cursor.execute('''
-        INSERT INTO loan_interest_periods (loan_id, start_date, interest_rate, note)
-        VALUES (?, ?, ?, ?)
-    ''', (loan_id, data['start_date'], data['interest_rate'], 'Initial räntesats'))
-    conn.commit()
-    
-    cursor.execute('SELECT * FROM loans WHERE id = ?', (loan_id,))
-    new_loan = dict(cursor.fetchone())
-    
-    conn.close()
-    return jsonify(new_loan), 201
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        required_fields = ['name', 'lender', 'principal_amount', 'current_balance', 'interest_rate', 'monthly_payment', 'amortization_amount', 'interest_amount', 'start_date']
+        missing_fields = [field for field in required_fields if field not in data]
+        if missing_fields:
+            return jsonify({'error': f'Missing required fields: {", ".join(missing_fields)}'}), 400
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Convert string numbers to float if needed
+        principal_amount = float(data['principal_amount']) if isinstance(data['principal_amount'], str) else data['principal_amount']
+        current_balance = float(data['current_balance']) if isinstance(data['current_balance'], str) else data['current_balance']
+        interest_rate = float(data['interest_rate']) if isinstance(data['interest_rate'], str) else data['interest_rate']
+        monthly_payment = float(data['monthly_payment']) if isinstance(data['monthly_payment'], str) else data['monthly_payment']
+        amortization_amount = float(data['amortization_amount']) if isinstance(data['amortization_amount'], str) else data['amortization_amount']
+        interest_amount = float(data['interest_amount']) if isinstance(data['interest_amount'], str) else data['interest_amount']
+        
+        cursor.execute('''
+            INSERT INTO loans (
+                name, lender, principal_amount, current_balance, interest_rate,
+                monthly_payment, amortization_amount, interest_amount, start_date,
+                end_date, status, category, note, agreement_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            data['name'],
+            data['lender'],
+            principal_amount,
+            current_balance,
+            interest_rate,
+            monthly_payment,
+            amortization_amount,
+            interest_amount,
+            data['start_date'],
+            data.get('end_date') or None,
+            data.get('status', 'Aktiv'),
+            data.get('category', 'Bolån'),
+            data.get('note', ''),
+            data.get('agreement_id') or None
+        ))
+        
+        loan_id = cursor.lastrowid
+        conn.commit()
+        
+        # Create initial interest period
+        cursor.execute('''
+            INSERT INTO loan_interest_periods (loan_id, start_date, interest_rate, note)
+            VALUES (?, ?, ?, ?)
+        ''', (loan_id, data['start_date'], interest_rate, 'Initial räntesats'))
+        conn.commit()
+        
+        cursor.execute('SELECT * FROM loans WHERE id = ?', (loan_id,))
+        new_loan = dict(cursor.fetchone())
+        
+        conn.close()
+        return jsonify(new_loan), 201
+    except Exception as e:
+        import traceback
+        error_msg = str(e)
+        traceback.print_exc()
+        return jsonify({'error': f'Error creating loan: {error_msg}'}), 500
 
 
 @app.route('/api/loans/<int:loan_id>', methods=['PUT'])

@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { TrendingUp, TrendingDown, Download, Calendar, DollarSign, PiggyBank, BarChart3, PieChart } from 'lucide-react';
+import React, { useMemo, useState, useEffect } from 'react';
+import { TrendingUp, TrendingDown, Download, Calendar, DollarSign, PiggyBank, BarChart3, PieChart, CheckSquare, Square, Settings2 } from 'lucide-react';
 import DateRangeBtn from '../DateRangeBtn';
 import StatCard from '../StatCard';
 import { filterByDateRange } from '../../utils/filterByDateRange';
@@ -9,6 +9,7 @@ import { useToast } from '../../contexts/ToastContext';
 const ReportsTab = ({ 
   transactions = [], 
   agreements = [],
+  loans = [],
   dateRange, 
   setDateRange,
   customStartDate,
@@ -19,6 +20,9 @@ const ReportsTab = ({
 }) => {
   const { showToast } = useToast();
   const [compareMode, setCompareMode] = useState(false);
+  const [selectedCategories, setSelectedCategories] = useState(new Set());
+  const [includeLoans, setIncludeLoans] = useState(false);
+  const [showCategorySelector, setShowCategorySelector] = useState(false);
 
   // Hämta start- och slutdatum för aktuell period
   const getCurrentPeriodDates = useMemo(() => {
@@ -129,6 +133,18 @@ const ReportsTab = ({
     return filterByDateRange(transactions, 'custom', prevStartDate, prevEndDate);
   }, [transactions, dateRange, customStartDate, customEndDate, compareMode]);
 
+  // Hjälpfunktion för att beräkna antal månader i perioden (måste definieras före currentStats)
+  const getPeriodMonths = useMemo(() => {
+    if (!getCurrentPeriodDates) return 1;
+    const { startDate, endDate } = getCurrentPeriodDates;
+    if (!startDate || !endDate) return 1;
+    
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()) + 1;
+    return Math.max(1, months);
+  }, [getCurrentPeriodDates]);
+
   // Beräkna statistik för aktuell period
   const currentStats = useMemo(() => {
     let income = 0;
@@ -146,6 +162,17 @@ const ReportsTab = ({
       }
     });
 
+    // Lägg till lånens månadsbetalningar om includeLoans är aktiverat
+    if (includeLoans && loans && loans.length > 0) {
+      const activeLoans = loans.filter(l => l.status === 'Aktiv');
+      const periodMonths = getPeriodMonths;
+      activeLoans.forEach(loan => {
+        const monthlyPayment = parseFloat(loan.monthly_payment) || 0;
+        const totalPayment = monthlyPayment * periodMonths;
+        expenses += totalPayment;
+      });
+    }
+
     const netto = income - expenses;
     const avgIncome = transactionCount > 0 ? income / transactionCount : 0;
     const avgExpense = transactionCount > 0 ? expenses / transactionCount : 0;
@@ -158,7 +185,7 @@ const ReportsTab = ({
       avgExpense,
       transactionCount
     };
-  }, [currentPeriodTransactions]);
+  }, [currentPeriodTransactions, includeLoans, loans, getPeriodMonths]);
 
   // Beräkna statistik för föregående period
   const previousStats = useMemo(() => {
@@ -237,6 +264,31 @@ const ReportsTab = ({
       }
     });
 
+    // Lägg till lånens månadsbetalningar om includeLoans är aktiverat
+    if (includeLoans && loans && loans.length > 0) {
+      const activeLoans = loans.filter(l => l.status === 'Aktiv');
+      const periodDates = getCurrentPeriodDates;
+      
+      if (periodDates && periodDates.startDate && periodDates.endDate) {
+        const start = new Date(periodDates.startDate);
+        const end = new Date(periodDates.endDate);
+        
+        // För varje månad i perioden, lägg till månadsbetalningar
+        const current = new Date(start);
+        while (current <= end) {
+          const month = current.getMonth();
+          if (month >= 0 && month <= 11) {
+            activeLoans.forEach(loan => {
+              const monthlyPayment = parseFloat(loan.monthly_payment) || 0;
+              breakdown[month].expenses += monthlyPayment;
+            });
+          }
+          // Gå till nästa månad
+          current.setMonth(current.getMonth() + 1);
+        }
+      }
+    }
+
     // Hitta max-värde för normalisering
     const maxValue = Math.max(
       ...breakdown.map(m => Math.max(m.income, m.expenses)),
@@ -248,9 +300,28 @@ const ReportsTab = ({
       incomePercent: maxValue > 0 ? (m.income / maxValue) * 100 : 0,
       expensesPercent: maxValue > 0 ? (m.expenses / maxValue) * 100 : 0
     }));
+  }, [currentPeriodTransactions, includeLoans, loans, getCurrentPeriodDates]);
+
+  // Hämta alla unika kategorier från utgifter
+  const allCategories = useMemo(() => {
+    const categorySet = new Set();
+    currentPeriodTransactions.forEach(t => {
+      if (t.type === 'expense') {
+        const categoryName = typeof t.category === 'string' ? t.category : t.category?.name || 'Övrigt';
+        categorySet.add(categoryName);
+      }
+    });
+    return Array.from(categorySet).sort();
   }, [currentPeriodTransactions]);
 
-  // Kategorifördelning
+  // Initiera selectedCategories med alla kategorier om det är tomt
+  useEffect(() => {
+    if (selectedCategories.size === 0 && allCategories.length > 0) {
+      setSelectedCategories(new Set(allCategories));
+    }
+  }, [allCategories, selectedCategories.size]);
+
+  // Kategorifördelning (filtrerad baserat på valda kategorier)
   const categoryBreakdown = useMemo(() => {
     const categoryMap = {};
     
@@ -258,6 +329,12 @@ const ReportsTab = ({
       if (t.type !== 'expense') return;
       
       const categoryName = typeof t.category === 'string' ? t.category : t.category?.name || 'Övrigt';
+      
+      // Filtrera baserat på valda kategorier
+      if (selectedCategories.size > 0 && !selectedCategories.has(categoryName)) {
+        return;
+      }
+      
       const amountStr = t.amount?.replace(/[^\d,.-]/g, '').replace(',', '') || '0';
       const amount = parseFloat(amountStr) || 0;
 
@@ -267,6 +344,23 @@ const ReportsTab = ({
       categoryMap[categoryName] += Math.abs(amount);
     });
 
+    // Lägg till lån om includeLoans är aktiverat
+    if (includeLoans && loans && loans.length > 0) {
+      const activeLoans = loans.filter(l => l.status === 'Aktiv');
+      activeLoans.forEach(loan => {
+        const categoryName = loan.category || 'Lån';
+        const monthlyPayment = parseFloat(loan.monthly_payment) || 0;
+        
+        // Beräkna månadsbetalning för perioden
+        const totalPayment = monthlyPayment * getPeriodMonths;
+        
+        if (!categoryMap[categoryName]) {
+          categoryMap[categoryName] = 0;
+        }
+        categoryMap[categoryName] += totalPayment;
+      });
+    }
+
     const total = Object.values(categoryMap).reduce((sum, val) => sum + val, 0);
     
     return Object.entries(categoryMap)
@@ -275,9 +369,8 @@ const ReportsTab = ({
         amount,
         percent: total > 0 ? (amount / total) * 100 : 0
       }))
-      .sort((a, b) => b.amount - a.amount)
-      .slice(0, 10); // Top 10 kategorier
-  }, [currentPeriodTransactions]);
+      .sort((a, b) => b.amount - a.amount);
+  }, [currentPeriodTransactions, selectedCategories, includeLoans, loans, getPeriodMonths]);
 
   // PDF Export
   const handleExportPDF = async () => {
@@ -657,7 +750,7 @@ const ReportsTab = ({
 
             <!-- Kategorifördelning -->
             <div class="stat-box">
-              <div class="section-title" style="margin-top: 0; font-size: 18px;">Kostnadsfördelning</div>
+              <div class="section-title" style="margin-top: 0; font-size: 18px;">Kostnadsfördelning${includeLoans ? ' (inkl. lån)' : ''}</div>
               ${categoryBreakdown.length > 0 ? `
               <ul class="category-list">
                 ${categoryBreakdown.map((cat, i) => {
@@ -882,10 +975,86 @@ const ReportsTab = ({
       {/* Kategorifördelning */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
-          <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-6 flex items-center gap-2">
-            <PieChart size={18} className="text-indigo-500 dark:text-indigo-400" />
-            Kostnadsfördelning
-          </h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+              <PieChart size={18} className="text-indigo-500 dark:text-indigo-400" />
+              Kostnadsfördelning
+            </h3>
+            <button
+              onClick={() => setShowCategorySelector(!showCategorySelector)}
+              className="p-2 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
+              title="Välj kategorier"
+            >
+              <Settings2 size={16} />
+            </button>
+          </div>
+
+          {/* Inkludera lån checkbox - alltid synlig om lån finns */}
+          {loans && loans.length > 0 && (
+            <div className="mb-4 p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-200 dark:border-indigo-800">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeLoans}
+                  onChange={(e) => setIncludeLoans(e.target.checked)}
+                  className="w-4 h-4 text-indigo-600 border-zinc-300 rounded focus:ring-indigo-500"
+                />
+                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  Inkludera lån (månadsbetalningar) i kostnadsfördelningen
+                </span>
+              </label>
+              {includeLoans && (
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 ml-6">
+                  {loans.filter(l => l.status === 'Aktiv').length} aktiv(a) lån läggs till
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Kategoriväljare */}
+          {showCategorySelector && (
+            <div className="mb-4 p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Välj kategorier att inkludera:</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setSelectedCategories(new Set(allCategories))}
+                    className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+                  >
+                    Välj alla
+                  </button>
+                  <button
+                    onClick={() => setSelectedCategories(new Set())}
+                    className="text-xs text-zinc-600 dark:text-zinc-400 hover:underline"
+                  >
+                    Avmarkera alla
+                  </button>
+                </div>
+              </div>
+              <div className="max-h-48 overflow-y-auto space-y-2">
+                {allCategories.map(cat => (
+                  <label key={cat} className="flex items-center gap-2 cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-700/50 p-2 rounded">
+                    <input
+                      type="checkbox"
+                      checked={selectedCategories.has(cat)}
+                      onChange={(e) => {
+                        const newSet = new Set(selectedCategories);
+                        if (e.target.checked) {
+                          newSet.add(cat);
+                        } else {
+                          newSet.delete(cat);
+                        }
+                        setSelectedCategories(newSet);
+                      }}
+                      className="w-4 h-4 text-indigo-600 border-zinc-300 rounded focus:ring-indigo-500"
+                    />
+                    <span className="text-sm text-zinc-700 dark:text-zinc-300">{cat}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="space-y-3">
             {categoryBreakdown.length > 0 ? (
               categoryBreakdown.map((cat, i) => {

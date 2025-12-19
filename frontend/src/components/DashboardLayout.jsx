@@ -37,6 +37,7 @@ const DashboardLayout = ({
   setVehicles,
   vehicleExpenses,
   setVehicleExpenses,
+  loans = [],
   loading,
   reloadData
 }) => {
@@ -1057,6 +1058,7 @@ const DashboardLayout = ({
               <ReportsTab 
                 transactions={transactions}
                 agreements={agreements}
+                loans={loans}
                 dateRange={dateRange}
                 setDateRange={setDateRange}
                 customStartDate={customStartDate}

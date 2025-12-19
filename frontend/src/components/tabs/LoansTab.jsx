@@ -134,14 +134,20 @@ const LoansTab = ({ getTitle, reloadData, agreements }) => {
   const handleSaveLoan = async () => {
     try {
       const loanData = {
-        ...loanForm,
-        principal_amount: parseFloat(loanForm.principal_amount),
-        current_balance: parseFloat(loanForm.current_balance),
-        interest_rate: parseFloat(loanForm.interest_rate),
-        monthly_payment: parseFloat(loanForm.monthly_payment),
-        amortization_amount: parseFloat(loanForm.amortization_amount),
-        interest_amount: parseFloat(loanForm.interest_amount),
-        agreement_id: loanForm.agreement_id || null
+        name: loanForm.name,
+        lender: loanForm.lender,
+        principal_amount: parseFloat(loanForm.principal_amount) || 0,
+        current_balance: parseFloat(loanForm.current_balance) || 0,
+        interest_rate: parseFloat(loanForm.interest_rate) || 0,
+        monthly_payment: parseFloat(loanForm.monthly_payment) || 0,
+        amortization_amount: parseFloat(loanForm.amortization_amount) || 0,
+        interest_amount: parseFloat(loanForm.interest_amount) || 0,
+        start_date: loanForm.start_date,
+        end_date: loanForm.end_date || null,
+        status: loanForm.status || 'Aktiv',
+        category: loanForm.category || 'Bolån',
+        note: loanForm.note || '',
+        agreement_id: loanForm.agreement_id && loanForm.agreement_id !== 'Ingen koppling' ? parseInt(loanForm.agreement_id) : null
       };
 
       if (selectedLoan) {
