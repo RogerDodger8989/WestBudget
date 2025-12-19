@@ -91,6 +91,21 @@ def init_db():
             cursor.execute('ALTER TABLE agreements ADD COLUMN end_date TEXT')
             conn.commit()
         
+        # Check if saved_searches table exists, if not create it
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='saved_searches'")
+        if not cursor.fetchone():
+            print("⚠️  Creating saved_searches table...")
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS saved_searches (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    query TEXT DEFAULT '',
+                    filters TEXT DEFAULT '{}',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            conn.commit()
+        
         # Check if vehicles table exists, if not create it
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='vehicles'")
         if not cursor.fetchone():
@@ -737,6 +752,83 @@ def update_settings():
     conn.close()
     
     return jsonify({'message': 'Settings updated successfully'}), 200
+
+
+# ============================================================================
+# SAVED SEARCHES ENDPOINTS
+# ============================================================================
+
+@app.route('/api/saved-searches', methods=['GET'])
+def get_saved_searches():
+    """Get all saved searches"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT id, name, query, filters, created_at FROM saved_searches ORDER BY created_at DESC')
+    searches = []
+    for row in cursor.fetchall():
+        searches.append({
+            'id': row[0],
+            'name': row[1],
+            'query': row[2],
+            'filters': json.loads(row[3]) if row[3] else {},
+            'created_at': row[4]
+        })
+    
+    conn.close()
+    return jsonify(searches), 200
+
+
+@app.route('/api/saved-searches', methods=['POST'])
+def create_saved_search():
+    """Create a new saved search"""
+    data = request.get_json()
+    
+    if not data or not data.get('name'):
+        return jsonify({'error': 'Name is required'}), 400
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        INSERT INTO saved_searches (name, query, filters, created_at)
+        VALUES (?, ?, ?, ?)
+    ''', (
+        data['name'],
+        data.get('query', ''),
+        json.dumps(data.get('filters', {})),
+        datetime.now().isoformat()
+    ))
+    
+    conn.commit()
+    search_id = cursor.lastrowid
+    conn.close()
+    
+    return jsonify({
+        'id': search_id,
+        'name': data['name'],
+        'query': data.get('query', ''),
+        'filters': data.get('filters', {}),
+        'message': 'Search saved successfully'
+    }), 201
+
+
+@app.route('/api/saved-searches/<int:search_id>', methods=['DELETE'])
+def delete_saved_search(search_id):
+    """Delete a saved search"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('DELETE FROM saved_searches WHERE id = ?', (search_id,))
+    
+    if cursor.rowcount == 0:
+        conn.close()
+        return jsonify({'error': 'Search not found'}), 404
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'message': 'Search deleted successfully'}), 200
 
 
 # ============================================================================

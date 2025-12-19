@@ -505,4 +505,26 @@ export const api = {
     });
     return handleResponse(res);
   },
+
+  // --- Sparade Sökningar ---
+  getSavedSearches: async () => {
+    const res = await fetch(`${API_BASE_URL}/saved-searches`);
+    return handleResponse(res);
+  },
+
+  saveSearch: async (searchData) => {
+    const res = await fetch(`${API_BASE_URL}/saved-searches`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(searchData),
+    });
+    return handleResponse(res);
+  },
+
+  deleteSearch: async (id) => {
+    const res = await fetch(`${API_BASE_URL}/saved-searches/${id}`, {
+      method: 'DELETE',
+    });
+    return handleResponse(res);
+  },
 };

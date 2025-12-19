@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Search, Filter, Import, ArrowDown, Download, Calendar, Undo2, Trash2, Sparkles } from 'lucide-react';
+import { Search, Filter, Import, ArrowDown, Download, Calendar, Undo2, Trash2, Sparkles, SlidersHorizontal } from 'lucide-react';
 import TransactionItem from '../TransactionItem';
 import DateRangeBtn from '../DateRangeBtn';
 import ApplyRulesModal from '../ApplyRulesModal';
 import TransactionFilterModal from '../TransactionFilterModal';
+import AdvancedSearchModal from '../AdvancedSearchModal';
 import { api } from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { filterByDateRange } from '../../utils/filterByDateRange';
@@ -20,6 +21,8 @@ const TransactionsTab = ({
   setDateRange,
   customStartDate,
   customEndDate,
+  setCustomStartDate,
+  setCustomEndDate,
   setIsCustomDateModalOpen,
   getTitle,
   loading,
@@ -35,6 +38,9 @@ const TransactionsTab = ({
   const [isDeleting, setIsDeleting] = useState(false);
   const [isApplyRulesModalOpen, setIsApplyRulesModalOpen] = useState(false);
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+  const [isAdvancedSearchOpen, setIsAdvancedSearchOpen] = useState(false);
+  const [advancedSearchParams, setAdvancedSearchParams] = useState(null);
+  const [savedSearches, setSavedSearches] = useState([]);
   const [filters, setFilters] = useState({
     type: 'all',
     category: 'all',
@@ -45,6 +51,82 @@ const TransactionsTab = ({
     maxAmount: ''
   });
   const selectAllCheckboxRef = useRef(null);
+
+  // Load saved searches on mount
+  useEffect(() => {
+    loadSavedSearches();
+  }, []);
+
+  const loadSavedSearches = async () => {
+    try {
+      const searches = await api.getSavedSearches();
+      setSavedSearches(searches);
+    } catch (error) {
+      console.error('Kunde inte ladda sparade sökningar:', error);
+    }
+  };
+
+  const handleAdvancedSearch = (searchParams) => {
+    setAdvancedSearchParams(searchParams);
+    // Apply advanced search filters
+    if (searchParams.query) {
+      setSearchQuery(searchParams.query);
+    }
+    // Update filters from advanced search
+    if (searchParams.type) {
+      setFilters(prev => ({ ...prev, type: searchParams.type }));
+    }
+    if (searchParams.categories && searchParams.categories.length > 0) {
+      // For now, use first category (we'll enhance this later)
+      setFilters(prev => ({ ...prev, category: searchParams.categories[0] }));
+    }
+    if (searchParams.status) {
+      setFilters(prev => ({ ...prev, status: searchParams.status }));
+    }
+    if (searchParams.hasReceipt) {
+      setFilters(prev => ({ ...prev, hasReceipt: searchParams.hasReceipt }));
+    }
+    if (searchParams.hasNote) {
+      setFilters(prev => ({ ...prev, hasNote: searchParams.hasNote }));
+    }
+    if (searchParams.minAmount) {
+      setFilters(prev => ({ ...prev, minAmount: searchParams.minAmount }));
+    }
+    if (searchParams.maxAmount) {
+      setFilters(prev => ({ ...prev, maxAmount: searchParams.maxAmount }));
+    }
+    // Handle date range from advanced search
+    if (searchParams.dateFrom || searchParams.dateTo) {
+      setDateRange('custom');
+      if (searchParams.dateFrom && setCustomStartDate) {
+        setCustomStartDate(searchParams.dateFrom);
+      }
+      if (searchParams.dateTo && setCustomEndDate) {
+        setCustomEndDate(searchParams.dateTo);
+      }
+    }
+  };
+
+  const handleSaveSearch = async (searchData) => {
+    try {
+      const saved = await api.saveSearch(searchData);
+      await loadSavedSearches();
+      return saved;
+    } catch (error) {
+      console.error('Kunde inte spara sökning:', error);
+      throw error;
+    }
+  };
+
+  const handleDeleteSearch = async (id) => {
+    try {
+      await api.deleteSearch(id);
+      await loadSavedSearches();
+    } catch (error) {
+      console.error('Kunde inte ta bort sökning:', error);
+      throw error;
+    }
+  };
 
   // Filtrera transaktioner baserat på datum (sorteras redan i filterByDateRange)
   const dateFilteredTransactions = useMemo(() => {
@@ -129,38 +211,89 @@ const TransactionsTab = ({
 
   // Filtrera transaktioner baserat på sökfråga (efter kategori/status-filtrering)
   const filteredTransactions = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return categoryAndStatusFiltered;
-    }
+    let filtered = categoryAndStatusFiltered;
 
-    const query = searchQuery.toLowerCase().trim();
+    // Apply advanced search if active
+    if (advancedSearchParams) {
+      const params = advancedSearchParams;
+      
+      // Apply date range filter from advanced search
+      if (params.dateFrom || params.dateTo) {
+        filtered = filtered.filter(t => {
+          if (!t.date) return false;
+          const transactionDate = new Date(t.date);
+          if (params.dateFrom) {
+            const fromDate = new Date(params.dateFrom);
+            if (transactionDate < fromDate) return false;
+          }
+          if (params.dateTo) {
+            const toDate = new Date(params.dateTo);
+            toDate.setHours(23, 59, 59, 999); // Include entire end date
+            if (transactionDate > toDate) return false;
+          }
+          return true;
+        });
+      }
+
+      // Apply multi-category filter
+      if (params.categories && params.categories.length > 0) {
+        filtered = filtered.filter(t => {
+          const categoryName = typeof t.category === 'string' ? t.category : t.category?.name || '';
+          return params.categories.includes(categoryName);
+        });
+      }
+
+      // Apply search query with field selection
+      if (params.query && params.query.trim()) {
+        const query = params.query.toLowerCase().trim();
+        const searchIn = params.searchIn || ['title', 'description', 'note', 'reference'];
+        
+        filtered = filtered.filter(t => {
+          if (searchIn.includes('title') && t.title?.toLowerCase().includes(query)) return true;
+          if (searchIn.includes('description') && t.description?.toLowerCase().includes(query)) return true;
+          if (searchIn.includes('note') && t.note?.toLowerCase().includes(query)) return true;
+          if (searchIn.includes('reference') && t.reference?.toLowerCase().includes(query)) return true;
+          // Also search in amount and id if query is numeric
+          if (!isNaN(query)) {
+            if (String(t.id).includes(query)) return true;
+            if (t.amount?.toString().includes(query)) return true;
+          }
+          return false;
+        });
+      }
+    } else if (searchQuery.trim()) {
+      // Fallback to simple search if no advanced search
+      const query = searchQuery.toLowerCase().trim();
+      
+      filtered = filtered.filter(t => {
+        // Sök i title
+        if (t.title?.toLowerCase().includes(query)) return true;
+        
+        // Sök i amount (som sträng)
+        if (t.amount?.toLowerCase().includes(query)) return true;
+        
+        // Sök i category
+        const categoryName = typeof t.category === 'string' ? t.category : t.category?.name || '';
+        if (categoryName?.toLowerCase().includes(query)) return true;
+        
+        // Sök i note
+        if (t.note?.toLowerCase().includes(query)) return true;
+        
+        // Sök i id (som sträng)
+        if (String(t.id).includes(query)) return true;
+        
+        // Sök i date (formaterat)
+        if (t.date?.toLowerCase().includes(query)) return true;
+        
+        // Sök i status
+        if (t.status?.toLowerCase().includes(query)) return true;
+        
+        return false;
+      });
+    }
     
-    return categoryAndStatusFiltered.filter(t => {
-      // Sök i title
-      if (t.title?.toLowerCase().includes(query)) return true;
-      
-      // Sök i amount (som sträng)
-      if (t.amount?.toLowerCase().includes(query)) return true;
-      
-      // Sök i category
-      const categoryName = typeof t.category === 'string' ? t.category : t.category?.name || '';
-      if (categoryName?.toLowerCase().includes(query)) return true;
-      
-      // Sök i note
-      if (t.note?.toLowerCase().includes(query)) return true;
-      
-      // Sök i id (som sträng)
-      if (String(t.id).includes(query)) return true;
-      
-      // Sök i date (formaterat)
-      if (t.date?.toLowerCase().includes(query)) return true;
-      
-      // Sök i status
-      if (t.status?.toLowerCase().includes(query)) return true;
-      
-      return false;
-    });
-  }, [categoryAndStatusFiltered, searchQuery]);
+    return filtered;
+  }, [categoryAndStatusFiltered, searchQuery, advancedSearchParams]);
 
   // Calculate date range for filename
   const getDateRangeForFilename = () => {
@@ -448,6 +581,19 @@ const TransactionsTab = ({
         />
       )}
       
+      {isAdvancedSearchOpen && (
+        <AdvancedSearchModal
+          isOpen={isAdvancedSearchOpen}
+          onClose={() => setIsAdvancedSearchOpen(false)}
+          categories={categories}
+          onSearch={handleAdvancedSearch}
+          savedSearches={savedSearches}
+          onSaveSearch={handleSaveSearch}
+          onDeleteSearch={handleDeleteSearch}
+          initialFilters={advancedSearchParams}
+        />
+      )}
+      
       {isFilterModalOpen && (
         <TransactionFilterModal
           isOpen={isFilterModalOpen}
@@ -526,6 +672,17 @@ const TransactionsTab = ({
                 className="pl-9 pr-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm w-full sm:w-64 focus:ring-2 focus:ring-indigo-500 outline-none" 
               />
             </div>
+            <button 
+              onClick={() => setIsAdvancedSearchOpen(true)}
+              className={`p-2 border rounded-lg transition-colors ${
+                advancedSearchParams
+                  ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400'
+                  : 'border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-500'
+              }`}
+              title="Avancerad sökning"
+            >
+              <SlidersHorizontal size={18} />
+            </button>
             <button 
               onClick={() => setIsFilterModalOpen(true)}
               className={`p-2 border rounded-lg transition-colors ${
