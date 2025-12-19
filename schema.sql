@@ -140,3 +140,52 @@ INSERT OR IGNORE INTO agreements (id, name, provider, cost, frequency, next_paym
     (2, 'If Bilförsäkring', 'If Skadeförsäkring', 549, 'Månadsvis', '2024-12-28', 'Aktiv', 'Försäkring', '🚗', 'Förnyas 2025-04-01'),
     (3, 'Spotify Premium', 'Spotify', 119, 'Månadsvis', '2024-12-20', 'Aktiv', 'Nöje', '🎵', '');
 
+-- Savings Goals table (Sparmål)
+CREATE TABLE IF NOT EXISTS savings_goals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    target_amount REAL NOT NULL,
+    current_amount REAL DEFAULT 0,
+    deadline TEXT,
+    category TEXT,
+    status TEXT DEFAULT 'Aktiv' CHECK(status IN ('Aktiv', 'Pausad', 'Uppnådd', 'Avbruten')),
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Savings Accounts table (Spar-konton)
+CREATE TABLE IF NOT EXISTS savings_accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    balance REAL DEFAULT 0,
+    description TEXT,
+    category TEXT,
+    status TEXT DEFAULT 'Aktiv' CHECK(status IN ('Aktiv', 'Pausad', 'Stängd')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Savings Transactions table (Kopplar transaktioner till sparande)
+CREATE TABLE IF NOT EXISTS savings_transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    transaction_id INTEGER,
+    goal_id INTEGER,
+    account_id INTEGER,
+    amount REAL NOT NULL,
+    type TEXT NOT NULL CHECK(type IN ('deposit', 'withdrawal', 'transfer')),
+    date TEXT NOT NULL,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE CASCADE,
+    FOREIGN KEY (goal_id) REFERENCES savings_goals(id) ON DELETE CASCADE,
+    FOREIGN KEY (account_id) REFERENCES savings_accounts(id) ON DELETE CASCADE
+);
+
+-- Indexes for savings
+CREATE INDEX IF NOT EXISTS idx_savings_goals_status ON savings_goals(status);
+CREATE INDEX IF NOT EXISTS idx_savings_accounts_status ON savings_accounts(status);
+CREATE INDEX IF NOT EXISTS idx_savings_transactions_goal_id ON savings_transactions(goal_id);
+CREATE INDEX IF NOT EXISTS idx_savings_transactions_account_id ON savings_transactions(account_id);
+CREATE INDEX IF NOT EXISTS idx_savings_transactions_transaction_id ON savings_transactions(transaction_id);
+

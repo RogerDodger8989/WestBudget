@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { FileText, X, Calendar, DollarSign, Tag, AlertCircle } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { FileText, X, Calendar, DollarSign, Tag, AlertCircle, PiggyBank } from 'lucide-react';
 import { api } from '../api';
 
 const AddTransactionModal = ({ onClose, onSave, categories = [] }) => {
@@ -10,13 +10,35 @@ const AddTransactionModal = ({ onClose, onSave, categories = [] }) => {
     type: 'expense',
     category: '',
     status: 'Väntar',
-    note: ''
+    note: '',
+    linkToSavings: false,
+    savingsType: null, // 'goal' or 'account'
+    savingsId: null
   });
 
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
+  const [savingsGoals, setSavingsGoals] = useState([]);
+  const [savingsAccounts, setSavingsAccounts] = useState([]);
   const datePickerRef = useRef(null);
   const dateInputRef = useRef(null);
+
+  useEffect(() => {
+    // Load savings goals and accounts
+    const loadSavings = async () => {
+      try {
+        const [goals, accounts] = await Promise.all([
+          api.getSavingsGoals(),
+          api.getSavingsAccounts()
+        ]);
+        setSavingsGoals(goals.filter(g => g.status === 'Aktiv'));
+        setSavingsAccounts(accounts.filter(a => a.status === 'Aktiv'));
+      } catch (error) {
+        console.error('Error loading savings:', error);
+      }
+    };
+    loadSavings();
+  }, []);
 
   // Format date input (YYYY-MM-DD)
   const formatDateInput = (value) => {
@@ -77,7 +99,11 @@ const AddTransactionModal = ({ onClose, onSave, categories = [] }) => {
         type: formData.type,
         category: formData.category,
         status: formData.status,
-        note: formData.note.trim() || null
+        note: formData.note.trim() || null,
+        linkToSavings: formData.linkToSavings && formData.savingsId ? {
+          type: formData.savingsType,
+          id: formData.savingsId
+        } : null
       };
 
       await onSave(transactionData);
@@ -267,6 +293,63 @@ const AddTransactionModal = ({ onClose, onSave, categories = [] }) => {
               className="w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all resize-none"
             />
           </div>
+
+          {/* Link to Savings */}
+          {(savingsGoals.length > 0 || savingsAccounts.length > 0) && (
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
+                <PiggyBank size={14} /> Koppla till Sparande
+              </label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={formData.linkToSavings}
+                  onChange={(e) => handleChange('linkToSavings', e.target.checked)}
+                  className="w-4 h-4 text-indigo-600 bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-600 rounded focus:ring-indigo-500"
+                />
+                <span className="text-sm text-zinc-700 dark:text-zinc-300">
+                  {formData.type === 'income' ? 'Sätta in som sparande' : 'Ta ut från sparande'}
+                </span>
+              </div>
+              {formData.linkToSavings && (
+                <select
+                  value={formData.savingsType && formData.savingsId ? `${formData.savingsType}_${formData.savingsId}` : ''}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value === '') {
+                      handleChange('savingsType', null);
+                      handleChange('savingsId', null);
+                    } else {
+                      const [type, id] = value.split('_');
+                      handleChange('savingsType', type);
+                      handleChange('savingsId', parseInt(id));
+                    }
+                  }}
+                  className="w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                >
+                  <option value="">Välj spar-mål eller konto</option>
+                  {savingsAccounts.length > 0 && (
+                    <optgroup label="Spar-konton">
+                      {savingsAccounts.map(acc => (
+                        <option key={`account_${acc.id}`} value={`account_${acc.id}`}>
+                          {acc.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {savingsGoals.length > 0 && (
+                    <optgroup label="Sparmål">
+                      {savingsGoals.map(goal => (
+                        <option key={`goal_${goal.id}`} value={`goal_${goal.id}`}>
+                          {goal.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+              )}
+            </div>
+          )}
 
           {/* Buttons */}
           <div className="flex gap-3 pt-4 border-t border-zinc-200 dark:border-zinc-800">

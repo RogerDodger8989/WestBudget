@@ -1,9 +1,18 @@
-import React, { useRef } from 'react';
-import { X, Tag, FileText, CheckCircle, UploadCloud, Trash2, ChevronRight } from 'lucide-react';
+import React, { useRef, useState, useEffect } from 'react';
+import { X, Tag, FileText, CheckCircle, UploadCloud, Trash2, ChevronRight, PiggyBank, Car } from 'lucide-react';
 import { formatAmount, getAmountClassName } from '../utils/formatAmount';
+import { api } from '../api';
+import { useToast } from '../contexts/ToastContext';
 
-const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUpload, categories }) => {
+const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUpload, categories, onSave, reloadData, vehicles = [] }) => {
+  const { showToast } = useToast();
   const fileInputRef = useRef(null);
+  const [savingsGoals, setSavingsGoals] = useState([]);
+  const [savingsAccounts, setSavingsAccounts] = useState([]);
+  const [selectedSavings, setSelectedSavings] = useState({ type: null, id: null }); // 'goal' or 'account', and id
+  const [selectedVehicle, setSelectedVehicle] = useState(null);
+  const [isLinking, setIsLinking] = useState(false);
+  const [isLinkingVehicle, setIsLinkingVehicle] = useState(false);
   
   // Parse amount to determine formatting
   const amountValue = typeof transaction.amount === 'string' 
@@ -12,10 +21,199 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
   const formattedAmount = formatAmount(amountValue);
   const amountClass = getAmountClassName(amountValue);
 
+  useEffect(() => {
+    // Load savings goals and accounts
+    const loadSavings = async () => {
+      try {
+        const [goals, accounts] = await Promise.all([
+          api.getSavingsGoals(),
+          api.getSavingsAccounts()
+        ]);
+        setSavingsGoals(goals.filter(g => g.status === 'Aktiv'));
+        setSavingsAccounts(accounts.filter(a => a.status === 'Aktiv'));
+      } catch (error) {
+        console.error('Error loading savings:', error);
+      }
+    };
+    loadSavings();
+
+    // Check if transaction is already linked to savings
+    const checkExistingLink = async () => {
+      try {
+        const savingsTransactions = await api.getSavingsTransactions();
+        const existingLink = savingsTransactions.find(st => st.transaction_id === transaction.id);
+        if (existingLink) {
+          if (existingLink.goal_id) {
+            setSelectedSavings({ type: 'goal', id: existingLink.goal_id });
+          } else if (existingLink.account_id) {
+            setSelectedSavings({ type: 'account', id: existingLink.account_id });
+          }
+        }
+      } catch (error) {
+        console.error('Error checking savings link:', error);
+      }
+    };
+    checkExistingLink();
+
+    // Check if transaction is already linked to a vehicle
+    const checkVehicleLink = async () => {
+      try {
+        const vehicleExpenses = await api.getVehicleExpenses();
+        const existingVehicleExpense = vehicleExpenses.find(ve => ve.transaction_id === transaction.id);
+        if (existingVehicleExpense) {
+          setSelectedVehicle(existingVehicleExpense.vehicle_id);
+        }
+      } catch (error) {
+        console.error('Error checking vehicle link:', error);
+      }
+    };
+    checkVehicleLink();
+  }, [transaction.id]);
+
   const handleFileSelect = (e) => {
     const file = e.target.files[0];
     if (file && onReceiptUpload) {
       onReceiptUpload(transaction.id, file);
+    }
+  };
+
+  const handleLinkToVehicle = async () => {
+    if (isLinkingVehicle) {
+      return;
+    }
+
+    if (!selectedVehicle) {
+      showToast('Välj ett fordon först', { type: 'info' });
+      return;
+    }
+
+    setIsLinkingVehicle(true);
+    try {
+      const amountStr = transaction.amount?.replace(/[^\d,.-]/g, '').replace(',', '') || '0';
+      const amount = Math.abs(parseFloat(amountStr) || 0);
+
+      await api.linkTransactionToVehicle({
+        transaction_id: transaction.id,
+        vehicle_id: selectedVehicle,
+        amount: amount,
+        date: transaction.date,
+        category: transaction.category || 'Övrigt',
+        description: transaction.title,
+        note: `Kopplad från transaktion: ${transaction.title}`
+      });
+
+      showToast('Transaktion kopplad till fordon!', { type: 'success' });
+      
+      if (reloadData) {
+        await reloadData();
+      }
+    } catch (error) {
+      console.error('Error linking to vehicle:', error);
+      showToast(`Kunde inte koppla till fordon: ${error.message}`, { type: 'error' });
+    } finally {
+      setIsLinkingVehicle(false);
+    }
+  };
+
+  const handleLinkToSavings = async (isWithdrawal = false) => {
+    // Prevent double-clicks
+    if (isLinking) {
+      return;
+    }
+
+    if (!selectedSavings.type || !selectedSavings.id) {
+      showToast('Välj ett spar-konto eller mål först', { type: 'info' });
+      return;
+    }
+
+    const amountStr = transaction.amount?.replace(/[^\d,.-]/g, '').replace(',', '') || '0';
+    const amount = Math.abs(parseFloat(amountStr) || 0);
+
+    // Validate balance if withdrawal
+    if (isWithdrawal) {
+      const selectedAccount = selectedSavings.type === 'account' 
+        ? savingsAccounts.find(acc => Number(acc.id) === Number(selectedSavings.id)) 
+        : null;
+      const selectedGoal = selectedSavings.type === 'goal' 
+        ? savingsGoals.find(goal => Number(goal.id) === Number(selectedSavings.id)) 
+        : null;
+      
+      if (selectedSavings.type === 'account') {
+        if (!selectedAccount) {
+          showToast('Kontot kunde inte hittas', { type: 'error' });
+          return;
+        }
+        const balance = parseFloat(selectedAccount.balance) || 0;
+        if (balance < amount) {
+          showToast(
+            `Otillräckligt saldo! Kontot har ${formatAmount(balance)} men du försöker ta ut ${formatAmount(amount)}.`,
+            { type: 'error', description: 'Kontot har inte tillräckligt med pengar.' }
+          );
+          return;
+        }
+      } else if (selectedSavings.type === 'goal') {
+        if (!selectedGoal) {
+          showToast('Målet kunde inte hittas', { type: 'error' });
+          return;
+        }
+        const currentAmount = parseFloat(selectedGoal.current_amount) || 0;
+        if (currentAmount < amount) {
+          showToast(
+            `Otillräckligt belopp i målet! Målet har ${formatAmount(currentAmount)} men du försöker ta ut ${formatAmount(amount)}.`,
+            { type: 'error', description: 'Målet har inte tillräckligt med pengar.' }
+          );
+          return;
+        }
+      }
+    }
+
+    setIsLinking(true);
+    try {
+      await api.linkTransactionToSavings({
+        transaction_id: transaction.id,
+        account_id: selectedSavings.type === 'account' ? selectedSavings.id : null,
+        goal_id: selectedSavings.type === 'goal' ? selectedSavings.id : null,
+        amount: amount,
+        date: transaction.date,
+        notes: `Kopplad från transaktion: ${transaction.title}`,
+        is_withdrawal: isWithdrawal // Tell backend if this is a withdrawal
+      });
+
+      showToast(
+        isWithdrawal 
+          ? 'Pengarna har tagits ut från sparande!' 
+          : 'Transaktion kopplad till sparande!', 
+        { type: 'success' }
+      );
+      
+      // Reload data if callback provided
+      if (reloadData) {
+        await reloadData();
+      }
+    } catch (error) {
+      console.error('Error linking to savings:', error);
+      
+      // Better error messages - use the message from backend if available
+      let errorMessage = error.message || 'Kunde inte koppla till sparande';
+      let errorDescription = isWithdrawal
+        ? 'Kontot eller målet har inte tillräckligt med pengar.'
+        : 'Ett fel uppstod vid koppling till sparande.';
+      
+      // If backend provided a detailed message, use it
+      if (error.originalError && error.originalError.message) {
+        errorMessage = error.originalError.message;
+      } else if (error.message.includes('Insufficient balance')) {
+        errorMessage = 'Otillräckligt saldo på kontot';
+      } else if (error.message.includes('Insufficient amount')) {
+        errorMessage = 'Otillräckligt belopp i målet';
+      }
+      
+      showToast(errorMessage, { 
+        type: 'error',
+        description: errorDescription
+      });
+    } finally {
+      setIsLinking(false);
     }
   };
 
@@ -108,6 +306,112 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
           )}
         </div>
 
+        {/* Link to Savings */}
+        {(savingsGoals.length > 0 || savingsAccounts.length > 0) && (
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
+              <PiggyBank size={14} /> Koppla till Sparande
+            </label>
+            <div className="relative">
+              <select 
+                value={selectedSavings.type && selectedSavings.id ? `${selectedSavings.type}_${selectedSavings.id}` : ''}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (value === '') {
+                    setSelectedSavings({ type: null, id: null });
+                  } else {
+                    const [type, id] = value.split('_');
+                    setSelectedSavings({ type, id: parseInt(id) });
+                  }
+                }}
+                className="w-full appearance-none bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all cursor-pointer"
+              >
+                <option value="">Ingen koppling</option>
+                {savingsAccounts.length > 0 && (
+                  <optgroup label="Spar-konton">
+                    {savingsAccounts.map(acc => (
+                      <option key={`account_${acc.id}`} value={`account_${acc.id}`}>
+                        {acc.name} ({formatAmount(acc.balance)})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {savingsGoals.length > 0 && (
+                  <optgroup label="Sparmål">
+                    {savingsGoals.map(goal => (
+                      <option key={`goal_${goal.id}`} value={`goal_${goal.id}`}>
+                        {goal.name} ({formatAmount(goal.current_amount)} / {formatAmount(goal.target_amount)})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+              <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 rotate-90 pointer-events-none" />
+            </div>
+            {selectedSavings.type && selectedSavings.id && (
+              <div className="space-y-2">
+                <button
+                  onClick={() => handleLinkToSavings(false)}
+                  disabled={isLinking}
+                  className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-400 text-white px-4 py-2 rounded-xl text-sm font-medium transition-all"
+                >
+                  {isLinking ? 'Kopplar...' : 'Sätta in som sparande'}
+                </button>
+                <button
+                  onClick={() => handleLinkToSavings(true)}
+                  disabled={isLinking}
+                  className="w-full flex items-center justify-center gap-2 bg-rose-600 hover:bg-rose-500 disabled:bg-zinc-400 text-white px-4 py-2 rounded-xl text-sm font-medium transition-all"
+                >
+                  {isLinking ? 'Kopplar...' : 'Ta ut från sparande'}
+                </button>
+              </div>
+            )}
+            {selectedSavings.type && selectedSavings.id && (
+              <p className="text-xs text-zinc-400 mt-1">
+                {transaction.type === 'income' 
+                  ? 'Inkomsten kan sättas in i eller tas ut från valt spar-mål eller konto'
+                  : 'Utgiften kan kopplas till sparande för att spara eller ta ut motsvarande belopp'}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Link to Vehicle */}
+        {vehicles.length > 0 && transaction.type === 'expense' && (
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
+              <Car size={14} /> Koppla till Fordon
+            </label>
+            <div className="relative">
+              <select 
+                value={selectedVehicle || ''}
+                onChange={(e) => setSelectedVehicle(e.target.value ? parseInt(e.target.value) : null)}
+                className="w-full appearance-none bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all cursor-pointer"
+              >
+                <option value="">Ingen koppling</option>
+                {vehicles.filter(v => v.status === 'Aktiv').map(vehicle => (
+                  <option key={vehicle.id} value={vehicle.id}>
+                    {vehicle.registration_number} - {vehicle.make_model}
+                  </option>
+                ))}
+              </select>
+              <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 rotate-90 pointer-events-none" />
+            </div>
+            {selectedVehicle && (
+              <button
+                onClick={handleLinkToVehicle}
+                disabled={isLinkingVehicle}
+                className="w-full mt-2 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-400 text-white px-4 py-2 rounded-xl text-sm font-medium transition-all"
+              >
+                {isLinkingVehicle ? 'Kopplar...' : 'Koppla till Fordon'}
+              </button>
+            )}
+            <p className="text-xs text-zinc-400 mt-1">
+              Utgifter kan kopplas till fordon för att skapa fordonskostnader
+            </p>
+          </div>
+        )}
+
         <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-xl p-4 space-y-3 border border-zinc-100 dark:border-zinc-800">
           <div className="flex justify-between text-sm">
             <span className="text-zinc-500">Transaktions-ID</span>
@@ -124,9 +428,39 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
       </div>
 
       <div className="p-6 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 flex gap-3">
-        <button className="flex-1 bg-zinc-900 dark:bg-white text-white dark:text-black font-semibold py-3 rounded-xl hover:opacity-90 transition-opacity">
-          Spara Ändringar
-        </button>
+        {onSave ? (
+          <button 
+            onClick={async (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (selectedSavings.type && selectedSavings.id) {
+                await handleLinkToSavings();
+              }
+              if (onSave) {
+                onSave(transaction);
+              }
+            }}
+            className="flex-1 bg-zinc-900 dark:bg-white text-white dark:text-black font-semibold py-3 rounded-xl hover:opacity-90 transition-opacity"
+          >
+            Spara Ändringar
+          </button>
+        ) : (
+          <button 
+            onClick={async (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (selectedSavings.type && selectedSavings.id) {
+                await handleLinkToSavings();
+              } else {
+                showToast('Välj ett spar-konto eller mål först', { type: 'info' });
+              }
+            }}
+            disabled={!selectedSavings.type || !selectedSavings.id || isLinking}
+            className="flex-1 bg-zinc-900 dark:bg-white text-white dark:text-black font-semibold py-3 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isLinking ? 'Kopplar...' : selectedSavings.type && selectedSavings.id ? 'Koppla till Sparande' : 'Välj sparande först'}
+          </button>
+        )}
         <button className="p-3 bg-rose-100 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 rounded-xl hover:bg-rose-200 dark:hover:bg-rose-900/40 transition-colors">
           <Trash2 size={20} />
         </button>

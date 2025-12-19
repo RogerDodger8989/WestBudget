@@ -4,7 +4,11 @@ const API_BASE_URL = 'http://192.168.1.232:5000/api';
 async function handleResponse(res) {
   if (!res.ok) {
     const error = await res.json().catch(() => ({ error: 'Serverfel' }));
-    throw new Error(error.error || `HTTP error! status: ${res.status}`);
+    // Use message if available, otherwise use error field
+    const errorMessage = error.message || error.error || `HTTP error! status: ${res.status}`;
+    const errorObj = new Error(errorMessage);
+    errorObj.originalError = error; // Store original error object for more details
+    throw errorObj;
   }
   return res.json();
 }
@@ -316,5 +320,105 @@ export const api = {
     }
 
     return await response.json();
+  },
+
+  // --- Savings Goals ---
+  getSavingsGoals: async () => {
+    const res = await fetch(`${API_BASE_URL}/savings/goals`);
+    return handleResponse(res);
+  },
+
+  createSavingsGoal: async (data) => {
+    const res = await fetch(`${API_BASE_URL}/savings/goals`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse(res);
+  },
+
+  updateSavingsGoal: async (id, data) => {
+    const res = await fetch(`${API_BASE_URL}/savings/goals/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse(res);
+  },
+
+  deleteSavingsGoal: async (id) => {
+    const res = await fetch(`${API_BASE_URL}/savings/goals/${id}`, {
+      method: 'DELETE',
+    });
+    return handleResponse(res);
+  },
+
+  // --- Savings Accounts ---
+  getSavingsAccounts: async () => {
+    const res = await fetch(`${API_BASE_URL}/savings/accounts`);
+    return handleResponse(res);
+  },
+
+  createSavingsAccount: async (data) => {
+    const res = await fetch(`${API_BASE_URL}/savings/accounts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse(res);
+  },
+
+  updateSavingsAccount: async (id, data) => {
+    const res = await fetch(`${API_BASE_URL}/savings/accounts/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse(res);
+  },
+
+  deleteSavingsAccount: async (id) => {
+    const res = await fetch(`${API_BASE_URL}/savings/accounts/${id}`, {
+      method: 'DELETE',
+    });
+    return handleResponse(res);
+  },
+
+  // --- Savings Transactions ---
+  transferSavings: async (data) => {
+    const res = await fetch(`${API_BASE_URL}/savings/transfer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse(res);
+  },
+
+  linkTransactionToSavings: async (data) => {
+    const res = await fetch(`${API_BASE_URL}/savings/link-transaction`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse(res);
+  },
+
+  getSavingsTransactions: async (accountId = null, goalId = null) => {
+    const params = new URLSearchParams();
+    if (accountId) params.append('account_id', accountId);
+    if (goalId) params.append('goal_id', goalId);
+    const query = params.toString();
+    const res = await fetch(`${API_BASE_URL}/savings/transactions${query ? `?${query}` : ''}`);
+    return handleResponse(res);
+  },
+
+  // --- Link Transaction to Vehicle ---
+  linkTransactionToVehicle: async (data) => {
+    const res = await fetch(`${API_BASE_URL}/vehicles/link-transaction`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse(res);
   },
 };

@@ -133,11 +133,85 @@ def init_db():
                     receipt_path TEXT,
                     note TEXT DEFAULT '',
                     odometer_at_purchase INTEGER,
+                    transaction_id INTEGER, -- Link to transactions table
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
+                    FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE,
+                    FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE SET NULL
                 )
             ''')
+            conn.commit()
+        else:
+            # Check if transaction_id column exists, if not add it
+            cursor.execute("PRAGMA table_info(vehicle_expenses)")
+            columns = [col[1] for col in cursor.fetchall()]
+            if 'transaction_id' not in columns:
+                print("⚠️  Adding transaction_id column to vehicle_expenses table...")
+                cursor.execute('ALTER TABLE vehicle_expenses ADD COLUMN transaction_id INTEGER')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_vehicle_expenses_transaction_id ON vehicle_expenses(transaction_id)')
+                conn.commit()
+        
+        # Check if savings tables exist, if not create them
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='savings_goals'")
+        if not cursor.fetchone():
+            print("[INFO] Creating savings_goals table...")
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS savings_goals (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    target_amount REAL NOT NULL,
+                    current_amount REAL DEFAULT 0,
+                    deadline TEXT,
+                    category TEXT,
+                    status TEXT DEFAULT 'Aktiv' CHECK(status IN ('Aktiv', 'Pausad', 'Uppnådd', 'Avbruten')),
+                    description TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_savings_goals_status ON savings_goals(status)')
+            conn.commit()
+        
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='savings_accounts'")
+        if not cursor.fetchone():
+            print("[INFO] Creating savings_accounts table...")
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS savings_accounts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    balance REAL DEFAULT 0,
+                    description TEXT,
+                    category TEXT,
+                    status TEXT DEFAULT 'Aktiv' CHECK(status IN ('Aktiv', 'Pausad', 'Stängd')),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_savings_accounts_status ON savings_accounts(status)')
+            conn.commit()
+        
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='savings_transactions'")
+        if not cursor.fetchone():
+            print("[INFO] Creating savings_transactions table...")
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS savings_transactions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    transaction_id INTEGER,
+                    goal_id INTEGER,
+                    account_id INTEGER,
+                    amount REAL NOT NULL,
+                    type TEXT NOT NULL CHECK(type IN ('deposit', 'withdrawal', 'transfer')),
+                    date TEXT NOT NULL,
+                    notes TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE CASCADE,
+                    FOREIGN KEY (goal_id) REFERENCES savings_goals(id) ON DELETE CASCADE,
+                    FOREIGN KEY (account_id) REFERENCES savings_accounts(id) ON DELETE CASCADE
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_savings_transactions_goal_id ON savings_transactions(goal_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_savings_transactions_account_id ON savings_transactions(account_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_savings_transactions_transaction_id ON savings_transactions(transaction_id)')
             conn.commit()
     
     conn.close()
@@ -1504,9 +1578,9 @@ def create_vehicle_expense():
     cursor.execute('''
         INSERT INTO vehicle_expenses (
             vehicle_id, category, amount, date, description,
-            receipt_path, note, odometer_at_purchase
+            receipt_path, note, odometer_at_purchase, transaction_id
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         data['vehicle_id'],
         data['category'],
@@ -1515,7 +1589,8 @@ def create_vehicle_expense():
         data.get('description', ''),
         data.get('receipt_path', ''),
         data.get('note', ''),
-        data.get('odometer_at_purchase')
+        data.get('odometer_at_purchase'),
+        data.get('transaction_id')
     ))
     
     expense_id = cursor.lastrowid
@@ -1626,6 +1701,519 @@ def index():
 @app.route('/health')
 def health():
     return jsonify({'status': 'healthy', 'database': os.path.exists(DATABASE)}), 200
+
+
+# ============================================================================
+# SAVINGS ENDPOINTS
+# ============================================================================
+
+@app.route('/api/savings/goals', methods=['GET'])
+def get_savings_goals():
+    """Get all savings goals"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM savings_goals ORDER BY created_at DESC')
+    goals = [dict(row) for row in cursor.fetchall()]
+    
+    conn.close()
+    return jsonify(goals), 200
+
+
+@app.route('/api/savings/goals', methods=['POST'])
+def create_savings_goal():
+    """Create a new savings goal"""
+    data = request.get_json()
+    
+    required_fields = ['name', 'target_amount']
+    if not all(field in data for field in required_fields):
+        return jsonify({'error': 'Missing required fields: name, target_amount'}), 400
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        INSERT INTO savings_goals (name, target_amount, current_amount, deadline, category, status, description)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        data['name'],
+        data['target_amount'],
+        data.get('current_amount', 0),
+        data.get('deadline'),
+        data.get('category'),
+        data.get('status', 'Aktiv'),
+        data.get('description')
+    ))
+    
+    goal_id = cursor.lastrowid
+    conn.commit()
+    
+    cursor.execute('SELECT * FROM savings_goals WHERE id = ?', (goal_id,))
+    new_goal = dict(cursor.fetchone())
+    
+    conn.close()
+    return jsonify(new_goal), 201
+
+
+@app.route('/api/savings/goals/<int:goal_id>', methods=['PUT'])
+def update_savings_goal(goal_id):
+    """Update a savings goal"""
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    update_fields = []
+    values = []
+    allowed_fields = ['name', 'target_amount', 'current_amount', 'deadline', 'category', 'status', 'description']
+    
+    for field in allowed_fields:
+        if field in data:
+            update_fields.append(f'{field} = ?')
+            values.append(data[field])
+    
+    if not update_fields:
+        conn.close()
+        return jsonify({'error': 'No valid fields to update'}), 400
+    
+    update_fields.append('updated_at = ?')
+    values.append(datetime.now().isoformat())
+    values.append(goal_id)
+    
+    cursor.execute(f'''
+        UPDATE savings_goals 
+        SET {', '.join(update_fields)}
+        WHERE id = ?
+    ''', values)
+    
+    conn.commit()
+    
+    cursor.execute('SELECT * FROM savings_goals WHERE id = ?', (goal_id,))
+    updated_goal = cursor.fetchone()
+    
+    conn.close()
+    
+    if updated_goal:
+        return jsonify(dict(updated_goal)), 200
+    return jsonify({'error': 'Goal not found'}), 404
+
+
+@app.route('/api/savings/goals/<int:goal_id>', methods=['DELETE'])
+def delete_savings_goal(goal_id):
+    """Delete a savings goal"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('DELETE FROM savings_goals WHERE id = ?', (goal_id,))
+    conn.commit()
+    
+    deleted = cursor.rowcount > 0
+    conn.close()
+    
+    if deleted:
+        return jsonify({'message': 'Goal deleted successfully'}), 200
+    return jsonify({'error': 'Goal not found'}), 404
+
+
+@app.route('/api/savings/accounts', methods=['GET'])
+def get_savings_accounts():
+    """Get all savings accounts"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM savings_accounts ORDER BY created_at DESC')
+    accounts = [dict(row) for row in cursor.fetchall()]
+    
+    conn.close()
+    return jsonify(accounts), 200
+
+
+@app.route('/api/savings/accounts', methods=['POST'])
+def create_savings_account():
+    """Create a new savings account"""
+    data = request.get_json()
+    
+    required_fields = ['name']
+    if not all(field in data for field in required_fields):
+        return jsonify({'error': 'Missing required field: name'}), 400
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        INSERT INTO savings_accounts (name, balance, description, category, status)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (
+        data['name'],
+        data.get('balance', 0),
+        data.get('description'),
+        data.get('category'),
+        data.get('status', 'Aktiv')
+    ))
+    
+    account_id = cursor.lastrowid
+    conn.commit()
+    
+    cursor.execute('SELECT * FROM savings_accounts WHERE id = ?', (account_id,))
+    new_account = dict(cursor.fetchone())
+    
+    conn.close()
+    return jsonify(new_account), 201
+
+
+@app.route('/api/savings/accounts/<int:account_id>', methods=['PUT'])
+def update_savings_account(account_id):
+    """Update a savings account"""
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    update_fields = []
+    values = []
+    allowed_fields = ['name', 'balance', 'description', 'category', 'status']
+    
+    for field in allowed_fields:
+        if field in data:
+            update_fields.append(f'{field} = ?')
+            values.append(data[field])
+    
+    if not update_fields:
+        conn.close()
+        return jsonify({'error': 'No valid fields to update'}), 400
+    
+    update_fields.append('updated_at = ?')
+    values.append(datetime.now().isoformat())
+    values.append(account_id)
+    
+    cursor.execute(f'''
+        UPDATE savings_accounts 
+        SET {', '.join(update_fields)}
+        WHERE id = ?
+    ''', values)
+    
+    conn.commit()
+    
+    cursor.execute('SELECT * FROM savings_accounts WHERE id = ?', (account_id,))
+    updated_account = cursor.fetchone()
+    
+    conn.close()
+    
+    if updated_account:
+        return jsonify(dict(updated_account)), 200
+    return jsonify({'error': 'Account not found'}), 404
+
+
+@app.route('/api/savings/accounts/<int:account_id>', methods=['DELETE'])
+def delete_savings_account(account_id):
+    """Delete a savings account"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('DELETE FROM savings_accounts WHERE id = ?', (account_id,))
+    conn.commit()
+    
+    deleted = cursor.rowcount > 0
+    conn.close()
+    
+    if deleted:
+        return jsonify({'message': 'Account deleted successfully'}), 200
+    return jsonify({'error': 'Account not found'}), 404
+
+
+@app.route('/api/savings/transfer', methods=['POST'])
+def transfer_savings():
+    """Transfer money to/from savings account or goal"""
+    data = request.get_json()
+    
+    required_fields = ['account_id', 'amount', 'type', 'date']
+    if not all(field in data for field in required_fields):
+        return jsonify({'error': 'Missing required fields: account_id, amount, type, date'}), 400
+    
+    account_id = data.get('account_id')
+    goal_id = data.get('goal_id')
+    amount = float(data['amount'])
+    transfer_type = data['type']  # 'deposit' or 'withdrawal'
+    date = data['date']
+    notes = data.get('notes', '')
+    
+    if not account_id and not goal_id:
+        return jsonify({'error': 'Either account_id or goal_id must be provided'}), 400
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    try:
+        # Create savings transaction record
+        cursor.execute('''
+            INSERT INTO savings_transactions (account_id, goal_id, amount, type, date, notes)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (account_id, goal_id, amount, transfer_type, date, notes))
+        
+        transaction_id = cursor.lastrowid
+        
+        # Update account balance or goal current_amount
+        if account_id:
+            if transfer_type == 'deposit':
+                cursor.execute('UPDATE savings_accounts SET balance = balance + ?, updated_at = ? WHERE id = ?',
+                             (amount, datetime.now().isoformat(), account_id))
+            elif transfer_type == 'withdrawal':
+                # Check if sufficient balance
+                cursor.execute('SELECT balance, name FROM savings_accounts WHERE id = ?', (account_id,))
+                result = cursor.fetchone()
+                if result and result['balance'] < amount:
+                    conn.rollback()
+                    conn.close()
+                    return jsonify({
+                        'error': 'Insufficient balance',
+                        'message': f'Kontot "{result["name"]}" har bara {result["balance"]:.2f} kr men du försöker ta ut {amount:.2f} kr.'
+                    }), 400
+                cursor.execute('UPDATE savings_accounts SET balance = balance - ?, updated_at = ? WHERE id = ?',
+                             (amount, datetime.now().isoformat(), account_id))
+        
+        if goal_id:
+            if transfer_type == 'deposit':
+                cursor.execute('UPDATE savings_goals SET current_amount = current_amount + ?, updated_at = ? WHERE id = ?',
+                             (amount, datetime.now().isoformat(), goal_id))
+            elif transfer_type == 'withdrawal':
+                # Check if sufficient amount
+                cursor.execute('SELECT current_amount, name FROM savings_goals WHERE id = ?', (goal_id,))
+                result = cursor.fetchone()
+                if result and result['current_amount'] < amount:
+                    conn.rollback()
+                    conn.close()
+                    return jsonify({
+                        'error': 'Insufficient amount in goal',
+                        'message': f'Målet "{result["name"]}" har bara {result["current_amount"]:.2f} kr men du försöker ta ut {amount:.2f} kr.'
+                    }), 400
+                cursor.execute('UPDATE savings_goals SET current_amount = current_amount - ?, updated_at = ? WHERE id = ?',
+                             (amount, datetime.now().isoformat(), goal_id))
+        
+        conn.commit()
+        
+        cursor.execute('SELECT * FROM savings_transactions WHERE id = ?', (transaction_id,))
+        new_transaction = dict(cursor.fetchone())
+        
+        conn.close()
+        return jsonify(new_transaction), 201
+        
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        print(f"[ERROR] Transfer failed: {str(e)}")
+        return jsonify({'error': f'Transfer failed: {str(e)}'}), 500
+
+
+@app.route('/api/savings/transactions', methods=['GET'])
+def get_savings_transactions():
+    """Get all savings transactions"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    account_id = request.args.get('account_id', type=int)
+    goal_id = request.args.get('goal_id', type=int)
+    
+    query = 'SELECT * FROM savings_transactions WHERE 1=1'
+    params = []
+    
+    if account_id:
+        query += ' AND account_id = ?'
+        params.append(account_id)
+    
+    if goal_id:
+        query += ' AND goal_id = ?'
+        params.append(goal_id)
+    
+    query += ' ORDER BY date DESC, created_at DESC'
+    
+    cursor.execute(query, params)
+    transactions = [dict(row) for row in cursor.fetchall()]
+    
+    conn.close()
+    return jsonify(transactions), 200
+
+
+@app.route('/api/savings/link-transaction', methods=['POST'])
+def link_transaction_to_savings():
+    """Link a regular transaction to a savings goal or account"""
+    data = request.get_json()
+    
+    required_fields = ['transaction_id', 'amount', 'date']
+    if not all(field in data for field in required_fields):
+        return jsonify({'error': 'Missing required fields: transaction_id, amount, date'}), 400
+    
+    transaction_id = data['transaction_id']
+    account_id = data.get('account_id')
+    goal_id = data.get('goal_id')
+    amount = float(data['amount'])
+    date = data['date']
+    notes = data.get('notes', '')
+    
+    if not account_id and not goal_id:
+        return jsonify({'error': 'Either account_id or goal_id must be provided'}), 400
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    try:
+        # Check if transaction exists
+        cursor.execute('SELECT * FROM transactions WHERE id = ?', (transaction_id,))
+        transaction = cursor.fetchone()
+        if not transaction:
+            conn.close()
+            return jsonify({'error': 'Transaction not found'}), 404
+        
+        # Determine type based on is_withdrawal flag
+        # If is_withdrawal is True, it's a withdrawal, otherwise it's always a deposit
+        is_withdrawal = data.get('is_withdrawal', False)
+        transfer_type = 'withdrawal' if is_withdrawal else 'deposit'
+        
+        # Create savings transaction record
+        cursor.execute('''
+            INSERT INTO savings_transactions (transaction_id, account_id, goal_id, amount, type, date, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (transaction_id, account_id, goal_id, amount, transfer_type, date, notes))
+        
+        savings_transaction_id = cursor.lastrowid
+        
+        # Update account balance or goal current_amount
+        if account_id:
+            if transfer_type == 'deposit':
+                cursor.execute('UPDATE savings_accounts SET balance = balance + ?, updated_at = ? WHERE id = ?',
+                             (amount, datetime.now().isoformat(), account_id))
+            elif transfer_type == 'withdrawal':
+                # Check if sufficient balance
+                cursor.execute('SELECT balance, name FROM savings_accounts WHERE id = ?', (account_id,))
+                result = cursor.fetchone()
+                if result and result['balance'] < amount:
+                    conn.rollback()
+                    conn.close()
+                    return jsonify({
+                        'error': 'Insufficient balance',
+                        'message': f'Kontot "{result["name"]}" har bara {result["balance"]:.2f} kr men du försöker ta ut {amount:.2f} kr.'
+                    }), 400
+                cursor.execute('UPDATE savings_accounts SET balance = balance - ?, updated_at = ? WHERE id = ?',
+                             (amount, datetime.now().isoformat(), account_id))
+        
+        if goal_id:
+            if transfer_type == 'deposit':
+                cursor.execute('UPDATE savings_goals SET current_amount = current_amount + ?, updated_at = ? WHERE id = ?',
+                             (amount, datetime.now().isoformat(), goal_id))
+            elif transfer_type == 'withdrawal':
+                # Check if sufficient amount
+                cursor.execute('SELECT current_amount, name FROM savings_goals WHERE id = ?', (goal_id,))
+                result = cursor.fetchone()
+                if result and result['current_amount'] < amount:
+                    conn.rollback()
+                    conn.close()
+                    return jsonify({
+                        'error': 'Insufficient amount in goal',
+                        'message': f'Målet "{result["name"]}" har bara {result["current_amount"]:.2f} kr men du försöker ta ut {amount:.2f} kr.'
+                    }), 400
+                cursor.execute('UPDATE savings_goals SET current_amount = current_amount - ?, updated_at = ? WHERE id = ?',
+                             (amount, datetime.now().isoformat(), goal_id))
+        
+        conn.commit()
+        
+        cursor.execute('SELECT * FROM savings_transactions WHERE id = ?', (savings_transaction_id,))
+        new_savings_transaction = dict(cursor.fetchone())
+        
+        conn.close()
+        return jsonify(new_savings_transaction), 201
+        
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        print(f"[ERROR] Link transaction failed: {str(e)}")
+        return jsonify({'error': f'Link transaction failed: {str(e)}'}), 500
+
+
+# ============================================================================
+# LINK TRANSACTION TO VEHICLE ENDPOINT
+# ============================================================================
+
+@app.route('/api/vehicles/link-transaction', methods=['POST'])
+def link_transaction_to_vehicle():
+    """Link a transaction to a vehicle, creating a vehicle expense"""
+    data = request.get_json()
+    
+    required_fields = ['transaction_id', 'vehicle_id', 'amount', 'date']
+    if not all(field in data for field in required_fields):
+        return jsonify({'error': 'Missing required fields: transaction_id, vehicle_id, amount, date'}), 400
+    
+    transaction_id = data['transaction_id']
+    vehicle_id = data['vehicle_id']
+    amount = float(data['amount'])
+    date = data['date']
+    category = data.get('category', 'Övrigt')
+    description = data.get('description', '')
+    note = data.get('note', '')
+    odometer_at_purchase = data.get('odometer_at_purchase')
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    try:
+        # Check if transaction exists
+        cursor.execute('SELECT * FROM transactions WHERE id = ?', (transaction_id,))
+        transaction = cursor.fetchone()
+        if not transaction:
+            conn.close()
+            return jsonify({'error': 'Transaction not found'}), 404
+        
+        # Check if vehicle exists
+        cursor.execute('SELECT * FROM vehicles WHERE id = ?', (vehicle_id,))
+        vehicle_row = cursor.fetchone()
+        if not vehicle_row:
+            conn.close()
+            return jsonify({'error': 'Vehicle not found'}), 404
+        vehicle = dict(vehicle_row)
+        
+        # Check if expense already exists for this transaction
+        cursor.execute('SELECT * FROM vehicle_expenses WHERE transaction_id = ?', (transaction_id,))
+        existing = cursor.fetchone()
+        if existing:
+            conn.close()
+            return jsonify({'error': 'Transaction already linked to a vehicle expense'}), 400
+        
+        # Create vehicle expense linked to transaction
+        cursor.execute('''
+            INSERT INTO vehicle_expenses (
+                vehicle_id, category, amount, date, description,
+                note, odometer_at_purchase, transaction_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            vehicle_id,
+            category,
+            amount,
+            date,
+            description or transaction['title'],
+            note or f'Kopplad från transaktion: {transaction["title"]}',
+            odometer_at_purchase,
+            transaction_id
+        ))
+        
+        expense_id = cursor.lastrowid
+        conn.commit()
+        
+        cursor.execute('SELECT * FROM vehicle_expenses WHERE id = ?', (expense_id,))
+        new_expense = dict(cursor.fetchone())
+        
+        conn.close()
+        return jsonify(new_expense), 201
+        
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        print(f"[ERROR] Link transaction to vehicle failed: {str(e)}")
+        return jsonify({'error': f'Link transaction to vehicle failed: {str(e)}'}), 500
 
 
 # ============================================================================

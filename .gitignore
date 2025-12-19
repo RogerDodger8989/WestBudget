@@ -34,6 +34,15 @@ instance/
 *.db
 *.sqlite
 *.sqlite3
+*.db.backup_*
+
+# Uploads & Images
+uploads/
+instance/
+
+# Backup files
+*.zip
+westbudget_backup_*.zip
 
 # IDEs
 .vscode/

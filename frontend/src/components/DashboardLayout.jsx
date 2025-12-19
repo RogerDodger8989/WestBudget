@@ -7,6 +7,7 @@ import OverviewTab from './tabs/OverviewTab';
 import TransactionsTab from './tabs/TransactionsTab';
 import AgreementsTab from './tabs/AgreementsTab';
 import VehiclesTab from './tabs/VehiclesTab';
+import SavingsTab from './tabs/SavingsTab';
 import ReportsTab from './tabs/ReportsTab';
 import SettingsTab from './tabs/SettingsTab';
 import TransactionDrawer from './TransactionDrawer';
@@ -262,7 +263,30 @@ const DashboardLayout = ({
 
   const handleAddTransaction = async (transactionData) => {
     try {
+      const linkToSavings = transactionData.linkToSavings;
+      delete transactionData.linkToSavings; // Remove from transaction data
+      
       const created = await api.createTransaction(transactionData);
+      
+      // Link to savings if requested
+      if (linkToSavings && linkToSavings.id) {
+        try {
+          const amountStr = created.amount?.replace(/[^\d,.-]/g, '').replace(',', '') || '0';
+          const amount = Math.abs(parseFloat(amountStr) || 0);
+          
+          await api.linkTransactionToSavings({
+            transaction_id: created.id,
+            account_id: linkToSavings.type === 'account' ? linkToSavings.id : null,
+            goal_id: linkToSavings.type === 'goal' ? linkToSavings.id : null,
+            amount: amount,
+            date: created.date,
+            notes: `Kopplad från transaktion: ${created.title}`
+          });
+        } catch (savingsError) {
+          console.error('Error linking to savings:', savingsError);
+          // Don't fail the transaction creation if savings link fails
+        }
+      }
       
       // Update transactions list
       if (setTransactions) {
@@ -276,7 +300,7 @@ const DashboardLayout = ({
       
       showToast('Faktura skapad!', {
         type: 'success',
-        description: `${created.title} har lagts till`,
+        description: `${created.title} har lagts till${linkToSavings ? ' och kopplats till sparande' : ''}`,
         undo: true,
         undoAction: async () => {
           try {
@@ -741,6 +765,7 @@ const DashboardLayout = ({
   const getTitle = () => {
     switch(activeTab) {
       case 'vehicles': return 'Fordon & Transport';
+      case 'savings': return 'Sparande';
       case 'reports': return 'Finansiella Rapporter';
       case 'transactions': return 'Transaktionshistorik';
       case 'agreements': return 'Avtal & Abonnemang';
@@ -869,6 +894,8 @@ const DashboardLayout = ({
             onCategoryChange={handleCategoryChange}
             onReceiptUpload={handleReceiptUpload}
             categories={categories}
+            reloadData={reloadData}
+            vehicles={vehicles}
           />
         )}
         {selectedAgreement && (
@@ -1006,6 +1033,13 @@ const DashboardLayout = ({
                   }
                 }}
                 setEditingNoteVehicleExpenseId={setEditingNoteVehicleExpenseId}
+                reloadData={reloadData}
+              />
+            )}
+
+            {activeTab === 'savings' && (
+              <SavingsTab 
+                getTitle={getTitle}
                 reloadData={reloadData}
               />
             )}

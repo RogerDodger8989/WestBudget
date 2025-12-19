@@ -11,7 +11,8 @@ import {
   Sun,
   Moon,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  PiggyBank
 } from 'lucide-react';
 import NavItem from './NavItem';
 import logo from '../logo.png';
@@ -52,6 +53,7 @@ const Sidebar = ({
         <NavItem collapsed={isSidebarCollapsed} icon={<LayoutDashboard />} label="Översikt" active={activeTab === 'overview'} onClick={() => setActiveTab('overview')} />
         <NavItem collapsed={isSidebarCollapsed} icon={<ScrollText />} label="Avtal" active={activeTab === 'agreements'} onClick={() => setActiveTab('agreements')} />
         <NavItem collapsed={isSidebarCollapsed} icon={<Car />} label="Fordon" active={activeTab === 'vehicles'} onClick={() => setActiveTab('vehicles')} />
+        <NavItem collapsed={isSidebarCollapsed} icon={<PiggyBank />} label="Sparande" active={activeTab === 'savings'} onClick={() => setActiveTab('savings')} />
         <NavItem collapsed={isSidebarCollapsed} icon={<PieChart />} label="Rapporter" active={activeTab === 'reports'} onClick={() => setActiveTab('reports')} />
         <NavItem collapsed={isSidebarCollapsed} icon={<CreditCard />} label="Transaktioner" active={activeTab === 'transactions'} onClick={() => setActiveTab('transactions')} />
         
