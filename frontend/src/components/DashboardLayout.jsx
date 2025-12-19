@@ -39,7 +39,9 @@ const DashboardLayout = ({
   setVehicleExpenses,
   loans = [],
   loading,
-  reloadData
+  reloadData,
+  userName = '',
+  setUserName
 }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -1040,7 +1042,7 @@ const DashboardLayout = ({
       />
 
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-zinc-50/50 dark:bg-zinc-950/50 transition-colors duration-500">
-        <Topbar agreements={agreements} vehicles={vehicles} />
+        <Topbar agreements={agreements} vehicles={vehicles} userName={userName} />
 
         <div className="flex-1 overflow-y-auto p-8">
           <div className="max-w-7xl mx-auto space-y-8">
@@ -1214,6 +1216,9 @@ const DashboardLayout = ({
                 reloadData={reloadData}
                 isDarkMode={isDarkMode}
                 toggleTheme={toggleTheme}
+                transactions={transactions}
+                userName={userName}
+                setUserName={setUserName}
               />
             )}
 

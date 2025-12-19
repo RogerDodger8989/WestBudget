@@ -18,14 +18,18 @@ function AppContent() {
   const [loans, setLoans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [userName, setUserName] = useState('');
 
-  // Load default theme from settings on mount
+  // Load default theme and user name from settings on mount
   useEffect(() => {
     const loadDefaultTheme = async () => {
       try {
         const settings = await api.getSettings();
         if (settings.default_theme) {
           setIsDarkMode(settings.default_theme === 'dark');
+        }
+        if (settings.user_name) {
+          setUserName(settings.user_name);
         }
       } catch (error) {
         console.error('Kunde inte ladda tema-inställning:', error);
@@ -138,6 +142,8 @@ function AppContent() {
               loans={loans}
               loading={loading}
               reloadData={loadData}
+              userName={userName}
+              setUserName={setUserName}
             />
           </>
         ) : (

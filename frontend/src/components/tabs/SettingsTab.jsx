@@ -1,15 +1,20 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Settings, FolderOpen, Save, CheckCircle, Image as ImageIcon, Tag, Plus, Edit2, Trash2, X, Merge, AlertCircle, Loader2, Download, Upload, Database } from 'lucide-react';
+import { Settings, FolderOpen, Save, CheckCircle, Image as ImageIcon, Tag, Plus, Edit2, Trash2, X, Merge, AlertCircle, Loader2, Download, Upload, Database, Search, Filter, Calendar, FileText, Grid3x3, List, User, Mail, Phone, MapPin } from 'lucide-react';
 import { api } from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import CategoryEditForm from '../CategoryEditForm';
 import MergeCategoryModal from '../MergeCategoryModal';
 
-const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme }) => {
+const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactions = [], userName: externalUserName, setUserName: setExternalUserName }) => {
   const { showToast } = useToast();
+  const [activeSubTab, setActiveSubTab] = useState('general'); // 'general', 'categories', 'images'
   const [receiptPath, setReceiptPath] = useState('C:\\Users\\Documents\\Kvitton');
   const [agreementImagesPath, setAgreementImagesPath] = useState('C:\\Users\\Documents\\Avtal\\Bilder');
   const [defaultTheme, setDefaultTheme] = useState('dark'); // 'dark' or 'light'
+  const [userName, setUserName] = useState(externalUserName || '');
+  const [userAddress, setUserAddress] = useState('');
+  const [userPhone, setUserPhone] = useState('');
+  const [userEmail, setUserEmail] = useState('');
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState([]);
@@ -21,6 +26,15 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme }) => {
   const [newRulePatterns, setNewRulePatterns] = useState(['']); // Array of patterns
   const [newRuleCategory, setNewRuleCategory] = useState('');
   const [activeCategoryTab, setActiveCategoryTab] = useState('categories'); // 'categories' or 'rules'
+  
+  // Media library states
+  const [mediaFiles, setMediaFiles] = useState([]);
+  const [mediaSearchQuery, setMediaSearchQuery] = useState('');
+  const [mediaSortBy, setMediaSortBy] = useState('date'); // 'date', 'name', 'size'
+  const [mediaSortOrder, setMediaSortOrder] = useState('desc'); // 'asc', 'desc'
+  const [mediaFilterType, setMediaFilterType] = useState('all'); // 'all', 'receipts', 'agreements'
+  const [mediaViewMode, setMediaViewMode] = useState('grid'); // 'grid', 'list'
+  const [loadingMedia, setLoadingMedia] = useState(false);
   
   // Inline editing states for category rules
   const [editingRuleId, setEditingRuleId] = useState(null);
@@ -51,6 +65,13 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme }) => {
     loadCategoryRules();
   }, []);
 
+  // Sync external userName when it changes
+  useEffect(() => {
+    if (externalUserName && externalUserName !== userName) {
+      setUserName(externalUserName);
+    }
+  }, [externalUserName]);
+
   const loadCategoryRules = async () => {
     try {
       const rules = await api.getCategoryRules();
@@ -79,6 +100,24 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme }) => {
         // Om ingen inställning finns, använd nuvarande tema
         const currentTheme = isDarkMode ? 'dark' : 'light';
         setDefaultTheme(currentTheme);
+      }
+      
+      // Load user information
+      if (settings.user_name) {
+        setUserName(settings.user_name);
+        // Update external userName if setter is provided
+        if (setExternalUserName) {
+          setExternalUserName(settings.user_name);
+        }
+      }
+      if (settings.user_address) {
+        setUserAddress(settings.user_address);
+      }
+      if (settings.user_phone) {
+        setUserPhone(settings.user_phone);
+      }
+      if (settings.user_email) {
+        setUserEmail(settings.user_email);
       }
     } catch (error) {
       console.error('Kunde inte ladda inställningar:', error);
@@ -309,8 +348,17 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme }) => {
       await api.saveSettings({
         receipt_storage_path: receiptPath,
         agreement_images_path: agreementImagesPath,
-        default_theme: defaultTheme
+        default_theme: defaultTheme,
+        user_name: userName,
+        user_address: userAddress,
+        user_phone: userPhone,
+        user_email: userEmail
       });
+      
+      // Update external userName if setter is provided
+      if (setExternalUserName) {
+        setExternalUserName(userName);
+      }
       
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -320,6 +368,69 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme }) => {
       showToast('Kunde inte spara inställningar. Kontrollera att servern körs.', { type: 'error' });
     }
   };
+
+  // Load media files
+  const loadMediaFiles = async () => {
+    setLoadingMedia(true);
+    try {
+      const files = await api.getMediaFiles();
+      setMediaFiles(files);
+    } catch (error) {
+      console.error('Kunde inte ladda mediafiler:', error);
+      showToast('Kunde inte ladda mediafiler', { type: 'error' });
+    } finally {
+      setLoadingMedia(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeSubTab === 'images') {
+      loadMediaFiles();
+    }
+  }, [activeSubTab]);
+
+  // Filter and sort media files
+  const filteredAndSortedMedia = useMemo(() => {
+    let filtered = [...mediaFiles];
+
+    // Filter by type
+    if (mediaFilterType !== 'all') {
+      filtered = filtered.filter(file => {
+        if (mediaFilterType === 'receipts') {
+          return file.type === 'receipt';
+        } else if (mediaFilterType === 'agreements') {
+          return file.type === 'agreement';
+        }
+        return true;
+      });
+    }
+
+    // Filter by search query
+    if (mediaSearchQuery) {
+      const query = mediaSearchQuery.toLowerCase();
+      filtered = filtered.filter(file => 
+        file.filename.toLowerCase().includes(query) ||
+        file.path.toLowerCase().includes(query) ||
+        (file.transaction_title && file.transaction_title.toLowerCase().includes(query)) ||
+        (file.agreement_name && file.agreement_name.toLowerCase().includes(query))
+      );
+    }
+
+    // Sort
+    filtered.sort((a, b) => {
+      let comparison = 0;
+      if (mediaSortBy === 'date') {
+        comparison = new Date(a.date || 0) - new Date(b.date || 0);
+      } else if (mediaSortBy === 'name') {
+        comparison = a.filename.localeCompare(b.filename);
+      } else if (mediaSortBy === 'size') {
+        comparison = (a.size || 0) - (b.size || 0);
+      }
+      return mediaSortOrder === 'asc' ? comparison : -comparison;
+    });
+
+    return filtered;
+  }, [mediaFiles, mediaSearchQuery, mediaSortBy, mediaSortOrder, mediaFilterType]);
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -335,151 +446,381 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme }) => {
         </div>
       </div>
 
+      {/* Sub-menu Tabs */}
+      <div className="flex items-center gap-1 bg-zinc-200 dark:bg-zinc-900/50 p-1 rounded-xl w-fit">
+        <button
+          onClick={() => setActiveSubTab('general')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+            activeSubTab === 'general'
+              ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm'
+              : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+          }`}
+        >
+          <Settings size={16} />
+          Allmänna inställningar
+        </button>
+        <button
+          onClick={() => setActiveSubTab('categories')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+            activeSubTab === 'categories'
+              ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm'
+              : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+          }`}
+        >
+          <Tag size={16} />
+          Kategorier & Regler
+        </button>
+        <button
+          onClick={() => setActiveSubTab('images')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+            activeSubTab === 'images'
+              ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm'
+              : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+          }`}
+        >
+          <ImageIcon size={16} />
+          Bilder
+        </button>
+      </div>
+
       {/* Settings Sections */}
       <div className="grid grid-cols-1 gap-6">
         
-        {/* Receipt Storage Section */}
+        {/* Allmänna inställningar Tab */}
+        {activeSubTab === 'general' && (
+          <>
+        
+        {/* User Information */}
         <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
           <div className="flex items-center gap-3 mb-6">
             <div className="p-2.5 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl">
-              <FolderOpen className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+              <User className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
             </div>
             <div>
-              <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Kvittolagring</h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">Välj var kvitton ska sparas</p>
+              <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Personlig information</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">Uppdatera din kontaktinformation</p>
             </div>
           </div>
 
           <div className="space-y-4">
+            {/* Name */}
             <div className="space-y-2">
-              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                Sökväg för kvitton
+              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
+                <User size={16} />
+                Namn
               </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={receiptPath}
-                  onChange={(e) => setReceiptPath(e.target.value)}
-                  placeholder="C:\Dokument\Kvitton"
-                  disabled={loading}
-                  className="flex-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
-                />
-                <button 
-                  onClick={handleSave}
-                  disabled={loading}
-                  className={`px-6 py-3 rounded-xl font-medium transition-all flex items-center gap-2 ${
-                    saved 
-                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' 
-                      : 'bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed'
-                  }`}
-                >
-                  {saved ? (
-                    <>
-                      <CheckCircle size={18} />
-                      Sparad
-                    </>
-                  ) : (
-                    <>
-                      <Save size={18} />
-                      Spara
-                    </>
-                  )}
-                </button>
-              </div>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                Kvitton kommer automatiskt att sparas i denna mapp när de laddas upp.
-              </p>
+              <input
+                type="text"
+                value={userName}
+                onChange={(e) => setUserName(e.target.value)}
+                placeholder="Ditt namn"
+                disabled={loading}
+                className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
+              />
             </div>
 
-            <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700">
-              <div className="flex items-start gap-3">
-                <div className="mt-0.5">
-                  <div className="w-2 h-2 bg-indigo-500 rounded-full"></div>
-                </div>
-                <div className="text-sm text-zinc-600 dark:text-zinc-400">
-                  <p className="font-medium mb-1">Tips:</p>
-                  <ul className="space-y-1 text-xs">
-                    <li>• Använd en molnsynkad mapp för automatisk backup</li>
-                    <li>• Skapa undermappar per år/månad för bättre organisation</li>
-                    <li>• Se till att mappen har skrivrättigheter</li>
-                  </ul>
-                </div>
-              </div>
+            {/* Address */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
+                <MapPin size={16} />
+                Adress
+              </label>
+              <input
+                type="text"
+                value={userAddress}
+                onChange={(e) => setUserAddress(e.target.value)}
+                placeholder="Din adress"
+                disabled={loading}
+                className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
+              />
+            </div>
+
+            {/* Phone */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
+                <Phone size={16} />
+                Telefon
+              </label>
+              <input
+                type="tel"
+                value={userPhone}
+                onChange={(e) => setUserPhone(e.target.value)}
+                placeholder="Ditt telefonnummer"
+                disabled={loading}
+                className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
+              />
+            </div>
+
+            {/* Email */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
+                <Mail size={16} />
+                E-post
+              </label>
+              <input
+                type="email"
+                value={userEmail}
+                onChange={(e) => setUserEmail(e.target.value)}
+                placeholder="din@epost.se"
+                disabled={loading}
+                className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
+              />
+            </div>
+
+            {/* Save Button */}
+            <div className="pt-2">
+              <button 
+                onClick={handleSave}
+                disabled={loading}
+                className={`w-full px-6 py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2 ${
+                  saved 
+                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' 
+                    : 'bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed'
+                }`}
+              >
+                {saved ? (
+                  <>
+                    <CheckCircle size={18} />
+                    Sparad
+                  </>
+                ) : (
+                  <>
+                    <Save size={18} />
+                    Spara ändringar
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>
 
-        {/* Agreement Images Storage Section */}
+        {/* Application Settings */}
         <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
           <div className="flex items-center gap-3 mb-6">
-            <div className="p-2.5 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl">
-              <ImageIcon className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+            <div className="p-2.5 bg-zinc-100 dark:bg-zinc-800 rounded-xl">
+              <Settings className="w-5 h-5 text-zinc-600 dark:text-zinc-400" />
             </div>
             <div>
-              <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Avtalsbilder</h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">Välj var avtalsbilder ska sparas</p>
+              <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Applikationsinställningar</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">Systeminställningar</p>
             </div>
           </div>
 
           <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                Sökväg för avtalsbilder
-              </label>
+            {/* Default Theme Selection */}
+            <div className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl">
+              <div>
+                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Standardtema vid start</p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">Välj standardtema när appen startar</p>
+              </div>
               <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={agreementImagesPath}
-                  onChange={(e) => setAgreementImagesPath(e.target.value)}
-                  placeholder="C:\Dokument\Avtal\Bilder"
-                  disabled={loading}
-                  className="flex-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
-                />
-                <button 
-                  onClick={handleSave}
-                  disabled={loading}
-                  className={`px-6 py-3 rounded-xl font-medium transition-all flex items-center gap-2 ${
-                    saved 
-                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' 
-                      : 'bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed'
+                <button
+                  onClick={async () => {
+                    setDefaultTheme('light');
+                    // Ändra temat omedelbart om det inte redan är ljust
+                    if (isDarkMode && toggleTheme) {
+                      await toggleTheme();
+                    }
+                    // Spara inställningen
+                    try {
+                      await api.saveSettings({
+                        receipt_storage_path: receiptPath,
+                        agreement_images_path: agreementImagesPath,
+                        default_theme: 'light',
+                        user_name: userName,
+                        user_address: userAddress,
+                        user_phone: userPhone,
+                        user_email: userEmail
+                      });
+                      // Update external userName if setter is provided
+                      if (setExternalUserName) {
+                        setExternalUserName(userName);
+                      }
+                      showToast('Tema ändrat till ljust!', { type: 'success' });
+                    } catch (error) {
+                      console.error('❌ Kunde inte spara tema-inställning:', error);
+                      showToast('Kunde inte spara tema-inställning.', { type: 'error' });
+                    }
+                  }}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                    defaultTheme === 'light'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-300 dark:hover:bg-zinc-600'
                   }`}
                 >
-                  {saved ? (
-                    <>
-                      <CheckCircle size={18} />
-                      Sparad
-                    </>
-                  ) : (
-                    <>
-                      <Save size={18} />
-                      Spara
-                    </>
-                  )}
+                  Ljust
+                </button>
+                <button
+                  onClick={async () => {
+                    setDefaultTheme('dark');
+                    // Ändra temat omedelbart om det inte redan är mörkt
+                    if (!isDarkMode && toggleTheme) {
+                      await toggleTheme();
+                    }
+                    // Spara inställningen
+                    try {
+                      await api.saveSettings({
+                        receipt_storage_path: receiptPath,
+                        agreement_images_path: agreementImagesPath,
+                        default_theme: 'dark',
+                        user_name: userName,
+                        user_address: userAddress,
+                        user_phone: userPhone,
+                        user_email: userEmail
+                      });
+                      // Update external userName if setter is provided
+                      if (setExternalUserName) {
+                        setExternalUserName(userName);
+                      }
+                      showToast('Tema ändrat till mörkt!', { type: 'success' });
+                    } catch (error) {
+                      console.error('❌ Kunde inte spara tema-inställning:', error);
+                      showToast('Kunde inte spara tema-inställning.', { type: 'error' });
+                    }
+                  }}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                    defaultTheme === 'dark'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-300 dark:hover:bg-zinc-600'
+                  }`}
+                >
+                  Mörkt
                 </button>
               </div>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                Avtalsbilder kommer automatiskt att sparas i denna mapp när de laddas upp.
-              </p>
             </div>
 
-            <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700">
-              <div className="flex items-start gap-3">
-                <div className="mt-0.5">
-                  <div className="w-2 h-2 bg-indigo-500 rounded-full"></div>
-                </div>
-                <div className="text-sm text-zinc-600 dark:text-zinc-400">
-                  <p className="font-medium mb-1">Tips:</p>
-                  <ul className="space-y-1 text-xs">
-                    <li>• Använd en molnsynkad mapp för automatisk backup</li>
-                    <li>• Skapa undermappar per avtal för bättre organisation</li>
-                    <li>• Se till att mappen har skrivrättigheter</li>
-                  </ul>
-                </div>
+            {/* Language */}
+            <div className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl">
+              <div>
+                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Språk</p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">Applikationens språk</p>
               </div>
+              <span className="px-3 py-1 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 rounded-lg text-xs font-medium">
+                Svenska
+              </span>
+            </div>
+
+            {/* Currency */}
+            <div className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl">
+              <div>
+                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Valuta</p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">Standard valuta för transaktioner</p>
+              </div>
+              <span className="px-3 py-1 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-lg text-xs font-medium border border-zinc-200 dark:border-zinc-700">
+                SEK (kr)
+              </span>
             </div>
           </div>
         </div>
 
+        {/* Backup & Restore Section */}
+        <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
+          <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-4 flex items-center gap-2">
+            <Database size={18} className="text-indigo-500 dark:text-indigo-400" />
+            Backup & Återställning
+          </h3>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
+            Skapa en säkerhetskopia av all din data inklusive transaktioner, avtal, fordon och bilder.
+          </p>
+          
+          <div className="space-y-3">
+            <button
+              onClick={async () => {
+                try {
+                  showToast('Skapar backup...', { type: 'info' });
+                  await api.createBackup();
+                  showToast('Backup skapad och nedladdad!', { type: 'success' });
+                } catch (error) {
+                  console.error('Backup error:', error);
+                  showToast(`Kunde inte skapa backup: ${error.message}`, { type: 'error' });
+                }
+              }}
+              className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-3 rounded-xl text-sm font-medium transition-all shadow-sm"
+            >
+              <Download size={16} />
+              Skapa Backup
+            </button>
+
+            <div className="relative">
+              <input
+                type="file"
+                accept=".zip"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+
+                  if (!file.name.endsWith('.zip')) {
+                    showToast('Ogiltig fil. Välj en ZIP-fil.', { type: 'error' });
+                    return;
+                  }
+
+                  if (!confirm('VARNING: Detta kommer att ersätta all nuvarande data med data från backup-filen. Är du säker?')) {
+                    e.target.value = '';
+                    return;
+                  }
+
+                  try {
+                    showToast('Återställer backup...', { type: 'info' });
+                    const result = await api.restoreBackup(file);
+                    showToast('Backup återställd! Ladda om sidan för att se ändringarna.', { 
+                      type: 'success',
+                      description: result.warning
+                    });
+                    // Reload data after restore
+                    setTimeout(() => {
+                      window.location.reload();
+                    }, 2000);
+                  } catch (error) {
+                    console.error('Restore error:', error);
+                    showToast(`Kunde inte återställa backup: ${error.message}`, { type: 'error' });
+                  } finally {
+                    e.target.value = '';
+                  }
+                }}
+                className="hidden"
+                id="restore-backup-input"
+              />
+              <label
+                htmlFor="restore-backup-input"
+                className="w-full flex items-center justify-center gap-2 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 px-4 py-3 rounded-xl text-sm font-medium transition-all shadow-sm cursor-pointer"
+              >
+                <Upload size={16} />
+                Återställ från Backup
+              </label>
+            </div>
+          </div>
+
+          <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
+            <p className="text-xs text-amber-800 dark:text-amber-300">
+              <strong>Tips:</strong> Backup-filen innehåller databasen och alla bilder. Spara den på en säker plats.
+            </p>
+          </div>
+        </div>
+
+        {/* About Section */}
+        <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
+          <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-4">Om WestBudget</h3>
+          <div className="space-y-2 text-sm text-zinc-600 dark:text-zinc-400">
+            <div className="flex justify-between">
+              <span>Version:</span>
+              <span className="font-mono text-zinc-900 dark:text-white">1.0.0</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Byggd med:</span>
+              <span className="text-zinc-900 dark:text-white">React + Flask</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Licens:</span>
+              <span className="text-zinc-900 dark:text-white">Premium</span>
+            </div>
+          </div>
+        </div>
+          </>
+        )}
+
+        {/* Categories Management Tab */}
+        {activeSubTab === 'categories' && (
+          <>
         {/* Categories Management */}
         <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
           <div className="flex items-center justify-between mb-6">
@@ -943,212 +1284,327 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme }) => {
           </div>
           )}
         </div>
+          </>
+        )}
 
-        {/* Application Settings */}
+        {/* Bilder Tab */}
+        {activeSubTab === 'images' && (
+          <>
+        {/* Receipt Storage Section */}
         <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
           <div className="flex items-center gap-3 mb-6">
-            <div className="p-2.5 bg-zinc-100 dark:bg-zinc-800 rounded-xl">
-              <Settings className="w-5 h-5 text-zinc-600 dark:text-zinc-400" />
+            <div className="p-2.5 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl">
+              <FolderOpen className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
             </div>
             <div>
-              <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Allmänna inställningar</h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">Applikationsinställningar</p>
+              <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Kvittolagring</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">Välj var kvitton ska sparas</p>
             </div>
           </div>
 
           <div className="space-y-4">
-            {/* Default Theme Selection */}
-            <div className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl">
-              <div>
-                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Standardtema vid start</p>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">Välj standardtema när appen startar</p>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={async () => {
-                    setDefaultTheme('light');
-                    // Ändra temat omedelbart om det inte redan är ljust
-                    if (isDarkMode && toggleTheme) {
-                      await toggleTheme();
-                    }
-                    // Spara inställningen
-                    try {
-                      await api.saveSettings({
-                        receipt_storage_path: receiptPath,
-                        agreement_images_path: agreementImagesPath,
-                        default_theme: 'light'
-                      });
-                      showToast('Tema ändrat till ljust!', { type: 'success' });
-                    } catch (error) {
-                      console.error('❌ Kunde inte spara tema-inställning:', error);
-                      showToast('Kunde inte spara tema-inställning.', { type: 'error' });
-                    }
-                  }}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                    defaultTheme === 'light'
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-300 dark:hover:bg-zinc-600'
-                  }`}
-                >
-                  Ljust
-                </button>
-                <button
-                  onClick={async () => {
-                    setDefaultTheme('dark');
-                    // Ändra temat omedelbart om det inte redan är mörkt
-                    if (!isDarkMode && toggleTheme) {
-                      await toggleTheme();
-                    }
-                    // Spara inställningen
-                    try {
-                      await api.saveSettings({
-                        receipt_storage_path: receiptPath,
-                        agreement_images_path: agreementImagesPath,
-                        default_theme: 'dark'
-                      });
-                      showToast('Tema ändrat till mörkt!', { type: 'success' });
-                    } catch (error) {
-                      console.error('❌ Kunde inte spara tema-inställning:', error);
-                      showToast('Kunde inte spara tema-inställning.', { type: 'error' });
-                    }
-                  }}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                    defaultTheme === 'dark'
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-300 dark:hover:bg-zinc-600'
-                  }`}
-                >
-                  Mörkt
-                </button>
-              </div>
-            </div>
-
-            {/* Language */}
-            <div className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl">
-              <div>
-                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Språk</p>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">Applikationens språk</p>
-              </div>
-              <span className="px-3 py-1 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 rounded-lg text-xs font-medium">
-                Svenska
-              </span>
-            </div>
-
-            {/* Currency */}
-            <div className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl">
-              <div>
-                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Valuta</p>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">Standard valuta för transaktioner</p>
-              </div>
-              <span className="px-3 py-1 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-lg text-xs font-medium border border-zinc-200 dark:border-zinc-700">
-                SEK (kr)
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Backup & Restore Section */}
-        <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
-          <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-4 flex items-center gap-2">
-            <Database size={18} className="text-indigo-500 dark:text-indigo-400" />
-            Backup & Återställning
-          </h3>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
-            Skapa en säkerhetskopia av all din data inklusive transaktioner, avtal, fordon och bilder.
-          </p>
-          
-          <div className="space-y-3">
-            <button
-              onClick={async () => {
-                try {
-                  showToast('Skapar backup...', { type: 'info' });
-                  await api.createBackup();
-                  showToast('Backup skapad och nedladdad!', { type: 'success' });
-                } catch (error) {
-                  console.error('Backup error:', error);
-                  showToast(`Kunde inte skapa backup: ${error.message}`, { type: 'error' });
-                }
-              }}
-              className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-3 rounded-xl text-sm font-medium transition-all shadow-sm"
-            >
-              <Download size={16} />
-              Skapa Backup
-            </button>
-
-            <div className="relative">
-              <input
-                type="file"
-                accept=".zip"
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-
-                  if (!file.name.endsWith('.zip')) {
-                    showToast('Ogiltig fil. Välj en ZIP-fil.', { type: 'error' });
-                    return;
-                  }
-
-                  if (!confirm('VARNING: Detta kommer att ersätta all nuvarande data med data från backup-filen. Är du säker?')) {
-                    e.target.value = '';
-                    return;
-                  }
-
-                  try {
-                    showToast('Återställer backup...', { type: 'info' });
-                    const result = await api.restoreBackup(file);
-                    showToast('Backup återställd! Ladda om sidan för att se ändringarna.', { 
-                      type: 'success',
-                      description: result.warning
-                    });
-                    // Reload data after restore
-                    setTimeout(() => {
-                      window.location.reload();
-                    }, 2000);
-                  } catch (error) {
-                    console.error('Restore error:', error);
-                    showToast(`Kunde inte återställa backup: ${error.message}`, { type: 'error' });
-                  } finally {
-                    e.target.value = '';
-                  }
-                }}
-                className="hidden"
-                id="restore-backup-input"
-              />
-              <label
-                htmlFor="restore-backup-input"
-                className="w-full flex items-center justify-center gap-2 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 px-4 py-3 rounded-xl text-sm font-medium transition-all shadow-sm cursor-pointer"
-              >
-                <Upload size={16} />
-                Återställ från Backup
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Sökväg för kvitton
               </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={receiptPath}
+                  onChange={(e) => setReceiptPath(e.target.value)}
+                  placeholder="C:\Dokument\Kvitton"
+                  disabled={loading}
+                  className="flex-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
+                />
+                <button 
+                  onClick={handleSave}
+                  disabled={loading}
+                  className={`px-6 py-3 rounded-xl font-medium transition-all flex items-center gap-2 ${
+                    saved 
+                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' 
+                      : 'bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed'
+                  }`}
+                >
+                  {saved ? (
+                    <>
+                      <CheckCircle size={18} />
+                      Sparad
+                    </>
+                  ) : (
+                    <>
+                      <Save size={18} />
+                      Spara
+                    </>
+                  )}
+                </button>
+              </div>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Kvitton kommer automatiskt att sparas i denna mapp när de laddas upp.
+              </p>
             </div>
-          </div>
 
-          <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
-            <p className="text-xs text-amber-800 dark:text-amber-300">
-              <strong>Tips:</strong> Backup-filen innehåller databasen och alla bilder. Spara den på en säker plats.
-            </p>
+            <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5">
+                  <div className="w-2 h-2 bg-indigo-500 rounded-full"></div>
+                </div>
+                <div className="text-sm text-zinc-600 dark:text-zinc-400">
+                  <p className="font-medium mb-1">Tips:</p>
+                  <ul className="space-y-1 text-xs">
+                    <li>• Använd en molnsynkad mapp för automatisk backup</li>
+                    <li>• Skapa undermappar per år/månad för bättre organisation</li>
+                    <li>• Se till att mappen har skrivrättigheter</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* About Section */}
+        {/* Agreement Images Storage Section */}
         <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
-          <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-4">Om WestBudget</h3>
-          <div className="space-y-2 text-sm text-zinc-600 dark:text-zinc-400">
-            <div className="flex justify-between">
-              <span>Version:</span>
-              <span className="font-mono text-zinc-900 dark:text-white">1.0.0</span>
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-2.5 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl">
+              <ImageIcon className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
             </div>
-            <div className="flex justify-between">
-              <span>Byggd med:</span>
-              <span className="text-zinc-900 dark:text-white">React + Flask</span>
+            <div>
+              <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Avtalsbilder</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">Välj var avtalsbilder ska sparas</p>
             </div>
-            <div className="flex justify-between">
-              <span>Licens:</span>
-              <span className="text-zinc-900 dark:text-white">Premium</span>
+          </div>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Sökväg för avtalsbilder
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={agreementImagesPath}
+                  onChange={(e) => setAgreementImagesPath(e.target.value)}
+                  placeholder="C:\Dokument\Avtal\Bilder"
+                  disabled={loading}
+                  className="flex-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
+                />
+                <button 
+                  onClick={handleSave}
+                  disabled={loading}
+                  className={`px-6 py-3 rounded-xl font-medium transition-all flex items-center gap-2 ${
+                    saved 
+                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' 
+                      : 'bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed'
+                  }`}
+                >
+                  {saved ? (
+                    <>
+                      <CheckCircle size={18} />
+                      Sparad
+                    </>
+                  ) : (
+                    <>
+                      <Save size={18} />
+                      Spara
+                    </>
+                  )}
+                </button>
+              </div>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Avtalsbilder kommer automatiskt att sparas i denna mapp när de laddas upp.
+              </p>
             </div>
           </div>
         </div>
+
+        {/* Media Library */}
+        <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl">
+                <FileText className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Media Bibliotek</h3>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">Sök, sortera och filtrera alla kvitton och bilder</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setMediaViewMode(mediaViewMode === 'grid' ? 'list' : 'grid')}
+                className="p-2 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
+                title={mediaViewMode === 'grid' ? 'Listvy' : 'Rutnätsvy'}
+              >
+                {mediaViewMode === 'grid' ? <List size={18} /> : <Grid3x3 size={18} />}
+              </button>
+            </div>
+          </div>
+
+          {/* Search and Filters */}
+          <div className="space-y-4 mb-6">
+            <div className="flex gap-2">
+              <div className="flex-1 relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-zinc-400" size={18} />
+                <input
+                  type="text"
+                  value={mediaSearchQuery}
+                  onChange={(e) => setMediaSearchQuery(e.target.value)}
+                  placeholder="Sök efter filnamn, transaktion eller avtal..."
+                  className="w-full pl-10 pr-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <Filter size={16} className="text-zinc-500" />
+                <select
+                  value={mediaFilterType}
+                  onChange={(e) => setMediaFilterType(e.target.value)}
+                  className="px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="all">Alla filer</option>
+                  <option value="receipts">Kvitton</option>
+                  <option value="agreements">Avtalsbilder</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Calendar size={16} className="text-zinc-500" />
+                <select
+                  value={mediaSortBy}
+                  onChange={(e) => setMediaSortBy(e.target.value)}
+                  className="px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="date">Datum</option>
+                  <option value="name">Namn</option>
+                  <option value="size">Storlek</option>
+                </select>
+                <button
+                  onClick={() => setMediaSortOrder(mediaSortOrder === 'asc' ? 'desc' : 'asc')}
+                  className="px-3 py-2 bg-zinc-100 dark:bg-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-600 rounded-lg text-sm text-zinc-700 dark:text-zinc-300 transition-colors"
+                  title={mediaSortOrder === 'asc' ? 'Stigande' : 'Fallande'}
+                >
+                  {mediaSortOrder === 'asc' ? '↑' : '↓'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Media Files Display */}
+          {loadingMedia ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="animate-spin text-indigo-600 dark:text-indigo-400" size={24} />
+            </div>
+          ) : filteredAndSortedMedia.length === 0 ? (
+            <div className="text-center py-12 text-zinc-500">
+              <FileText size={48} className="mx-auto mb-4 text-zinc-400" />
+              <p>Inga filer hittades</p>
+              {mediaSearchQuery && (
+                <p className="text-sm mt-2">Försök med en annan sökterm</p>
+              )}
+            </div>
+          ) : mediaViewMode === 'grid' ? (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {filteredAndSortedMedia.map((file, idx) => (
+                <div
+                  key={idx}
+                  className="bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl p-3 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer group"
+                  onClick={() => {
+                    // Open file in new window/tab
+                    window.open(`http://192.168.1.232:5000/api/files/${encodeURIComponent(file.path)}`, '_blank');
+                  }}
+                >
+                  <div className="aspect-square bg-white dark:bg-zinc-900 rounded-lg mb-2 flex items-center justify-center overflow-hidden">
+                    {file.filename.match(/\.(jpg|jpeg|png|gif)$/i) ? (
+                      <img
+                        src={`http://192.168.1.232:5000/api/files/${encodeURIComponent(file.path)}`}
+                        alt={file.filename}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <FileText className="w-12 h-12 text-zinc-400" />
+                    )}
+                  </div>
+                  <p className="text-xs font-medium text-zinc-900 dark:text-white truncate mb-1" title={file.filename}>
+                    {file.filename}
+                  </p>
+                  <div className="flex items-center justify-between text-xs text-zinc-500">
+                    <span className={`px-2 py-0.5 rounded ${
+                      file.type === 'receipt' 
+                        ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                        : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400'
+                    }`}>
+                      {file.type === 'receipt' ? 'Kvitto' : 'Avtal'}
+                    </span>
+                    <span>{(file.size / 1024).toFixed(1)} KB</span>
+                  </div>
+                  {file.transaction_title && (
+                    <p className="text-xs text-zinc-400 mt-1 truncate" title={file.transaction_title}>
+                      {file.transaction_title}
+                    </p>
+                  )}
+                  {file.agreement_name && (
+                    <p className="text-xs text-zinc-400 mt-1 truncate" title={file.agreement_name}>
+                      {file.agreement_name}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {filteredAndSortedMedia.map((file, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center gap-4 p-4 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer group"
+                  onClick={() => {
+                    window.open(`http://192.168.1.232:5000/api/files/${encodeURIComponent(file.path)}`, '_blank');
+                  }}
+                >
+                  <div className="w-16 h-16 bg-white dark:bg-zinc-900 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden">
+                    {file.filename.match(/\.(jpg|jpeg|png|gif)$/i) ? (
+                      <img
+                        src={`http://192.168.1.232:5000/api/files/${encodeURIComponent(file.path)}`}
+                        alt={file.filename}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <FileText className="w-8 h-8 text-zinc-400" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-zinc-900 dark:text-white truncate">
+                      {file.filename}
+                    </p>
+                    <div className="flex items-center gap-3 mt-1 text-xs text-zinc-500">
+                      <span className={`px-2 py-0.5 rounded ${
+                        file.type === 'receipt' 
+                          ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                          : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400'
+                      }`}>
+                        {file.type === 'receipt' ? 'Kvitto' : 'Avtal'}
+                      </span>
+                      {file.transaction_title && (
+                        <span className="truncate">{file.transaction_title}</span>
+                      )}
+                      {file.agreement_name && (
+                        <span className="truncate">{file.agreement_name}</span>
+                      )}
+                      {file.date && (
+                        <span>{new Date(file.date).toLocaleDateString('sv-SE')}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-right text-xs text-zinc-500">
+                    <p>{(file.size / 1024).toFixed(1)} KB</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+          </>
+        )}
 
       </div>
 

@@ -2914,6 +2914,94 @@ def link_transaction_to_vehicle():
 
 
 # ============================================================================
+# MEDIA FILES ENDPOINT
+# ============================================================================
+
+@app.route('/api/media-files', methods=['GET'])
+def get_media_files():
+    """Get all media files (receipts and agreement images) with metadata"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get storage paths from settings
+        cursor.execute('SELECT value FROM settings WHERE key = ?', ('receipt_storage_path',))
+        receipt_path_result = cursor.fetchone()
+        receipt_storage_path = receipt_path_result['value'] if receipt_path_result else app.config['UPLOAD_FOLDER']
+        
+        cursor.execute('SELECT value FROM settings WHERE key = ?', ('agreement_images_path',))
+        agreement_path_result = cursor.fetchone()
+        agreement_images_path = agreement_path_result['value'] if agreement_path_result else os.path.join(app.config['UPLOAD_FOLDER'], 'avtal')
+        
+        media_files = []
+        
+        # Get all transactions with receipts
+        cursor.execute('SELECT id, title, date, receipt_path FROM transactions WHERE receipt = 1 AND receipt_path IS NOT NULL')
+        transactions = cursor.fetchall()
+        
+        for trans in transactions:
+            receipt_path = trans['receipt_path']
+            if receipt_path and os.path.exists(receipt_path):
+                file_size = os.path.getsize(receipt_path)
+                media_files.append({
+                    'type': 'receipt',
+                    'filename': os.path.basename(receipt_path),
+                    'path': receipt_path,
+                    'size': file_size,
+                    'date': trans['date'],
+                    'transaction_id': trans['id'],
+                    'transaction_title': trans['title']
+                })
+        
+        # Get all agreement images
+        cursor.execute('SELECT id, name, images FROM agreements WHERE images IS NOT NULL AND images != ""')
+        agreements = cursor.fetchall()
+        
+        for agr in agreements:
+            images_str = agr['images']
+            if images_str:
+                try:
+                    import json
+                    images = json.loads(images_str) if isinstance(images_str, str) else images_str
+                    if isinstance(images, list):
+                        for img_path in images:
+                            if img_path and os.path.exists(img_path):
+                                file_size = os.path.getsize(img_path)
+                                media_files.append({
+                                    'type': 'agreement',
+                                    'filename': os.path.basename(img_path),
+                                    'path': img_path,
+                                    'size': file_size,
+                                    'date': None,  # Agreements don't have a specific date
+                                    'agreement_id': agr['id'],
+                                    'agreement_name': agr['name']
+                                })
+                except (json.JSONDecodeError, TypeError):
+                    # If images is a single string path
+                    if isinstance(images_str, str) and os.path.exists(images_str):
+                        file_size = os.path.getsize(images_str)
+                        media_files.append({
+                            'type': 'agreement',
+                            'filename': os.path.basename(images_str),
+                            'path': images_str,
+                            'size': file_size,
+                            'date': None,
+                            'agreement_id': agr['id'],
+                            'agreement_name': agr['name']
+                        })
+        
+        conn.close()
+        
+        return jsonify(media_files), 200
+        
+    except Exception as e:
+        print(f"❌ [Backend] Error getting media files: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to get media files: {str(e)}'}), 500
+
+
+# ============================================================================
 # BACKUP & RESTORE ENDPOINTS
 # ============================================================================
 

@@ -123,6 +123,12 @@ export const api = {
     });
     return handleResponse(res);
   },
+
+  // --- Media Files ---
+  getMediaFiles: async () => {
+    const res = await fetch(`${API_BASE_URL}/media-files`);
+    return handleResponse(res);
+  },
   
   updateCategory: async (id, name) => {
     const res = await fetch(`${API_BASE_URL}/categories/${id}`, {
