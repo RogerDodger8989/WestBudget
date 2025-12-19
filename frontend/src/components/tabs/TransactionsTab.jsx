@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Search, Filter, Import, ArrowDown, Download, Calendar, Undo2, Trash2 } from 'lucide-react';
+import { Search, Filter, Import, ArrowDown, Download, Calendar, Undo2, Trash2, Sparkles } from 'lucide-react';
 import TransactionItem from '../TransactionItem';
 import DateRangeBtn from '../DateRangeBtn';
+import ApplyRulesModal from '../ApplyRulesModal';
 import { api } from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { filterByDateRange } from '../../utils/filterByDateRange';
@@ -31,6 +32,7 @@ const TransactionsTab = ({
   const [selectedStatus, setSelectedStatus] = useState('Alla Statusar');
   const [selectedTransactions, setSelectedTransactions] = useState(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isApplyRulesModalOpen, setIsApplyRulesModalOpen] = useState(false);
   const selectAllCheckboxRef = useRef(null);
 
   // Filtrera transaktioner baserat på datum (sorteras redan i filterByDateRange)
@@ -376,6 +378,17 @@ const TransactionsTab = ({
 
   return (
     <div className="animate-fade-in space-y-6">
+      {isApplyRulesModalOpen && (
+        <ApplyRulesModal
+          transactions={transactions}
+          categories={categories}
+          onClose={() => setIsApplyRulesModalOpen(false)}
+          onApply={() => {
+            // Data will be reloaded by reloadData callback
+          }}
+          reloadData={reloadData}
+        />
+      )}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold text-zinc-900 dark:text-white tracking-tight">
@@ -395,6 +408,13 @@ const TransactionsTab = ({
           >
             <Import size={16} />
             Importera
+          </button>
+          <button 
+            onClick={() => setIsApplyRulesModalOpen(true)}
+            className="flex items-center gap-2 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 hover:text-zinc-900 dark:hover:text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm"
+            title="Tillämpa kategoriregler på alla transaktioner"
+          >
+            <Sparkles size={16} /> Tillämpa Regler
           </button>
           <button 
             onClick={handleExport}
