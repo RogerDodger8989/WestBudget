@@ -3,9 +3,12 @@ import { X, Sparkles, CheckCircle, AlertCircle, Loader2, Settings, Plus } from '
 import { api } from '../api';
 import { useToast } from '../contexts/ToastContext';
 import { formatAmount } from '../utils/formatAmount';
+import { useTheme } from '../contexts/ThemeContext';
+import { getThemeButtonClass, getThemeTextClass, getThemeBgClass, getThemeBorderClass, getThemeRingClass } from '../utils/getThemeClasses';
 
 const ApplyRulesModal = ({ transactions, categories = [], onClose, onApply, reloadData }) => {
   const { showToast } = useToast();
+  const { colorTheme } = useTheme();
   const [categoryRules, setCategoryRules] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isApplying, setIsApplying] = useState(false);
@@ -195,7 +198,7 @@ const ApplyRulesModal = ({ transactions, categories = [], onClose, onApply, relo
       <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto border border-zinc-200 dark:border-zinc-800">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <Sparkles className="w-6 h-6 text-indigo-500 dark:text-indigo-400" />
+            <Sparkles className={`w-6 h-6 ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)}`} />
             <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">
               Tillämpa Kategoriregler
             </h2>
@@ -210,7 +213,7 @@ const ApplyRulesModal = ({ transactions, categories = [], onClose, onApply, relo
 
         {loading ? (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+            <Loader2 className={`w-8 h-8 animate-spin ${getThemeTextClass(colorTheme, false)}`} />
             <span className="ml-3 text-zinc-600 dark:text-zinc-400">Laddar regler...</span>
           </div>
         ) : (
@@ -257,9 +260,9 @@ const ApplyRulesModal = ({ transactions, categories = [], onClose, onApply, relo
                       if (actualCount === 0) return null; // Don't show if all are excluded
                       
                       return (
-                        <div key={key} className="flex items-center justify-between p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-200 dark:border-indigo-800">
+                        <div key={key} className={`flex items-center justify-between p-3 ${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)}/20 rounded-lg border ${getThemeBorderClass(colorTheme)}/30 dark:${getThemeBorderClass(colorTheme)}/50`}>
                           <div className="flex items-center gap-2">
-                            <CheckCircle className="w-4 h-4 text-indigo-500" />
+                            <CheckCircle className={`w-4 h-4 ${getThemeTextClass(colorTheme, false)}`} />
                             <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{key}</span>
                           </div>
                           <div className="text-right">
@@ -293,7 +296,7 @@ const ApplyRulesModal = ({ transactions, categories = [], onClose, onApply, relo
                             setExcludedTransactionIds(new Set(preview.changes.map(c => c.id)));
                           }
                         }}
-                        className="text-xs px-3 py-1.5 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors border border-indigo-200 dark:border-indigo-800"
+                        className={`text-xs px-3 py-1.5 ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} ${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)}/30 rounded-lg transition-colors border ${getThemeBorderClass(colorTheme)}/30 dark:${getThemeBorderClass(colorTheme)}/50 hover:opacity-80`}
                       >
                         {excludedTransactionIds.size === preview.changes.length ? 'Välj alla' : 'Avmarkera alla'}
                       </button>
@@ -319,7 +322,7 @@ const ApplyRulesModal = ({ transactions, categories = [], onClose, onApply, relo
                               }
                               setExcludedTransactionIds(newExcluded);
                             }}
-                            className="w-4 h-4 text-indigo-600 bg-white border-zinc-300 rounded focus:ring-indigo-500 dark:bg-zinc-800 dark:border-zinc-600 cursor-pointer"
+                            className={`w-4 h-4 ${getThemeTextClass(colorTheme, false)} bg-white border-zinc-300 rounded ${getThemeRingClass(colorTheme)} dark:bg-zinc-800 dark:border-zinc-600 cursor-pointer`}
                           />
                           <div className="flex-1 min-w-0">
                             <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
@@ -332,7 +335,7 @@ const ApplyRulesModal = ({ transactions, categories = [], onClose, onApply, relo
                           <div className="flex items-center gap-2 ml-4">
                             <span className="text-xs text-zinc-500 dark:text-zinc-400">{change.currentCategory}</span>
                             <span className="text-xs text-zinc-400">→</span>
-                            <span className="text-xs font-medium text-indigo-600 dark:text-indigo-400">{change.newCategory}</span>
+                            <span className={`text-xs font-medium ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)}`}>{change.newCategory}</span>
                           </div>
                         </div>
                       );
@@ -363,7 +366,7 @@ const ApplyRulesModal = ({ transactions, categories = [], onClose, onApply, relo
               <button
                 onClick={handleApply}
                 disabled={isApplying || !preview || preview.changes.filter(c => !excludedTransactionIds.has(c.id)).length === 0}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                className={`px-4 py-2 ${getThemeButtonClass(colorTheme, 'primary')} rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2`}
               >
                 {isApplying ? (
                   <>
@@ -712,7 +715,7 @@ const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories, onCateg
                       value={pattern}
                       onChange={(e) => handlePatternChange(index, e.target.value)}
                       placeholder="Beskrivning innehåller..."
-                      className="flex-1 px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                      className={`flex-1 px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 ${getThemeRingClass(colorTheme)} outline-none`}
                     />
                     {newPatterns.length > 1 && (
                       <button
@@ -726,7 +729,7 @@ const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories, onCateg
                 ))}
                 <button
                   onClick={handleAddPattern}
-                  className="w-full px-3 py-2 text-sm text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 rounded-lg transition-colors flex items-center justify-center gap-2"
+                  className={`w-full px-3 py-2 text-sm ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} ${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)}/30 border ${getThemeBorderClass(colorTheme)}/30 dark:${getThemeBorderClass(colorTheme)}/50 rounded-lg transition-colors flex items-center justify-center gap-2 hover:opacity-80`}
                 >
                   <Plus size={16} />
                   Lägg till mönster
@@ -742,7 +745,7 @@ const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories, onCateg
                       setNewCategory(e.target.value);
                     }
                   }}
-                  className="flex-1 px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className={`flex-1 px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 ${getThemeRingClass(colorTheme)} outline-none`}
                 >
                   <option value="">Välj kategori...</option>
                   {localCategories.map(cat => (
@@ -763,12 +766,12 @@ const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories, onCateg
                       }}
                       placeholder="Kategorinamn"
                       autoFocus
-                      className="px-3 py-2 bg-white dark:bg-zinc-900 border border-indigo-500 rounded-lg text-sm w-40 focus:ring-2 focus:ring-indigo-500 outline-none"
+                      className={`px-3 py-2 bg-white dark:bg-zinc-900 border ${getThemeBorderClass(colorTheme)} rounded-lg text-sm w-40 focus:ring-2 ${getThemeRingClass(colorTheme)} outline-none`}
                     />
                     <button
                       onClick={handleCreateCategory}
                       disabled={isCreatingCategoryLoading || !newCategoryName.trim()}
-                      className="p-2 bg-indigo-600 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                      className={`p-2 ${getThemeButtonClass(colorTheme, 'primary')} rounded-lg disabled:opacity-50 disabled:cursor-not-allowed`}
                     >
                       {isCreatingCategoryLoading ? (
                         <Loader2 size={16} className="animate-spin" />
@@ -792,7 +795,7 @@ const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories, onCateg
             <button
               onClick={handleAddRule}
               disabled={newPatterns.every(p => !p.trim()) || !newCategory || isCreatingRule}
-              className="mt-3 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+              className={`mt-3 px-4 py-2 ${getThemeButtonClass(colorTheme, 'primary')} text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2`}
             >
               {isCreatingRule ? (
                 <>
@@ -820,7 +823,7 @@ const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories, onCateg
                       rule.is_active
                         ? 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700'
                         : 'bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 opacity-60'
-                    } ${isEditing ? 'border-indigo-400 dark:border-indigo-600 ring-2 ring-indigo-200 dark:ring-indigo-800' : 'cursor-pointer hover:border-indigo-300 dark:hover:border-indigo-700'}`}
+                    } ${isEditing ? `${getThemeBorderClass(colorTheme)}/60 dark:${getThemeBorderClass(colorTheme)}/60 ring-2 ${getThemeRingClass(colorTheme)}/30 dark:${getThemeRingClass(colorTheme)}/30` : `cursor-pointer hover:${getThemeBorderClass(colorTheme)}/40 dark:hover:${getThemeBorderClass(colorTheme)}/40`}`}
                     onClick={() => !isEditing && handleEditRule(rule)}
                   >
                     {isEditing ? (
@@ -829,7 +832,7 @@ const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories, onCateg
                           <p className="text-sm font-medium text-zinc-900 dark:text-white">Redigerar regel</p>
                           <div className="flex items-center gap-2">
                             {isSavingRule === rule.id && (
-                              <span className="text-xs text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
+                              <span className={`text-xs ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} flex items-center gap-1`}>
                                 <Loader2 size={12} className="animate-spin" />
                                 Sparar...
                               </span>
@@ -857,7 +860,7 @@ const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories, onCateg
                                 onBlur={handleEditingPatternBlur}
                                 onClick={(e) => e.stopPropagation()}
                                 placeholder="Beskrivning innehåller..."
-                                className="flex-1 px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                className={`flex-1 px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 ${getThemeRingClass(colorTheme)} outline-none`}
                               />
                               {editingPatterns.length > 1 && (
                                 <button
@@ -877,7 +880,7 @@ const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories, onCateg
                               e.stopPropagation();
                               handleAddEditingPattern();
                             }}
-                            className="w-full px-3 py-2 text-sm text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 rounded-lg transition-colors flex items-center justify-center gap-2"
+                            className={`w-full px-3 py-2 text-sm ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} ${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)}/30 border ${getThemeBorderClass(colorTheme)}/30 dark:${getThemeBorderClass(colorTheme)}/50 rounded-lg transition-colors flex items-center justify-center gap-2 hover:opacity-80`}
                           >
                             <Plus size={16} />
                             Lägg till mönster
@@ -897,7 +900,7 @@ const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories, onCateg
                             }}
                             onBlur={handleEditingCategoryBlur}
                             onClick={(e) => e.stopPropagation()}
-                            className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                            className={`w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 ${getThemeRingClass(colorTheme)} outline-none`}
                           >
                             <option value="">Välj kategori...</option>
                             {localCategories.map(cat => (
@@ -915,7 +918,7 @@ const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories, onCateg
                             {patterns.map((pattern, idx) => (
                               <span
                                 key={`view-pattern-${rule.id}-${idx}-${pattern}`}
-                                className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 font-mono text-xs rounded"
+                                className={`px-2 py-0.5 ${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)}/30 ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} font-mono text-xs rounded`}
                               >
                                 "{pattern}"
                               </span>
@@ -968,7 +971,7 @@ const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories, onCateg
         <div className="p-6 border-t border-zinc-200 dark:border-zinc-800 flex justify-end">
           <button
             onClick={handleClose}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg transition-colors"
+            className={`px-4 py-2 ${getThemeButtonClass(colorTheme, 'primary')} font-semibold rounded-lg transition-colors`}
           >
             Klar
           </button>

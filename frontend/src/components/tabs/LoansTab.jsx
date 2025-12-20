@@ -3,9 +3,12 @@ import { Receipt, Plus, Edit2, Trash2, TrendingDown, Calendar, X, CheckCircle2, 
 import { api } from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { formatAmount, getAmountClassName } from '../../utils/formatAmount';
+import { useTheme } from '../../contexts/ThemeContext';
+import { getThemeButtonClass, getThemeTextClass, getThemeRingClass } from '../../utils/getThemeClasses';
 
 const LoansTab = ({ getTitle, reloadData, agreements }) => {
   const { showToast } = useToast();
+  const { colorTheme } = useTheme();
   const [loans, setLoans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isAddLoanModalOpen, setIsAddLoanModalOpen] = useState(false);
@@ -302,12 +305,12 @@ const LoansTab = ({ getTitle, reloadData, agreements }) => {
             placeholder="Sök lån..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full px-4 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className={`w-full px-4 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 ${getThemeRingClass(colorTheme)}`}
           />
         </div>
         <button
           onClick={handleAddLoan}
-          className="px-4 py-2 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-lg hover:bg-zinc-800 dark:hover:bg-zinc-100 transition-colors flex items-center gap-2"
+          className={`px-4 py-2 ${getThemeButtonClass(colorTheme, 'primary')} rounded-lg transition-colors flex items-center gap-2`}
         >
           <Plus className="w-4 h-4" />
           Lägg till Lån
@@ -369,7 +372,7 @@ const LoansTab = ({ getTitle, reloadData, agreements }) => {
                       <div className="flex items-center justify-end gap-2">
                         <button
                           onClick={() => handleViewAmortizationPlan(loan)}
-                          className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                          className={`${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} hover:opacity-80`}
                           title="Visa amorteringsplan"
                         >
                           <BarChart3 className="w-4 h-4" />
@@ -383,7 +386,7 @@ const LoansTab = ({ getTitle, reloadData, agreements }) => {
                         </button>
                         <button
                           onClick={() => handleEditLoan(loan)}
-                          className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                          className={`${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} hover:opacity-80`}
                         >
                           <Edit2 className="w-4 h-4" />
                         </button>
@@ -676,7 +679,7 @@ const LoansTab = ({ getTitle, reloadData, agreements }) => {
               </button>
               <button
                 onClick={handleSaveLoan}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                className={`px-4 py-2 ${getThemeButtonClass(colorTheme, 'primary')} rounded-lg transition-colors`}
               >
                 Spara
               </button>

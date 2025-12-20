@@ -1,7 +1,10 @@
 import React, { useState, useRef } from 'react';
 import { X, Calendar } from 'lucide-react';
+import { useTheme } from '../contexts/ThemeContext';
+import { getThemeButtonClass, getThemeTextClass, getThemeRingClass } from '../utils/getThemeClasses';
 
 const CustomDateRangeModal = ({ isOpen, onClose, onApply, currentStartDate, currentEndDate }) => {
+  const { colorTheme } = useTheme();
   const [startDate, setStartDate] = useState(currentStartDate || '');
   const [endDate, setEndDate] = useState(currentEndDate || '');
   const startDatePickerRef = useRef(null);
@@ -42,7 +45,7 @@ const CustomDateRangeModal = ({ isOpen, onClose, onApply, currentStartDate, curr
           {/* Från datum */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
-              <Calendar size={16} className="text-indigo-500 dark:text-indigo-400" />
+              <Calendar size={16} className={getThemeTextClass(colorTheme, false) + ' dark:' + getThemeTextClass(colorTheme, true)} />
               Från datum
             </label>
             <div className="relative">
@@ -51,7 +54,7 @@ const CustomDateRangeModal = ({ isOpen, onClose, onApply, currentStartDate, curr
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="w-full px-4 py-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                className={`w-full px-4 py-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-white focus:ring-2 ${getThemeRingClass(colorTheme)} focus:border-transparent outline-none`}
               />
             </div>
           </div>
@@ -59,7 +62,7 @@ const CustomDateRangeModal = ({ isOpen, onClose, onApply, currentStartDate, curr
           {/* Till datum */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
-              <Calendar size={16} className="text-indigo-500 dark:text-indigo-400" />
+              <Calendar size={16} className={getThemeTextClass(colorTheme, false) + ' dark:' + getThemeTextClass(colorTheme, true)} />
               Till datum
             </label>
             <div className="relative">
@@ -69,7 +72,7 @@ const CustomDateRangeModal = ({ isOpen, onClose, onApply, currentStartDate, curr
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
                 min={startDate || undefined}
-                className="w-full px-4 py-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                className={`w-full px-4 py-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-white focus:ring-2 ${getThemeRingClass(colorTheme)} focus:border-transparent outline-none`}
               />
             </div>
           </div>
@@ -92,7 +95,7 @@ const CustomDateRangeModal = ({ isOpen, onClose, onApply, currentStartDate, curr
             <button
               onClick={handleApply}
               disabled={!startDate || !endDate || new Date(startDate) > new Date(endDate)}
-              className="flex-1 px-4 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+              className={`flex-1 px-4 py-3 ${getThemeButtonClass(colorTheme, 'primary')} rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium`}
             >
               Applicera
             </button>

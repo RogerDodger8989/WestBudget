@@ -1,8 +1,14 @@
 import React from 'react';
 import { ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { useTheme } from '../contexts/ThemeContext';
+import { getThemeBorderClass } from '../utils/getThemeClasses';
 
-const StatCard = ({ title, amount, change, trend, icon }) => (
-  <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 p-6 rounded-2xl hover:border-indigo-500/30 dark:hover:border-zinc-700/50 transition-all duration-300 group shadow-sm dark:shadow-none hover:shadow-md">
+const StatCard = ({ title, amount, change, trend, icon }) => {
+  const { colorTheme } = useTheme();
+  const hoverBorderClass = `hover:${getThemeBorderClass(colorTheme)}/30`;
+  
+  return (
+  <div className={`bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 p-6 rounded-2xl ${hoverBorderClass} dark:hover:border-zinc-700/50 transition-all duration-300 group shadow-sm dark:shadow-none hover:shadow-md`}>
     <div className="flex items-start justify-between mb-4">
       <div className="p-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-xl group-hover:scale-110 transition-transform duration-300">
         {React.cloneElement(icon, { size: 20 })}
@@ -23,7 +29,8 @@ const StatCard = ({ title, amount, change, trend, icon }) => (
       <p className="text-2xl font-bold text-zinc-900 dark:text-white tracking-tight">{amount}</p>
     </div>
   </div>
-);
+  );
+};
 
 export default StatCard;
 

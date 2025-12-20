@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { X, SlidersHorizontal } from 'lucide-react';
+import { useTheme } from '../contexts/ThemeContext';
+import { getThemeButtonClass, getThemeTextClass, getThemeRingClass } from '../utils/getThemeClasses';
 
 const VehicleExpenseFilterModal = ({ 
   isOpen, 
@@ -8,6 +10,7 @@ const VehicleExpenseFilterModal = ({
   filters, 
   onFiltersChange 
 }) => {
+  const { colorTheme } = useTheme();
   const [localFilters, setLocalFilters] = useState(filters || {
     vehicle: 'all',
     category: 'all',
@@ -66,7 +69,7 @@ const VehicleExpenseFilterModal = ({
       <div className="relative w-full max-w-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[90vh]">
         <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between flex-shrink-0">
           <h2 className="text-lg font-bold text-zinc-900 dark:text-white flex items-center gap-2">
-            <SlidersHorizontal size={18} className="text-indigo-500" />
+            <SlidersHorizontal size={18} className={getThemeTextClass(colorTheme, false)} />
             Filtrera Fordonskostnader
           </h2>
           <button onClick={onClose} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors">
@@ -83,7 +86,7 @@ const VehicleExpenseFilterModal = ({
             <select
               value={localFilters.vehicle}
               onChange={(e) => handleFilterChange('vehicle', e.target.value)}
-              className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className={`w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 ${getThemeRingClass(colorTheme)}`}
             >
               <option value="all">Alla fordon</option>
               {vehicles.filter(v => v.status === 'Aktiv').map(vehicle => (
@@ -102,7 +105,7 @@ const VehicleExpenseFilterModal = ({
             <select
               value={localFilters.category}
               onChange={(e) => handleFilterChange('category', e.target.value)}
-              className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className={`w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 ${getThemeRingClass(colorTheme)}`}
             >
               <option value="all">Alla kategorier</option>
               {expenseCategories.map(cat => (
@@ -151,7 +154,7 @@ const VehicleExpenseFilterModal = ({
           </button>
           <button
             onClick={handleApply}
-            className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-500 transition-all"
+            className={`flex-1 px-4 py-2 ${getThemeButtonClass(colorTheme, 'primary')} rounded-xl font-medium transition-all`}
           >
             Applicera
           </button>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from './api';
 import { ToastProvider } from './contexts/ToastContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 import DashboardLayout from './components/DashboardLayout';
 import LicenseGate from './components/LicenseGate';
 import ToastContainer from './components/ToastContainer';
@@ -30,6 +31,13 @@ function AppContent() {
         }
         if (settings.user_name) {
           setUserName(settings.user_name);
+        }
+        // Load and apply color theme
+        if (settings.color_theme) {
+          const { applyTheme } = await import('./utils/themes');
+          applyTheme(settings.color_theme);
+          // Also update ThemeContext
+          const { ThemeProvider } = await import('./contexts/ThemeContext');
         }
       } catch (error) {
         console.error('Kunde inte ladda tema-inställning:', error);
@@ -171,9 +179,11 @@ function AppContent() {
 
 export default function App() {
   return (
-    <ToastProvider>
-      <AppContent />
-    </ToastProvider>
+    <ThemeProvider>
+      <ToastProvider>
+        <AppContent />
+      </ToastProvider>
+    </ThemeProvider>
   );
 }
 

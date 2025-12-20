@@ -7,6 +7,8 @@ import TransactionFilterModal from '../TransactionFilterModal';
 import AdvancedSearchModal from '../AdvancedSearchModal';
 import { api } from '../../api';
 import { useToast } from '../../contexts/ToastContext';
+import { useTheme } from '../../contexts/ThemeContext';
+import { getThemeButtonClass, getThemeBgClass, getThemeBorderClass, getThemeTextClass } from '../../utils/getThemeClasses';
 import { filterByDateRange } from '../../utils/filterByDateRange';
 import { formatAmount } from '../../utils/formatAmount';
 
@@ -31,6 +33,7 @@ const TransactionsTab = ({
   reloadData
 }) => {
   const { showToast } = useToast();
+  const { colorTheme } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('Alla Kategorier');
   const [selectedStatus, setSelectedStatus] = useState('Alla Statusar');
@@ -626,33 +629,33 @@ const TransactionsTab = ({
             <DateRangeBtn active={dateRange === 'month'} onClick={() => setDateRange('month')}>Denna Månad</DateRangeBtn>
             <DateRangeBtn active={dateRange === 'lastMonth'} onClick={() => setDateRange('lastMonth')}>Föregående Månad</DateRangeBtn>
             <DateRangeBtn active={dateRange === 'year'} onClick={() => setDateRange('year')}>Hela Året</DateRangeBtn>
-            <DateRangeBtn active={dateRange === 'custom'} onClick={() => setIsCustomDateModalOpen(true)} icon={<Calendar size={14} className="text-indigo-500 dark:text-indigo-400" />}>Anpassad</DateRangeBtn>
+            <DateRangeBtn active={dateRange === 'custom'} onClick={() => setIsCustomDateModalOpen(true)} icon={<Calendar size={14} className={getThemeTextClass(colorTheme, false) + ' dark:' + getThemeTextClass(colorTheme, true)} />}>Anpassad</DateRangeBtn>
           </div>
         </div>
         <div className="flex gap-3">
           <button 
             onClick={() => setIsImportModalOpen(true)}
-            className="flex items-center gap-2 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 hover:text-zinc-900 dark:hover:text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm"
+            className={`flex items-center gap-2 ${getThemeButtonClass(colorTheme, 'primary')} px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-lg hover:shadow-xl active:scale-95`}
           >
             <Import size={16} />
             Importera
           </button>
           <button 
             onClick={() => setIsApplyRulesModalOpen(true)}
-            className="flex items-center gap-2 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 hover:text-zinc-900 dark:hover:text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm"
+            className={`flex items-center gap-2 ${getThemeButtonClass(colorTheme, 'primary')} px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-lg hover:shadow-xl active:scale-95`}
             title="Tillämpa kategoriregler på alla transaktioner"
           >
             <Sparkles size={16} /> Tillämpa Regler
           </button>
           <button 
             onClick={handleExport}
-            className="flex items-center gap-2 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 hover:text-zinc-900 dark:hover:text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm"
+            className={`flex items-center gap-2 ${getThemeButtonClass(colorTheme, 'primary')} px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-lg hover:shadow-xl active:scale-95`}
           >
             <Download size={16} /> Exportera
           </button>
           <button 
             onClick={() => setIsAddTransactionModalOpen(true)}
-            className="bg-zinc-900 dark:bg-indigo-600 hover:bg-zinc-800 dark:hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-all shadow-lg hover:shadow-xl active:scale-95"
+            className={`${getThemeButtonClass(colorTheme, 'primary')} px-5 py-2.5 rounded-xl text-sm font-medium transition-all shadow-lg hover:shadow-xl active:scale-95`}
           >
             Ny Faktura
           </button>
@@ -669,14 +672,21 @@ const TransactionsTab = ({
                 placeholder="Sök titel, belopp, kategori, ID..." 
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 pr-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm w-full sm:w-64 focus:ring-2 focus:ring-indigo-500 outline-none" 
+                className={`pl-9 pr-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm w-full sm:w-64 outline-none ${
+                  colorTheme === 'indigo' ? 'focus:ring-2 focus:ring-indigo-500' :
+                  colorTheme === 'blue' ? 'focus:ring-2 focus:ring-blue-500' :
+                  colorTheme === 'emerald' ? 'focus:ring-2 focus:ring-emerald-500' :
+                  colorTheme === 'purple' ? 'focus:ring-2 focus:ring-purple-500' :
+                  colorTheme === 'rose' ? 'focus:ring-2 focus:ring-rose-500' :
+                  'focus:ring-2 focus:ring-amber-500'
+                }`} 
               />
             </div>
             <button 
               onClick={() => setIsAdvancedSearchOpen(true)}
               className={`p-2 border rounded-lg transition-colors ${
                 advancedSearchParams
-                  ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400'
+                  ? `${getThemeBorderClass(colorTheme)} ${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)}`
                   : 'border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-500'
               }`}
               title="Avancerad sökning"
@@ -689,7 +699,7 @@ const TransactionsTab = ({
                 filters.type !== 'all' || filters.category !== 'all' || filters.status !== 'all' || 
                 filters.hasReceipt !== 'all' || filters.hasNote !== 'all' || 
                 filters.minAmount !== '' || filters.maxAmount !== ''
-                  ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400'
+                  ? `${getThemeBorderClass(colorTheme)} ${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)}`
                   : 'border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-500'
               }`}
               title="Filtrera transaktioner"

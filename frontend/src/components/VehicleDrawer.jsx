@@ -1,8 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Car, Gauge, Calendar, FileText, UploadCloud, Trash2, Building2, Tag } from 'lucide-react';
 import { formatAmount } from '../utils/formatAmount';
+import { useTheme } from '../contexts/ThemeContext';
+import { getThemeButtonClass, getThemeTextClass, getThemeRingClass } from '../utils/getThemeClasses';
+import ImageLightbox from './ImageLightbox';
+import { useImageLightbox } from '../hooks/useImageLightbox';
 
 const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agreements = [] }) => {
+  const { colorTheme } = useTheme();
   const fileInputRef = useRef(null);
   const [formData, setFormData] = useState({
     registration_number: vehicle.registration_number || '',
@@ -183,7 +188,7 @@ const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agre
             type="text"
             value={formData.registration_number}
             onChange={(e) => handleChange('registration_number', e.target.value.toUpperCase())}
-            className="w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white font-mono uppercase focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+            className={`w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white font-mono uppercase focus:ring-2 ${getThemeRingClass(colorTheme)} focus:border-transparent outline-none`}
           />
         </div>
 
@@ -196,7 +201,7 @@ const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agre
             type="text"
             value={formData.make_model}
             onChange={(e) => handleChange('make_model', e.target.value)}
-            className="w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+            className={`w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:ring-2 ${getThemeRingClass(colorTheme)} focus:border-transparent outline-none`}
           />
         </div>
 
@@ -211,7 +216,7 @@ const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agre
               min="0"
               value={formData.odometer}
               onChange={(e) => handleChange('odometer', e.target.value)}
-              className="w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+              className={`w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:ring-2 ${getThemeRingClass(colorTheme)} focus:border-transparent outline-none`}
             />
           </div>
 
@@ -222,7 +227,7 @@ const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agre
             <select
               value={formData.category}
               onChange={(e) => handleChange('category', e.target.value)}
-              className="w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+              className={`w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:ring-2 ${getThemeRingClass(colorTheme)} focus:border-transparent outline-none`}
             >
               <option value="Personbil">Personbil</option>
               <option value="Firmabil">Firmabil</option>
@@ -236,7 +241,7 @@ const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agre
         {/* Nästa besiktning */}
         <div className="space-y-2">
           <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
-            <Calendar size={14} className="text-indigo-500 dark:text-indigo-400" /> Nästa besiktning
+            <Calendar size={14} className={getThemeTextClass(colorTheme, false) + ' dark:' + getThemeTextClass(colorTheme, true)} /> Nästa besiktning
           </label>
           <div className="relative">
             <input
@@ -245,7 +250,7 @@ const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agre
               onChange={(e) => handleDateChange('next_inspection', e.target.value)}
               placeholder="YYYY-MM-DD"
               maxLength={10}
-              className="w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none font-mono"
+              className={`w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 ${getThemeRingClass(colorTheme)} focus:border-transparent outline-none font-mono`}
             />
             <input
               ref={inspectionDatePickerRef}
@@ -260,7 +265,7 @@ const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agre
               onClick={() => inspectionDatePickerRef.current?.showPicker?.() || inspectionDatePickerRef.current?.click()}
               className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded transition-colors"
             >
-              <Calendar size={18} className="text-indigo-500 dark:text-indigo-400" />
+              <Calendar size={18} className={getThemeTextClass(colorTheme, false) + ' dark:' + getThemeTextClass(colorTheme, true)} />
             </button>
           </div>
         </div>
@@ -274,7 +279,7 @@ const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agre
             <select
               value={formData.agreement_id || ''}
               onChange={(e) => handleChange('agreement_id', e.target.value)}
-              className="w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+              className={`w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:ring-2 ${getThemeRingClass(colorTheme)} focus:border-transparent outline-none`}
             >
               <option value="">Ingen koppling</option>
               {insuranceAgreements.map(agreement => (
@@ -303,13 +308,13 @@ const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agre
               value={formData.next_service_odometer || ''}
               onChange={(e) => handleChange('next_service_odometer', e.target.value)}
               placeholder="mil"
-              className="w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+              className={`w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:ring-2 ${getThemeRingClass(colorTheme)} focus:border-transparent outline-none`}
             />
           </div>
 
           <div className="space-y-2">
             <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
-              <Calendar size={14} className="text-indigo-500 dark:text-indigo-400" /> Nästa service (datum)
+              <Calendar size={14} className={getThemeTextClass(colorTheme, false) + ' dark:' + getThemeTextClass(colorTheme, true)} /> Nästa service (datum)
             </label>
             <div className="relative">
               <input
@@ -318,7 +323,7 @@ const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agre
                 onChange={(e) => handleDateChange('next_service_date', e.target.value)}
                 placeholder="YYYY-MM-DD"
                 maxLength={10}
-                className="w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none font-mono"
+                className={`w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 ${getThemeRingClass(colorTheme)} focus:border-transparent outline-none font-mono`}
               />
               <input
                 ref={serviceDatePickerRef}
@@ -333,7 +338,7 @@ const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agre
                 onClick={() => serviceDatePickerRef.current?.showPicker?.() || serviceDatePickerRef.current?.click()}
                 className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded transition-colors"
               >
-                <Calendar size={18} className="text-indigo-500 dark:text-indigo-400" />
+                <Calendar size={18} className={getThemeTextClass(colorTheme, false) + ' dark:' + getThemeTextClass(colorTheme, true)} />
               </button>
             </div>
           </div>
@@ -347,7 +352,7 @@ const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agre
           <select
             value={formData.status}
             onChange={(e) => handleChange('status', e.target.value)}
-            className="w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+            className={`w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:ring-2 ${getThemeRingClass(colorTheme)} focus:border-transparent outline-none`}
           >
             <option value="Aktiv">Aktiv</option>
             <option value="Inaktiv">Inaktiv</option>
@@ -365,7 +370,7 @@ const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agre
             onChange={(e) => handleChange('note', e.target.value)}
             placeholder="Lägg till noteringar om fordonet..."
             rows={3}
-            className="w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none resize-none"
+            className={`w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:ring-2 ${getThemeRingClass(colorTheme)} focus:border-transparent outline-none resize-none`}
           />
         </div>
 
@@ -406,7 +411,10 @@ const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agre
                     <img
                       src={imageUrl}
                       alt={`Vehicle ${idx + 1}`}
-                      className="w-full h-24 object-cover rounded-lg border border-zinc-200 dark:border-zinc-700"
+                      className="w-full h-24 object-cover rounded-lg border border-zinc-200 dark:border-zinc-700 cursor-pointer hover:opacity-90 transition-opacity"
+                      onDoubleClick={() => {
+                        openLightbox(images, idx);
+                      }}
                     />
                     <button
                       type="button"
@@ -422,6 +430,15 @@ const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agre
           )}
         </div>
       </div>
+      
+      {/* Image Lightbox */}
+      {lightboxImages && lightboxImages.length > 0 && (
+        <ImageLightbox
+          images={lightboxImages}
+          currentIndex={lightboxIndex}
+          onClose={closeLightbox}
+        />
+      )}
 
       {/* Footer med knappar */}
       <div className="p-6 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 flex gap-3">
@@ -447,7 +464,7 @@ const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agre
           type="button"
           onClick={handleSave}
           disabled={isSaving}
-          className="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+          className={`flex-1 px-4 py-2.5 ${getThemeButtonClass(colorTheme, 'primary')} rounded-xl font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2`}
         >
           {isSaving ? (
             <>

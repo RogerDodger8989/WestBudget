@@ -1,8 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { DollarSign, X, Calendar, Tag, FileText, AlertCircle, Car, Gauge } from 'lucide-react';
 import { api } from '../api';
+import { useTheme } from '../contexts/ThemeContext';
+import { getThemeButtonClass, getThemeTextClass, getThemeBgClass, getThemeRingClass } from '../utils/getThemeClasses';
 
 const AddVehicleExpenseModal = ({ onClose, onSave, vehicles = [], vehicleId = null, expense = null }) => {
+  const { colorTheme } = useTheme();
   const [formData, setFormData] = useState({
     vehicle_id: expense?.vehicle_id || vehicleId || '',
     category: expense?.category || '',
@@ -115,8 +118,8 @@ const AddVehicleExpenseModal = ({ onClose, onSave, vehicles = [], vehicleId = nu
       <div className="relative w-full max-w-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[90vh]">
         <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl">
-              <DollarSign className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+            <div className={`p-2 ${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)}/30 rounded-xl`}>
+              <DollarSign className={`w-5 h-5 ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)}`} />
             </div>
             <h2 className="text-xl font-bold text-zinc-900 dark:text-white">
               {expense ? 'Redigera Fordonskostnad' : 'Lägg till Fordonskostnad'}
@@ -147,7 +150,7 @@ const AddVehicleExpenseModal = ({ onClose, onSave, vehicles = [], vehicleId = nu
             <select
               value={formData.vehicle_id}
               onChange={(e) => handleChange('vehicle_id', e.target.value)}
-              className={`w-full bg-zinc-50 dark:bg-zinc-800 border rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all ${
+              className={`w-full bg-zinc-50 dark:bg-zinc-800 border rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 ${getThemeRingClass(colorTheme)} transition-all ${
                 errors.vehicle_id ? 'border-rose-500' : 'border-zinc-200 dark:border-zinc-700'
               }`}
             >
@@ -177,7 +180,7 @@ const AddVehicleExpenseModal = ({ onClose, onSave, vehicles = [], vehicleId = nu
             <select
               value={formData.category}
               onChange={(e) => handleChange('category', e.target.value)}
-              className={`w-full bg-zinc-50 dark:bg-zinc-800 border rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all ${
+              className={`w-full bg-zinc-50 dark:bg-zinc-800 border rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 ${getThemeRingClass(colorTheme)} transition-all ${
                 errors.category ? 'border-rose-500' : 'border-zinc-200 dark:border-zinc-700'
               }`}
             >
@@ -216,7 +219,7 @@ const AddVehicleExpenseModal = ({ onClose, onSave, vehicles = [], vehicleId = nu
 
             <div>
               <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                <Calendar className="w-4 h-4 inline mr-1 text-indigo-500 dark:text-indigo-400" />
+                <Calendar className={`w-4 h-4 inline mr-1 ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)}`} />
                 Datum <span className="text-rose-500">*</span>
               </label>
               <div className="relative">
@@ -248,7 +251,7 @@ const AddVehicleExpenseModal = ({ onClose, onSave, vehicles = [], vehicleId = nu
                   onClick={() => datePickerRef.current?.showPicker?.() || datePickerRef.current?.click()}
                   className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded transition-colors"
                 >
-                  <Calendar size={18} className="text-indigo-500 dark:text-indigo-400" />
+                  <Calendar size={18} className={`${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)}`} />
                 </button>
               </div>
               {errors.date && (
@@ -270,7 +273,7 @@ const AddVehicleExpenseModal = ({ onClose, onSave, vehicles = [], vehicleId = nu
                 value={formData.odometer_at_purchase}
                 onChange={(e) => handleChange('odometer_at_purchase', e.target.value)}
                 placeholder="Valfritt för drivmedel"
-                className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                className={`w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 ${getThemeRingClass(colorTheme)} transition-all`}
               />
               <p className="mt-1 text-xs text-zinc-500">
                 Användbart för att spåra bränsleförbrukning
@@ -288,7 +291,7 @@ const AddVehicleExpenseModal = ({ onClose, onSave, vehicles = [], vehicleId = nu
               value={formData.description}
               onChange={(e) => handleChange('description', e.target.value)}
               placeholder="Beskriv kostnaden..."
-              className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+              className={`w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 ${getThemeRingClass(colorTheme)} transition-all`}
             />
           </div>
 
@@ -319,7 +322,7 @@ const AddVehicleExpenseModal = ({ onClose, onSave, vehicles = [], vehicleId = nu
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 px-4 py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+              className={`flex-1 px-4 py-3 ${getThemeButtonClass(colorTheme, 'primary')} rounded-xl font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2`}
             >
               {loading ? (
                 <>

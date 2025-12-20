@@ -1,4 +1,5 @@
 import os
+import json
 import sqlite3
 import zipfile
 import shutil
@@ -26,6 +27,11 @@ CORS(app, resources={
         "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
         "supports_credentials": True,
         "expose_headers": ["Content-Type", "Content-Disposition"]
+    },
+    r"/uploads/*": {
+        "origins": ["http://localhost:5100", "http://192.168.1.232:5100", "http://localhost:3000"],
+        "methods": ["GET", "OPTIONS"],
+        "supports_credentials": True
     }
 }, supports_credentials=True)
 
@@ -420,6 +426,20 @@ def create_transaction():
     transaction_id = cursor.lastrowid
     conn.commit()
     
+    # Get created transaction for history
+    cursor.execute('SELECT * FROM transactions WHERE id = ?', (transaction_id,))
+    created_transaction = dict(cursor.fetchone())
+    
+    # Add to history
+    add_history_entry(
+        action_type='create',
+        action=f'Skapade transaktion: {data["title"]}',
+        entity_type='transaction',
+        entity_id=transaction_id,
+        entity_data=created_transaction,
+        undo_data=None
+    )
+    
     # If receipt_path was restored, update filename with new transaction ID
     if receipt_path and os.path.exists(receipt_path):
         try:
@@ -460,6 +480,16 @@ def update_transaction(transaction_id):
     conn = get_db()
     cursor = conn.cursor()
     
+    # Get old transaction data for history (undo_data)
+    cursor.execute('SELECT * FROM transactions WHERE id = ?', (transaction_id,))
+    old_transaction = cursor.fetchone()
+    
+    if not old_transaction:
+        conn.close()
+        return jsonify({'error': 'Transaction not found'}), 404
+    
+    old_transaction_data = dict(old_transaction)
+    
     # Build dynamic UPDATE query
     update_fields = []
     values = []
@@ -472,6 +502,7 @@ def update_transaction(transaction_id):
             values.append(data[field])
     
     if not update_fields:
+        conn.close()
         return jsonify({'error': 'No valid fields to update'}), 400
     
     # Add updated_at timestamp
@@ -492,6 +523,16 @@ def update_transaction(transaction_id):
     
     cursor.execute('SELECT * FROM transactions WHERE id = ?', (transaction_id,))
     updated_transaction = dict(cursor.fetchone())
+    
+    # Add to history
+    add_history_entry(
+        action_type='update',
+        action=f'Uppdaterade transaktion: {updated_transaction.get("title", "Okänt")}',
+        entity_type='transaction',
+        entity_id=transaction_id,
+        entity_data=updated_transaction,
+        undo_data=old_transaction_data
+    )
     
     conn.close()
     
@@ -547,6 +588,20 @@ def delete_transaction(transaction_id):
         except Exception as e:
             print(f"⚠️ [Backend] Kunde inte flytta kvittofil {receipt_path}: {e}")
             # Don't fail the deletion if file move fails
+    
+    # Update transaction_data with moved receipt path for undo
+    if moved_path:
+        transaction_data['receipt_path'] = moved_path
+    
+    # Add to history
+    add_history_entry(
+        action_type='delete',
+        action=f'Raderade transaktion: {transaction_data.get("title", "Okänt")}',
+        entity_type='transaction',
+        entity_id=transaction_id,
+        entity_data=None,
+        undo_data=transaction_data
+    )
     
     conn.close()
     return jsonify({
@@ -638,6 +693,16 @@ def create_agreement():
     cursor.execute('SELECT * FROM agreements WHERE id = ?', (agreement_id,))
     new_agreement = dict(cursor.fetchone())
     
+    # Add to history
+    add_history_entry(
+        action_type='create',
+        action=f'Skapade avtal: {data["name"]}',
+        entity_type='agreement',
+        entity_id=agreement_id,
+        entity_data=new_agreement,
+        undo_data=None
+    )
+    
     conn.close()
     
     return jsonify(new_agreement), 201
@@ -706,6 +771,16 @@ def update_agreement(agreement_id):
     cursor.execute('SELECT * FROM agreements WHERE id = ?', (agreement_id,))
     updated_agreement = dict(cursor.fetchone())
     
+    # Add to history
+    add_history_entry(
+        action_type='update',
+        action=f'Uppdaterade avtal: {updated_agreement.get("name", "Okänt")}',
+        entity_type='agreement',
+        entity_id=agreement_id,
+        entity_data=updated_agreement,
+        undo_data=old_agreement_data
+    )
+    
     conn.close()
     
     return jsonify(updated_agreement), 200
@@ -717,12 +792,32 @@ def delete_agreement(agreement_id):
     conn = get_db()
     cursor = conn.cursor()
     
+    # Get agreement data before deleting (for undo)
+    cursor.execute('SELECT * FROM agreements WHERE id = ?', (agreement_id,))
+    agreement = cursor.fetchone()
+    
+    if not agreement:
+        conn.close()
+        return jsonify({'error': 'Agreement not found'}), 404
+    
+    agreement_data = dict(agreement)
+    
     cursor.execute('DELETE FROM agreements WHERE id = ?', (agreement_id,))
     conn.commit()
     
     if cursor.rowcount == 0:
         conn.close()
         return jsonify({'error': 'Agreement not found'}), 404
+    
+    # Add to history
+    add_history_entry(
+        action_type='delete',
+        action=f'Raderade avtal: {agreement_data.get("name", "Okänt")}',
+        entity_type='agreement',
+        entity_id=agreement_id,
+        entity_data=None,
+        undo_data=agreement_data
+    )
     
     conn.close()
     return jsonify({'message': 'Agreement deleted successfully'}), 200
@@ -954,20 +1049,17 @@ def upload_file():
 
 @app.route('/api/transactions/<int:transaction_id>/upload-receipt', methods=['POST'])
 def upload_transaction_receipt(transaction_id):
-    """Upload a receipt file for a specific transaction - filename includes transaction ID"""
+    """Upload a receipt file for a specific transaction - supports multiple receipts (stored as JSON array)"""
     try:
         # Verify transaction exists
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute('SELECT id, receipt_path FROM transactions WHERE id = ?', (transaction_id,))
+        cursor.execute('SELECT id, receipt_path, receipt FROM transactions WHERE id = ?', (transaction_id,))
         transaction = cursor.fetchone()
         
         if not transaction:
             conn.close()
             return jsonify({'error': 'Transaction not found'}), 404
-        
-        # Get old receipt path for cleanup
-        old_receipt_path = transaction['receipt_path'] if transaction else None
         
         if 'file' not in request.files:
             conn.close()
@@ -997,29 +1089,59 @@ def upload_transaction_receipt(transaction_id):
         
         # Secure filename and save with transaction ID prefix
         original_filename = secure_filename(file.filename)
-        filename = f"{transaction_id}_{original_filename}"
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"{transaction_id}_{timestamp}_{original_filename}"
         
         file_path = os.path.join(storage_path, filename)
         file.save(file_path)
         
-        # Delete old receipt file if it exists and is different
-        if old_receipt_path and old_receipt_path != file_path and os.path.exists(old_receipt_path):
-            try:
-                os.remove(old_receipt_path)
-                print(f"🗑️ [Backend] Raderade gammalt kvitto: {old_receipt_path}")
-            except Exception as e:
-                print(f"⚠️ [Backend] Kunde inte radera gammalt kvitto: {e}")
+        # Parse existing receipt paths (support both old single path and new JSON array)
+        current_receipt_paths = []
+        old_receipt_path = transaction['receipt_path'] if transaction else None
         
-        # Update transaction with new receipt path
+        if old_receipt_path:
+            try:
+                # Try to parse as JSON array
+                current_receipt_paths = json.loads(old_receipt_path)
+                if not isinstance(current_receipt_paths, list):
+                    # If it's not an array, convert single path to array
+                    current_receipt_paths = [old_receipt_path]
+            except (json.JSONDecodeError, TypeError):
+                # If it's not JSON, treat as single path
+                current_receipt_paths = [old_receipt_path] if old_receipt_path else []
+        
+        # Add new receipt path to array
+        current_receipt_paths.append(file_path)
+        
+        # Save as JSON array
+        receipt_paths_json = json.dumps(current_receipt_paths)
+        
+        # Update transaction with new receipt paths array
         cursor.execute('UPDATE transactions SET receipt = ?, receipt_path = ?, updated_at = ? WHERE id = ?',
-                      (True, file_path, datetime.now().isoformat(), transaction_id))
+                      (True, receipt_paths_json, datetime.now().isoformat(), transaction_id))
         conn.commit()
+        
+        # Get updated transaction for history
+        cursor.execute('SELECT * FROM transactions WHERE id = ?', (transaction_id,))
+        updated_transaction = dict(cursor.fetchone())
+        
+        # Add to history
+        add_history_entry(
+            action_type='update',
+            action=f'Laddade upp kvitto för transaktion: {updated_transaction.get("title", "Okänt")}',
+            entity_type='transaction',
+            entity_id=transaction_id,
+            entity_data=updated_transaction,
+            undo_data={'receipt_path': old_receipt_path} if old_receipt_path else None
+        )
+        
         conn.close()
         
         return jsonify({
             'message': 'Receipt uploaded successfully',
             'file_path': file_path,
-            'filename': filename
+            'filename': filename,
+            'receipt_paths': current_receipt_paths
         }), 200
         
     except Exception as e:
@@ -1138,10 +1260,28 @@ def upload_agreement_image(agreement_id):
         current_images.append(image_path)
         print(f"📸 [Backend] Ny bildlista: {current_images}")
         
+        # Get old images for history
+        old_images = current_images.copy() if current_images else []
+        
         # Update agreement
         cursor.execute('UPDATE agreements SET images = ?, updated_at = ? WHERE id = ?', 
                        (json.dumps(current_images), datetime.now().isoformat(), agreement_id))
         conn.commit()
+        
+        # Get updated agreement for history
+        cursor.execute('SELECT * FROM agreements WHERE id = ?', (agreement_id,))
+        updated_agreement = dict(cursor.fetchone())
+        
+        # Add to history
+        add_history_entry(
+            action_type='update',
+            action=f'Laddade upp bild för avtal: {updated_agreement.get("name", "Okänt")}',
+            entity_type='agreement',
+            entity_id=agreement_id,
+            entity_data=updated_agreement,
+            undo_data={'images': old_images} if old_images else None
+        )
+        
         conn.close()
         
         print(f"✅ [Backend] Avtal uppdaterat med ny bild: {image_path}")
@@ -1172,22 +1312,60 @@ def serve_custom_file(filepath):
     # Normalisera sökväg
     normalized_path = filepath.replace('\\', '/')
     
+    # URL-decode sökvägen
+    from urllib.parse import unquote
+    normalized_path = unquote(normalized_path)
+    
     # Kontrollera om det är en absolut sökväg som börjar med en tillåten mapp
     # Hämta inställningar för att kontrollera tillåtna mappar
     conn = get_db()
     cursor = conn.cursor()
+    
+    # Kontrollera agreement_images_path
     cursor.execute('SELECT value FROM settings WHERE key = ?', ('agreement_images_path',))
-    result = cursor.fetchone()
+    agreement_path_result = cursor.fetchone()
+    
+    # Kontrollera receipt_storage_path
+    cursor.execute('SELECT value FROM settings WHERE key = ?', ('receipt_storage_path',))
+    receipt_path_result = cursor.fetchone()
+    
     conn.close()
     
-    if result and result['value']:
-        allowed_path = result['value']
+    # Försök hitta filen i agreement images path
+    if agreement_path_result and agreement_path_result['value']:
+        allowed_path = agreement_path_result['value'].replace('\\', '/')
         # Kontrollera om filen finns i den tillåtna mappen
-        if normalized_path.startswith(allowed_path.replace('\\', '/')):
+        if normalized_path.startswith(allowed_path):
             if os.path.exists(normalized_path) and os.path.isfile(normalized_path):
                 return send_file(normalized_path)
+        # Om det är en relativ sökväg, försök konstruera full path
+        elif not os.path.isabs(normalized_path):
+            full_path = os.path.join(allowed_path, normalized_path).replace('\\', '/')
+            if os.path.exists(full_path) and os.path.isfile(full_path):
+                return send_file(full_path)
     
-    return jsonify({'error': 'File not found or access denied'}), 404
+    # Försök hitta filen i receipt storage path
+    if receipt_path_result and receipt_path_result['value']:
+        allowed_path = receipt_path_result['value'].replace('\\', '/')
+        if normalized_path.startswith(allowed_path):
+            if os.path.exists(normalized_path) and os.path.isfile(normalized_path):
+                return send_file(normalized_path)
+        elif not os.path.isabs(normalized_path):
+            full_path = os.path.join(allowed_path, normalized_path).replace('\\', '/')
+            if os.path.exists(full_path) and os.path.isfile(full_path):
+                return send_file(full_path)
+    
+    # Försök med default uploads folder
+    default_path = os.path.join(app.config['UPLOAD_FOLDER'], normalized_path).replace('\\', '/')
+    if os.path.exists(default_path) and os.path.isfile(default_path):
+        return send_file(default_path)
+    
+    # Försök med avtal subfolder
+    avtal_path = os.path.join(app.config['UPLOAD_FOLDER'], 'avtal', normalized_path.replace('avtal/', '')).replace('\\', '/')
+    if os.path.exists(avtal_path) and os.path.isfile(avtal_path):
+        return send_file(avtal_path)
+    
+    return jsonify({'error': 'File not found or access denied', 'path': normalized_path}), 404
 
 
 # ============================================================================
@@ -2620,6 +2798,16 @@ def create_loan():
         cursor.execute('SELECT * FROM loans WHERE id = ?', (loan_id,))
         new_loan = dict(cursor.fetchone())
         
+        # Add to history
+        add_history_entry(
+            action_type='create',
+            action=f'Skapade lån: {data["name"]}',
+            entity_type='loan',
+            entity_id=loan_id,
+            entity_data=new_loan,
+            undo_data=None
+        )
+        
         conn.close()
         return jsonify(new_loan), 201
     except Exception as e:
@@ -2639,6 +2827,16 @@ def update_loan(loan_id):
     
     conn = get_db()
     cursor = conn.cursor()
+    
+    # Get old loan data for history (undo_data)
+    cursor.execute('SELECT * FROM loans WHERE id = ?', (loan_id,))
+    old_loan = cursor.fetchone()
+    
+    if not old_loan:
+        conn.close()
+        return jsonify({'error': 'Loan not found'}), 404
+    
+    old_loan_data = dict(old_loan)
     
     update_fields = []
     values = []
@@ -2670,10 +2868,23 @@ def update_loan(loan_id):
     cursor.execute('SELECT * FROM loans WHERE id = ?', (loan_id,))
     updated_loan = cursor.fetchone()
     
-    conn.close()
-    
     if updated_loan:
-        return jsonify(dict(updated_loan)), 200
+        updated_loan_dict = dict(updated_loan)
+        
+        # Add to history
+        add_history_entry(
+            action_type='update',
+            action=f'Uppdaterade lån: {updated_loan_dict.get("name", "Okänt")}',
+            entity_type='loan',
+            entity_id=loan_id,
+            entity_data=updated_loan_dict,
+            undo_data=old_loan_data
+        )
+        
+        conn.close()
+        return jsonify(updated_loan_dict), 200
+    
+    conn.close()
     return jsonify({'error': 'Loan not found'}), 404
 
 
@@ -2683,10 +2894,32 @@ def delete_loan(loan_id):
     conn = get_db()
     cursor = conn.cursor()
     
+    # Get loan data before deleting (for undo)
+    cursor.execute('SELECT * FROM loans WHERE id = ?', (loan_id,))
+    loan = cursor.fetchone()
+    
+    if not loan:
+        conn.close()
+        return jsonify({'error': 'Loan not found'}), 404
+    
+    loan_data = dict(loan)
+    
     cursor.execute('DELETE FROM loans WHERE id = ?', (loan_id,))
     conn.commit()
     
     deleted = cursor.rowcount > 0
+    
+    if deleted:
+        # Add to history
+        add_history_entry(
+            action_type='delete',
+            action=f'Raderade lån: {loan_data.get("name", "Okänt")}',
+            entity_type='loan',
+            entity_id=loan_id,
+            entity_data=None,
+            undo_data=loan_data
+        )
+    
     conn.close()
     
     if deleted:
@@ -3410,6 +3643,327 @@ def restore_backup():
 
 
 # ============================================================================
+# HISTORY SYSTEM (Separate JSON file to avoid DB load)
+# ============================================================================
+
+HISTORY_FILE = 'action_history.json'
+MAX_HISTORY_ITEMS = 1000  # Keep last 1000 actions
+
+def load_history():
+    """Load action history from JSON file"""
+    if not os.path.exists(HISTORY_FILE):
+        return []
+    try:
+        with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"[History] Error loading history: {str(e)}")
+        return []
+
+def save_history(history):
+    """Save action history to JSON file"""
+    try:
+        # Keep only last MAX_HISTORY_ITEMS
+        if len(history) > MAX_HISTORY_ITEMS:
+            history = history[-MAX_HISTORY_ITEMS:]
+        
+        with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
+            json.dump(history, f, ensure_ascii=False, indent=2)
+        return True
+    except IOError as e:
+        print(f"[History] Error saving history: {str(e)}")
+        return False
+
+def add_history_entry(action_type, action, entity_type, entity_id, entity_data=None, undo_data=None):
+    """Add an entry to the history"""
+    history = load_history()
+    
+    entry = {
+        'id': len(history) + 1,
+        'timestamp': datetime.now().isoformat(),
+        'action_type': action_type,  # 'create', 'update', 'delete', 'link', etc.
+        'action': action,  # Human-readable description
+        'entity_type': entity_type,  # 'transaction', 'agreement', 'loan', etc.
+        'entity_id': entity_id,
+        'entity_data': entity_data,  # Current state (for undo)
+        'undo_data': undo_data  # Previous state (for restore)
+    }
+    
+    history.append(entry)
+    save_history(history)
+    return entry
+
+@app.route('/api/history', methods=['GET'])
+def get_history():
+    """Get action history"""
+    try:
+        limit = request.args.get('limit', type=int, default=100)
+        entity_type = request.args.get('entity_type', type=str)
+        
+        history = load_history()
+        
+        # Filter by entity type if specified
+        if entity_type:
+            history = [h for h in history if h.get('entity_type') == entity_type]
+        
+        # Sort by timestamp (newest first)
+        history.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+        
+        # Limit results
+        history = history[:limit]
+        
+        return jsonify(history), 200
+    except Exception as e:
+        print(f"[History] Error getting history: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/history/<int:history_id>/undo', methods=['POST'])
+def undo_history_action(history_id):
+    """Undo a specific history action"""
+    try:
+        history = load_history()
+        
+        # Find the history entry
+        entry = next((h for h in history if h.get('id') == history_id), None)
+        if not entry:
+            return jsonify({'error': 'History entry not found'}), 404
+        
+        action_type = entry.get('action_type')
+        entity_type = entry.get('entity_type')
+        entity_id = entry.get('entity_id')
+        undo_data = entry.get('undo_data')
+        entity_data = entry.get('entity_data')
+        
+        # Perform undo based on action type
+        if action_type == 'delete':
+            # Restore deleted entity
+            if entity_type == 'transaction' and undo_data:
+                conn = get_db()
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO transactions (title, date, amount, type, category, status, note, receipt, receipt_path)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    undo_data.get('title'),
+                    undo_data.get('date'),
+                    undo_data.get('amount'),
+                    undo_data.get('type'),
+                    undo_data.get('category'),
+                    undo_data.get('status', 'Bokförd'),
+                    undo_data.get('note', ''),
+                    undo_data.get('receipt', 0),
+                    undo_data.get('receipt_path')
+                ))
+                conn.commit()
+                conn.close()
+                
+                # Add undo entry to history
+                add_history_entry('restore', f'Återställde {entity_type}', entity_type, entity_id, undo_data)
+                
+                return jsonify({'message': 'Transaction restored', 'restored_id': cursor.lastrowid}), 200
+                
+            elif entity_type == 'agreement' and undo_data:
+                conn = get_db()
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO agreements (name, provider, amount, frequency, start_date, next_payment, category, status, note, image_path)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    undo_data.get('name'),
+                    undo_data.get('provider'),
+                    undo_data.get('amount'),
+                    undo_data.get('frequency'),
+                    undo_data.get('start_date'),
+                    undo_data.get('next_payment'),
+                    undo_data.get('category'),
+                    undo_data.get('status', 'Aktiv'),
+                    undo_data.get('note', ''),
+                    undo_data.get('image_path')
+                ))
+                conn.commit()
+                conn.close()
+                
+                add_history_entry('restore', f'Återställde {entity_type}', entity_type, entity_id, undo_data)
+                
+                return jsonify({'message': 'Agreement restored', 'restored_id': cursor.lastrowid}), 200
+        
+        elif action_type == 'create':
+            # Delete created entity
+            if entity_type == 'transaction':
+                conn = get_db()
+                cursor = conn.cursor()
+                cursor.execute('DELETE FROM transactions WHERE id = ?', (entity_id,))
+                conn.commit()
+                conn.close()
+                
+                add_history_entry('undo', f'Ångrade skapande av {entity_type}', entity_type, entity_id, None, entity_data)
+                
+                return jsonify({'message': 'Transaction deleted'}), 200
+                
+            elif entity_type == 'agreement':
+                conn = get_db()
+                cursor = conn.cursor()
+                cursor.execute('DELETE FROM agreements WHERE id = ?', (entity_id,))
+                conn.commit()
+                conn.close()
+                
+                add_history_entry('undo', f'Ångrade skapande av {entity_type}', entity_type, entity_id, None, entity_data)
+                
+                return jsonify({'message': 'Agreement deleted'}), 200
+        
+        elif action_type == 'update':
+            # Restore previous state
+            if entity_type == 'transaction' and undo_data:
+                conn = get_db()
+                cursor = conn.cursor()
+                
+                # Check if this is a receipt-related undo
+                if 'receipt_path' in undo_data:
+                    # Restore receipt file if it was moved to deleted folder
+                    receipt_path = undo_data.get('receipt_path')
+                    if receipt_path and 'deleted' in receipt_path.replace('\\', '/'):
+                        try:
+                            # Get receipt storage path
+                            cursor.execute('SELECT value FROM settings WHERE key = ?', ('receipt_storage_path',))
+                            result = cursor.fetchone()
+                            storage_path = result['value'] if result else app.config['UPLOAD_FOLDER']
+                            
+                            # Move file back from deleted folder
+                            filename = os.path.basename(receipt_path)
+                            # Remove transaction ID prefix if present
+                            if '_' in filename:
+                                parts = filename.split('_', 1)
+                                if parts[0].isdigit():
+                                    filename = parts[1]
+                            
+                            restored_path = os.path.join(storage_path, filename)
+                            if os.path.exists(receipt_path) and not os.path.exists(restored_path):
+                                shutil.move(receipt_path, restored_path)
+                                receipt_path = restored_path
+                        except Exception as e:
+                            print(f"⚠️ [History] Kunde inte återställa kvittofil: {e}")
+                    
+                    # Update transaction with restored receipt
+                    cursor.execute('''
+                        UPDATE transactions 
+                        SET receipt = ?, receipt_path = ?, updated_at = ?
+                        WHERE id = ?
+                    ''', (
+                        True if receipt_path else False,
+                        receipt_path,
+                        datetime.now().isoformat(),
+                        entity_id
+                    ))
+                else:
+                    # Regular update restore
+                    cursor.execute('''
+                        UPDATE transactions 
+                        SET title = ?, date = ?, amount = ?, type = ?, category = ?, status = ?, note = ?
+                        WHERE id = ?
+                    ''', (
+                        undo_data.get('title'),
+                        undo_data.get('date'),
+                        undo_data.get('amount'),
+                        undo_data.get('type'),
+                        undo_data.get('category'),
+                        undo_data.get('status'),
+                        undo_data.get('note', ''),
+                        entity_id
+                    ))
+                
+                conn.commit()
+                conn.close()
+                
+                add_history_entry('restore', f'Återställde {entity_type}', entity_type, entity_id, undo_data, entity_data)
+                
+                return jsonify({'message': 'Transaction restored to previous state'}), 200
+            
+            elif entity_type == 'agreement' and undo_data:
+                conn = get_db()
+                cursor = conn.cursor()
+                
+                # Check if this is an image-related undo
+                if 'images' in undo_data or 'deleted_image_path' in undo_data:
+                    import json
+                    # Restore image file if it was moved to deleted folder
+                    deleted_image_path = undo_data.get('deleted_image_path')
+                    if deleted_image_path and 'deleted' in deleted_image_path.replace('\\', '/'):
+                        try:
+                            # Get agreement images path
+                            cursor.execute('SELECT value FROM settings WHERE key = ?', ('agreement_images_path',))
+                            result = cursor.fetchone()
+                            storage_path = result['value'] if result else os.path.join(app.config['UPLOAD_FOLDER'], 'avtal')
+                            
+                            # Move file back from deleted folder
+                            filename = os.path.basename(deleted_image_path)
+                            # Remove agreement ID prefix if present
+                            if '_' in filename:
+                                parts = filename.split('_', 1)
+                                if parts[0].isdigit():
+                                    filename = parts[1]
+                            
+                            restored_path = os.path.join(storage_path, filename)
+                            if os.path.exists(deleted_image_path) and not os.path.exists(restored_path):
+                                shutil.move(deleted_image_path, restored_path)
+                                
+                                # Restore to images array
+                                old_images = undo_data.get('images', [])
+                                if restored_path not in old_images:
+                                    old_images.append(restored_path)
+                                
+                                cursor.execute('UPDATE agreements SET images = ?, updated_at = ? WHERE id = ?',
+                                            (json.dumps(old_images), datetime.now().isoformat(), entity_id))
+                        except Exception as e:
+                            print(f"⚠️ [History] Kunde inte återställa bildfil: {e}")
+                    else:
+                        # Just restore images array
+                        old_images = undo_data.get('images', [])
+                        cursor.execute('UPDATE agreements SET images = ?, updated_at = ? WHERE id = ?',
+                                    (json.dumps(old_images), datetime.now().isoformat(), entity_id))
+                else:
+                    # Regular update restore
+                    cursor.execute('''
+                        UPDATE agreements 
+                        SET name = ?, provider = ?, cost = ?, frequency = ?, next_payment = ?, status = ?, category = ?
+                        WHERE id = ?
+                    ''', (
+                        undo_data.get('name'),
+                        undo_data.get('provider'),
+                        undo_data.get('cost'),
+                        undo_data.get('frequency'),
+                        undo_data.get('next_payment'),
+                        undo_data.get('status'),
+                        undo_data.get('category'),
+                        entity_id
+                    ))
+                
+                conn.commit()
+                conn.close()
+                
+                add_history_entry('restore', f'Återställde {entity_type}', entity_type, entity_id, undo_data, entity_data)
+                
+                return jsonify({'message': 'Agreement restored to previous state'}), 200
+        
+        return jsonify({'error': 'Unsupported action type for undo'}), 400
+        
+    except Exception as e:
+        print(f"[History] Error undoing action: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/history/clear', methods=['POST'])
+def clear_history():
+    """Clear all history"""
+    try:
+        if os.path.exists(HISTORY_FILE):
+            os.remove(HISTORY_FILE)
+        return jsonify({'message': 'History cleared'}), 200
+    except Exception as e:
+        print(f"[History] Error clearing history: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+# ============================================================================
 # ERROR HANDLERS
 # ============================================================================
 
@@ -3421,6 +3975,256 @@ def not_found(error):
 @app.errorhandler(500)
 def internal_error(error):
     return jsonify({'error': 'Internal server error'}), 500
+
+
+# ============================================================================
+# FILE/DOCUMENT MANAGEMENT ENDPOINTS
+# ============================================================================
+
+@app.route('/api/transactions/<int:transaction_id>/receipt', methods=['DELETE'])
+def delete_transaction_receipt(transaction_id):
+    """Delete a specific receipt file for a transaction (supports multiple receipts)"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get transaction and receipt path(s)
+        cursor.execute('SELECT * FROM transactions WHERE id = ?', (transaction_id,))
+        transaction = cursor.fetchone()
+        
+        if not transaction:
+            conn.close()
+            return jsonify({'error': 'Transaction not found'}), 404
+        
+        receipt_path_data = transaction['receipt_path']
+        
+        if not receipt_path_data:
+            conn.close()
+            return jsonify({'error': 'No receipt to delete'}), 400
+        
+        # Get receipt path to delete from query parameter
+        receipt_path_to_delete = request.args.get('path')
+        
+        if not receipt_path_to_delete:
+            conn.close()
+            return jsonify({'error': 'No receipt path specified'}), 400
+        
+        # Parse receipt paths (support both old single path and new JSON array)
+        receipt_paths = []
+        try:
+            receipt_paths = json.loads(receipt_path_data)
+            if not isinstance(receipt_paths, list):
+                receipt_paths = [receipt_path_data]
+        except (json.JSONDecodeError, TypeError):
+            receipt_paths = [receipt_path_data] if receipt_path_data else []
+        
+        # Remove the specified receipt path
+        if receipt_path_to_delete not in receipt_paths:
+            conn.close()
+            return jsonify({'error': 'Receipt path not found'}), 404
+        
+        receipt_paths.remove(receipt_path_to_delete)
+        
+        # Move file to deleted folder
+        if os.path.exists(receipt_path_to_delete):
+            try:
+                # Get receipt storage path
+                cursor.execute('SELECT value FROM settings WHERE key = ?', ('receipt_storage_path',))
+                result = cursor.fetchone()
+                storage_path = result['value'] if result else app.config['UPLOAD_FOLDER']
+                
+                # Create deleted subfolder
+                deleted_folder = os.path.join(storage_path, 'deleted')
+                os.makedirs(deleted_folder, exist_ok=True)
+                
+                # Move file to deleted folder
+                filename = os.path.basename(receipt_path_to_delete)
+                deleted_path = os.path.join(deleted_folder, filename)
+                
+                if os.path.exists(receipt_path_to_delete):
+                    shutil.move(receipt_path_to_delete, deleted_path)
+                    print(f"🗑️ [Backend] Flyttade kvittofil till deleted-mapp: {deleted_path}")
+            except Exception as e:
+                print(f"⚠️ [Backend] Kunde inte flytta kvittofil: {e}")
+                deleted_path = None
+        else:
+            deleted_path = None
+        
+        # Update transaction with remaining receipt paths
+        if len(receipt_paths) > 0:
+            receipt_paths_json = json.dumps(receipt_paths)
+            cursor.execute('UPDATE transactions SET receipt = ?, receipt_path = ?, updated_at = ? WHERE id = ?',
+                          (True, receipt_paths_json, datetime.now().isoformat(), transaction_id))
+        else:
+            # No receipts left
+            cursor.execute('UPDATE transactions SET receipt = ?, receipt_path = ?, updated_at = ? WHERE id = ?',
+                          (False, None, datetime.now().isoformat(), transaction_id))
+        
+        conn.commit()
+        
+        # Get updated transaction for history
+        cursor.execute('SELECT * FROM transactions WHERE id = ?', (transaction_id,))
+        updated_transaction = dict(cursor.fetchone())
+        
+        # Add to history
+        add_history_entry(
+            action_type='update',
+            action=f'Tog bort kvitto för transaktion: {updated_transaction.get("title", "Okänt")}',
+            entity_type='receipt',
+            entity_id=transaction_id,
+            entity_data=updated_transaction,
+            undo_data={'receipt_path': receipt_path_to_delete, 'deleted_path': deleted_path}
+        )
+        
+        conn.close()
+        
+        return jsonify({
+            'message': 'Receipt deleted successfully',
+            'remaining_receipts': len(receipt_paths),
+            'deleted_path': deleted_path  # Return deleted path for undo functionality
+        }), 200
+            try:
+                # Get receipt storage path
+                cursor.execute('SELECT value FROM settings WHERE key = ?', ('receipt_storage_path',))
+                result = cursor.fetchone()
+                storage_path = result['value'] if result else app.config['UPLOAD_FOLDER']
+                
+                # Create deleted subfolder
+                deleted_folder = os.path.join(storage_path, 'deleted')
+                os.makedirs(deleted_folder, exist_ok=True)
+                
+                # Move file to deleted folder
+                filename = os.path.basename(old_receipt_path)
+                deleted_filename = f"{transaction_id}_{filename}"
+                deleted_path = os.path.join(deleted_folder, deleted_filename)
+                
+                shutil.move(old_receipt_path, deleted_path)
+                moved_path = deleted_path
+            except Exception as e:
+                print(f"⚠️ [Backend] Kunde inte flytta kvittofil: {e}")
+        
+        # Update transaction
+        cursor.execute('UPDATE transactions SET receipt = ?, receipt_path = ?, updated_at = ? WHERE id = ?',
+                      (False, None, datetime.now().isoformat(), transaction_id))
+        conn.commit()
+        
+        # Get updated transaction for history
+        cursor.execute('SELECT * FROM transactions WHERE id = ?', (transaction_id,))
+        updated_transaction = dict(cursor.fetchone())
+        
+        # Add to history
+        add_history_entry(
+            action_type='update',
+            action=f'Raderade kvitto för transaktion: {updated_transaction.get("title", "Okänt")}',
+            entity_type='transaction',
+            entity_id=transaction_id,
+            entity_data=updated_transaction,
+            undo_data={'receipt_path': moved_path or old_receipt_path}
+        )
+        
+        conn.close()
+        
+        return jsonify({
+            'message': 'Receipt deleted successfully',
+            'moved_path': moved_path
+        }), 200
+        
+    except Exception as e:
+        print(f"[Backend] Error deleting receipt: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/agreements/<int:agreement_id>/images/<path:image_path>', methods=['DELETE'])
+def delete_agreement_image(agreement_id, image_path):
+    """Delete an image from an agreement"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get agreement
+        cursor.execute('SELECT * FROM agreements WHERE id = ?', (agreement_id,))
+        agreement = cursor.fetchone()
+        
+        if not agreement:
+            conn.close()
+            return jsonify({'error': 'Agreement not found'}), 404
+        
+        # Parse current images
+        import json
+        current_images = json.loads(agreement['images']) if agreement['images'] else []
+        
+        # Find and remove the image
+        old_images = current_images.copy()
+        if image_path in current_images:
+            current_images.remove(image_path)
+        else:
+            # Try to find by filename
+            filename = os.path.basename(image_path)
+            current_images = [img for img in current_images if os.path.basename(img) != filename]
+        
+        # Move file to deleted folder (for undo)
+        moved_path = None
+        full_image_path = image_path
+        if not os.path.isabs(image_path):
+            # Relative path - construct full path
+            cursor.execute('SELECT value FROM settings WHERE key = ?', ('agreement_images_path',))
+            result = cursor.fetchone()
+            storage_path = result['value'] if result else os.path.join(app.config['UPLOAD_FOLDER'], 'avtal')
+            full_image_path = os.path.join(storage_path, image_path.replace('avtal/', ''))
+        
+        if os.path.exists(full_image_path):
+            try:
+                # Get agreement images path
+                cursor.execute('SELECT value FROM settings WHERE key = ?', ('agreement_images_path',))
+                result = cursor.fetchone()
+                storage_path = result['value'] if result else os.path.join(app.config['UPLOAD_FOLDER'], 'avtal')
+                
+                # Create deleted subfolder
+                deleted_folder = os.path.join(storage_path, 'deleted')
+                os.makedirs(deleted_folder, exist_ok=True)
+                
+                # Move file to deleted folder
+                filename = os.path.basename(full_image_path)
+                deleted_filename = f"{agreement_id}_{filename}"
+                deleted_path = os.path.join(deleted_folder, deleted_filename)
+                
+                shutil.move(full_image_path, deleted_path)
+                moved_path = deleted_path
+            except Exception as e:
+                print(f"⚠️ [Backend] Kunde inte flytta bildfil: {e}")
+        
+        # Update agreement
+        cursor.execute('UPDATE agreements SET images = ?, updated_at = ? WHERE id = ?',
+                      (json.dumps(current_images), datetime.now().isoformat(), agreement_id))
+        conn.commit()
+        
+        # Get updated agreement for history
+        cursor.execute('SELECT * FROM agreements WHERE id = ?', (agreement_id,))
+        updated_agreement = dict(cursor.fetchone())
+        
+        # Add to history
+        add_history_entry(
+            action_type='update',
+            action=f'Raderade bild för avtal: {updated_agreement.get("name", "Okänt")}',
+            entity_type='agreement',
+            entity_id=agreement_id,
+            entity_data=updated_agreement,
+            undo_data={'images': old_images, 'deleted_image_path': moved_path or full_image_path}
+        )
+        
+        conn.close()
+        
+        return jsonify({
+            'message': 'Image deleted successfully',
+            'moved_path': moved_path
+        }), 200
+        
+    except Exception as e:
+        print(f"[Backend] Error deleting image: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 
 # ============================================================================

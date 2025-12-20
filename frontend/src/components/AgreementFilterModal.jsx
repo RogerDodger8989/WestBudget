@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { Filter, X, SlidersHorizontal } from 'lucide-react';
+import { useTheme } from '../contexts/ThemeContext';
+import { getThemeButtonClass, getThemeTextClass, getThemeRingClass } from '../utils/getThemeClasses';
 
 const AgreementFilterModal = ({ 
   isOpen, 
@@ -8,6 +10,7 @@ const AgreementFilterModal = ({
   filters, 
   onFiltersChange 
 }) => {
+  const { colorTheme } = useTheme();
   const [localFilters, setLocalFilters] = useState(filters || {
     status: 'all',
     category: 'all',
@@ -62,7 +65,7 @@ const AgreementFilterModal = ({
       <div className="relative w-full max-w-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[90vh]">
         <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between flex-shrink-0">
           <h2 className="text-lg font-bold text-zinc-900 dark:text-white flex items-center gap-2">
-            <SlidersHorizontal size={18} className="text-indigo-500" />
+            <SlidersHorizontal size={18} className={getThemeTextClass(colorTheme, false)} />
             Filtrera Avtal
           </h2>
           <button onClick={onClose} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors">
@@ -83,7 +86,7 @@ const AgreementFilterModal = ({
                   onClick={() => handleFilterChange('status', status)}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                     localFilters.status === status
-                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
+                      ? `${getThemeButtonClass(colorTheme, 'primary')} shadow-lg`
                       : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
                   }`}
                 >
@@ -101,7 +104,7 @@ const AgreementFilterModal = ({
             <select
               value={localFilters.category}
               onChange={(e) => handleFilterChange('category', e.target.value)}
-              className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-4 py-2 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+              className={`w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-4 py-2 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 ${getThemeRingClass(colorTheme)}`}
             >
               <option value="all">Alla Kategorier</option>
               {categories && categories.map(cat => (
@@ -118,7 +121,7 @@ const AgreementFilterModal = ({
             <select
               value={localFilters.frequency}
               onChange={(e) => handleFilterChange('frequency', e.target.value)}
-              className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-4 py-2 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+              className={`w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-4 py-2 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 ${getThemeRingClass(colorTheme)}`}
             >
               <option value="all">Alla Frekvenser</option>
               <option value="Månadsvis">Månadsvis</option>
@@ -140,7 +143,7 @@ const AgreementFilterModal = ({
                   placeholder="Min"
                   value={localFilters.minCost}
                   onChange={(e) => handleFilterChange('minCost', e.target.value)}
-                  className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-4 py-2 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                  className={`w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-4 py-2 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 ${getThemeRingClass(colorTheme)}`}
                 />
               </div>
               <div>
@@ -149,7 +152,7 @@ const AgreementFilterModal = ({
                   placeholder="Max"
                   value={localFilters.maxCost}
                   onChange={(e) => handleFilterChange('maxCost', e.target.value)}
-                  className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-4 py-2 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                  className={`w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-4 py-2 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 ${getThemeRingClass(colorTheme)}`}
                 />
               </div>
             </div>
@@ -167,7 +170,7 @@ const AgreementFilterModal = ({
                   onClick={() => handleFilterChange('hasImages', option)}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                     localFilters.hasImages === option
-                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
+                      ? `${getThemeButtonClass(colorTheme, 'primary')} shadow-lg`
                       : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
                   }`}
                 >
@@ -189,7 +192,7 @@ const AgreementFilterModal = ({
                   onClick={() => handleFilterChange('hasNotice', option)}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                     localFilters.hasNotice === option
-                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
+                      ? `${getThemeButtonClass(colorTheme, 'primary')} shadow-lg`
                       : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
                   }`}
                 >
@@ -218,7 +221,7 @@ const AgreementFilterModal = ({
               onClick={handleApply}
               className={`px-6 py-2 font-semibold rounded-lg shadow-lg transition-all ${
                 hasActiveFilters()
-                  ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/20'
+                  ? `${getThemeButtonClass(colorTheme, 'primary')}`
                   : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-500 cursor-not-allowed'
               }`}
               disabled={!hasActiveFilters()}

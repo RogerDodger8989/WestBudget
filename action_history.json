@@ -1,0 +1,194 @@
+[
+  {
+    "id": 1,
+    "timestamp": "2025-12-20T14:17:00.593196",
+    "action_type": "delete",
+    "action": "Raderade transaktion: Swish Comviq Faktura",
+    "entity_type": "transaction",
+    "entity_id": 259,
+    "entity_data": null,
+    "undo_data": {
+      "id": 259,
+      "title": "Swish Comviq Faktura",
+      "date": "2025-11-28",
+      "amount": "-529",
+      "type": "expense",
+      "category": "IT & Programvara",
+      "status": "Bokförd",
+      "receipt": 0,
+      "receipt_path": null,
+      "note": "",
+      "created_at": "2025-12-18 13:17:35",
+      "updated_at": "2025-12-19T18:56:18.979528"
+    }
+  },
+  {
+    "id": 2,
+    "timestamp": "2025-12-20T14:17:16.126551",
+    "action_type": "restore",
+    "action": "Återställde transaction",
+    "entity_type": "transaction",
+    "entity_id": 259,
+    "entity_data": {
+      "id": 259,
+      "title": "Swish Comviq Faktura",
+      "date": "2025-11-28",
+      "amount": "-529",
+      "type": "expense",
+      "category": "IT & Programvara",
+      "status": "Bokförd",
+      "receipt": 0,
+      "receipt_path": null,
+      "note": "",
+      "created_at": "2025-12-18 13:17:35",
+      "updated_at": "2025-12-19T18:56:18.979528"
+    },
+    "undo_data": null
+  },
+  {
+    "id": 3,
+    "timestamp": "2025-12-20T14:20:09.671915",
+    "action_type": "update",
+    "action": "Laddade upp kvitto för transaktion: Swish Comviq Faktura",
+    "entity_type": "transaction",
+    "entity_id": 312,
+    "entity_data": {
+      "id": 312,
+      "title": "Swish Comviq Faktura",
+      "date": "2025-11-28",
+      "amount": "-529",
+      "type": "expense",
+      "category": "IT & Programvara",
+      "status": "Bokförd",
+      "receipt": 1,
+      "receipt_path": "C:\\Users\\denni\\Desktop\\WestDoc\\media\\kvitto\\312_Gigabyte_NVIDIA_GeForce_GTX_750.jpg",
+      "note": "",
+      "created_at": "2025-12-20 13:17:16",
+      "updated_at": "2025-12-20T14:20:09.667232"
+    },
+    "undo_data": null
+  },
+  {
+    "id": 4,
+    "timestamp": "2025-12-20T14:25:49.169857",
+    "action_type": "update",
+    "action": "Laddade upp kvitto för transaktion: Swish Comviq Faktura",
+    "entity_type": "transaction",
+    "entity_id": 312,
+    "entity_data": {
+      "id": 312,
+      "title": "Swish Comviq Faktura",
+      "date": "2025-11-28",
+      "amount": "-529",
+      "type": "expense",
+      "category": "IT & Programvara",
+      "status": "Bokförd",
+      "receipt": 1,
+      "receipt_path": "C:\\Users\\denni\\Desktop\\WestDoc\\media\\kvitto\\312_Gigabyte_NVIDIA_GeForce_GTX_750.jpg",
+      "note": "",
+      "created_at": "2025-12-20 13:17:16",
+      "updated_at": "2025-12-20T14:25:49.164559"
+    },
+    "undo_data": {
+      "receipt_path": "C:\\Users\\denni\\Desktop\\WestDoc\\media\\kvitto\\312_Gigabyte_NVIDIA_GeForce_GTX_750.jpg"
+    }
+  },
+  {
+    "id": 5,
+    "timestamp": "2025-12-20T14:25:58.064352",
+    "action_type": "update",
+    "action": "Laddade upp kvitto för transaktion: Swish Comviq Faktura",
+    "entity_type": "transaction",
+    "entity_id": 312,
+    "entity_data": {
+      "id": 312,
+      "title": "Swish Comviq Faktura",
+      "date": "2025-11-28",
+      "amount": "-529",
+      "type": "expense",
+      "category": "IT & Programvara",
+      "status": "Bokförd",
+      "receipt": 1,
+      "receipt_path": "C:\\Users\\denni\\Desktop\\WestDoc\\media\\kvitto\\312_ChatGPT_Image_5_aug._2025_18_04_24.png",
+      "note": "",
+      "created_at": "2025-12-20 13:17:16",
+      "updated_at": "2025-12-20T14:25:58.037526"
+    },
+    "undo_data": {
+      "receipt_path": "C:\\Users\\denni\\Desktop\\WestDoc\\media\\kvitto\\312_Gigabyte_NVIDIA_GeForce_GTX_750.jpg"
+    }
+  },
+  {
+    "id": 6,
+    "timestamp": "2025-12-20T14:26:04.869097",
+    "action_type": "update",
+    "action": "Laddade upp kvitto för transaktion: Studiehjälp",
+    "entity_type": "transaction",
+    "entity_id": 311,
+    "entity_data": {
+      "id": 311,
+      "title": "Studiehjälp",
+      "date": "2025-11-28",
+      "amount": "1250",
+      "type": "income",
+      "category": "Barnen-Lilly",
+      "status": "Bokförd",
+      "receipt": 1,
+      "receipt_path": "C:\\Users\\denni\\Desktop\\WestDoc\\media\\kvitto\\311_Convert_this_image_o.png",
+      "note": "",
+      "created_at": "2025-12-19 18:26:44",
+      "updated_at": "2025-12-20T14:26:04.842132"
+    },
+    "undo_data": null
+  },
+  {
+    "id": 7,
+    "timestamp": "2025-12-20T15:41:28.865298",
+    "action_type": "update",
+    "action": "Laddade upp kvitto för transaktion: Studiehjälp",
+    "entity_type": "transaction",
+    "entity_id": 311,
+    "entity_data": {
+      "id": 311,
+      "title": "Studiehjälp",
+      "date": "2025-11-28",
+      "amount": "1250",
+      "type": "income",
+      "category": "Barnen-Lilly",
+      "status": "Bokförd",
+      "receipt": 1,
+      "receipt_path": "C:\\Users\\denni\\Desktop\\WestDoc\\media\\kvitto\\311_SELMA_Karolina_Hansson_Larsson-1.jpg",
+      "note": "",
+      "created_at": "2025-12-19 18:26:44",
+      "updated_at": "2025-12-20T15:41:28.860940"
+    },
+    "undo_data": {
+      "receipt_path": "C:\\Users\\denni\\Desktop\\WestDoc\\media\\kvitto\\311_Convert_this_image_o.png"
+    }
+  },
+  {
+    "id": 8,
+    "timestamp": "2025-12-20T17:57:04.247851",
+    "action_type": "update",
+    "action": "Tog bort kvitto för transaktion: Studiehjälp",
+    "entity_type": "receipt",
+    "entity_id": 311,
+    "entity_data": {
+      "id": 311,
+      "title": "Studiehjälp",
+      "date": "2025-11-28",
+      "amount": "1250",
+      "type": "income",
+      "category": "Barnen-Lilly",
+      "status": "Bokförd",
+      "receipt": 0,
+      "receipt_path": null,
+      "note": "",
+      "created_at": "2025-12-19 18:26:44",
+      "updated_at": "2025-12-20T17:57:04.243065"
+    },
+    "undo_data": {
+      "receipt_path": "C:\\Users\\denni\\Desktop\\WestDoc\\media\\kvitto\\311_SELMA_Karolina_Hansson_Larsson-1.jpg"
+    }
+  }
+]

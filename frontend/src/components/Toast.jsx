@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { X, Undo2, CheckCircle2, AlertCircle, Info } from 'lucide-react';
+import { useTheme } from '../contexts/ThemeContext';
+import { getThemeTextClass, getThemeBgClass, getThemeBorderClass } from '../utils/getThemeClasses';
 
 const Toast = ({ toast, onClose, onUndo }) => {
+  const { colorTheme } = useTheme();
   const [progress, setProgress] = useState(100);
 
   useEffect(() => {
@@ -34,9 +37,9 @@ const Toast = ({ toast, onClose, onUndo }) => {
       case 'error':
         return <AlertCircle size={18} className="text-rose-500" />;
       case 'info':
-        return <Info size={18} className="text-indigo-500" />;
+        return <Info size={18} className={getThemeTextClass(colorTheme, false)} />;
       default:
-        return <CheckCircle2 size={18} className="text-indigo-500" />;
+        return <CheckCircle2 size={18} className={getThemeTextClass(colorTheme, false)} />;
     }
   };
 
@@ -47,7 +50,7 @@ const Toast = ({ toast, onClose, onUndo }) => {
       case 'error':
         return 'bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-800';
       case 'info':
-        return 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800';
+        return `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)}/20 ${getThemeBorderClass(colorTheme)}/30 dark:${getThemeBorderClass(colorTheme)}/50`;
       default:
         return 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800';
     }
@@ -58,7 +61,7 @@ const Toast = ({ toast, onClose, onUndo }) => {
       {/* Progress bar */}
       <div className="absolute top-0 left-0 right-0 h-1 bg-zinc-200 dark:bg-zinc-800">
         <div
-          className="h-full bg-indigo-500 transition-all duration-50 ease-linear"
+          className={`h-full transition-all duration-50 ease-linear ${getThemeBgClass(colorTheme, false)}`}
           style={{ width: `${progress}%` }}
         />
       </div>
@@ -88,7 +91,7 @@ const Toast = ({ toast, onClose, onUndo }) => {
                 }
                 onClose();
               }}
-              className="px-3 py-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 rounded-lg transition-colors flex items-center gap-1.5"
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5 hover:opacity-80 ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} ${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)}/30 hover:opacity-80`}
             >
               <Undo2 size={14} />
               Ångra

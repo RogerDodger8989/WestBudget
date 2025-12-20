@@ -1,8 +1,11 @@
 import React, { useState, useRef } from 'react';
 import { Car, X, Calendar, Gauge, AlertCircle, FileText } from 'lucide-react';
 import { api } from '../api';
+import { useTheme } from '../contexts/ThemeContext';
+import { getThemeButtonClass, getThemeTextClass, getThemeBgClass, getThemeRingClass } from '../utils/getThemeClasses';
 
 const AddVehicleModal = ({ onClose, onSave, agreements = [] }) => {
+  const { colorTheme } = useTheme();
   const [formData, setFormData] = useState({
     registration_number: '',
     make_model: '',
@@ -104,8 +107,8 @@ const AddVehicleModal = ({ onClose, onSave, agreements = [] }) => {
       <div className="relative w-full max-w-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[90vh]">
         <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl">
-              <Car className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+            <div className={`p-2 ${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)}/30 rounded-xl`}>
+              <Car className={`w-5 h-5 ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)}`} />
             </div>
             <h2 className="text-xl font-bold text-zinc-900 dark:text-white">Lägg till Fordon</h2>
           </div>
@@ -135,7 +138,7 @@ const AddVehicleModal = ({ onClose, onSave, agreements = [] }) => {
               value={formData.registration_number}
               onChange={(e) => handleChange('registration_number', e.target.value.toUpperCase())}
               placeholder="ABC 123"
-              className={`w-full bg-zinc-50 dark:bg-zinc-800 border rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all ${
+              className={`w-full bg-zinc-50 dark:bg-zinc-800 border rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 ${getThemeRingClass(colorTheme)} transition-all ${
                 errors.registration_number ? 'border-rose-500' : 'border-zinc-200 dark:border-zinc-700'
               }`}
             />
@@ -154,7 +157,7 @@ const AddVehicleModal = ({ onClose, onSave, agreements = [] }) => {
               value={formData.make_model}
               onChange={(e) => handleChange('make_model', e.target.value)}
               placeholder="Volvo XC60"
-              className={`w-full bg-zinc-50 dark:bg-zinc-800 border rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all ${
+              className={`w-full bg-zinc-50 dark:bg-zinc-800 border rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 ${getThemeRingClass(colorTheme)} transition-all ${
                 errors.make_model ? 'border-rose-500' : 'border-zinc-200 dark:border-zinc-700'
               }`}
             />
@@ -202,7 +205,7 @@ const AddVehicleModal = ({ onClose, onSave, agreements = [] }) => {
           {/* Nästa besiktning */}
           <div>
             <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-              <Calendar className="w-4 h-4 inline mr-1 text-indigo-500 dark:text-indigo-400" />
+              <Calendar className={`w-4 h-4 inline mr-1 ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)}`} />
               Nästa besiktning
             </label>
             <div className="relative">
@@ -226,7 +229,7 @@ const AddVehicleModal = ({ onClose, onSave, agreements = [] }) => {
                 className="absolute opacity-0 pointer-events-none"
               />
               <Calendar
-                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-500 dark:text-indigo-400 cursor-pointer"
+                className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} cursor-pointer`}
                 onClick={() => inspectionDatePickerRef.current?.showPicker()}
               />
             </div>
@@ -270,7 +273,7 @@ const AddVehicleModal = ({ onClose, onSave, agreements = [] }) => {
             </div>
             <div>
               <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                <Calendar className="w-4 h-4 inline mr-1 text-indigo-500 dark:text-indigo-400" />
+                <Calendar className={`w-4 h-4 inline mr-1 ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)}`} />
                 Nästa service (datum)
               </label>
               <div className="relative">
@@ -294,7 +297,7 @@ const AddVehicleModal = ({ onClose, onSave, agreements = [] }) => {
                   className="absolute opacity-0 pointer-events-none"
                 />
                 <Calendar
-                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-500 dark:text-indigo-400 cursor-pointer"
+                  className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} cursor-pointer`}
                   onClick={() => serviceDatePickerRef.current?.showPicker()}
                 />
               </div>
@@ -344,7 +347,7 @@ const AddVehicleModal = ({ onClose, onSave, agreements = [] }) => {
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 px-4 py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+              className={`flex-1 px-4 py-3 ${getThemeButtonClass(colorTheme, 'primary')} rounded-xl font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2`}
             >
               {loading ? (
                 <>

@@ -3,9 +3,12 @@ import { formatAmount, getAmountClassName } from '../utils/formatAmount';
 import { X, FileSpreadsheet, CheckCircle, AlertCircle, Settings, Edit2, Plus, Sparkles, Loader2 } from 'lucide-react';
 import { api } from '../api';
 import { useToast } from '../contexts/ToastContext';
+import { useTheme } from '../contexts/ThemeContext';
+import { getThemeButtonClass, getThemeTextClass, getThemeBgClass, getThemeBorderClass, getThemeRingClass } from '../utils/getThemeClasses';
 
 const ImportModal = ({ onClose, onImport, categories = [], existingTransactions = [], onCategoriesChange }) => {
   const { showToast } = useToast();
+  const { colorTheme } = useTheme();
   const [step, setStep] = useState(1);
   const [bank, setBank] = useState('swedbank');
   const [isDragging, setIsDragging] = useState(false);
@@ -554,7 +557,7 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
                   {hasSelected && (
                     <button
                       onClick={() => setBulkEditMode(!bulkEditMode)}
-                      className="px-3 py-1.5 text-sm bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors"
+                      className={`px-3 py-1.5 text-sm ${getThemeButtonClass(colorTheme, 'primary')} rounded-lg transition-colors`}
                     >
                       {bulkEditMode ? 'Avbryt' : 'Ändra alla valda'}
                     </button>
@@ -582,7 +585,7 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
                   <select 
                     value={bank}
                     onChange={(e) => setBank(e.target.value)}
-                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                    className={`w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white outline-none focus:ring-2 ${getThemeRingClass(colorTheme)}`}
                   >
                     <option value="swedbank">Swedbank (CSV)</option>
                     <option value="seb">SEB (Excel/CSV)</option>
@@ -614,17 +617,17 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
                 <div 
                   className={`border-2 border-dashed rounded-2xl p-10 flex flex-col items-center justify-center text-center cursor-pointer transition-all ${
                     isDragging 
-                      ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10' 
-                      : 'border-zinc-300 dark:border-zinc-700 hover:border-indigo-500 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+                      ? `${getThemeBorderClass(colorTheme)} ${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)}/10` 
+                      : `border-zinc-300 dark:border-zinc-700 hover:${getThemeBorderClass(colorTheme)} hover:bg-zinc-50 dark:hover:bg-zinc-800`
                   }`}
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
                   onClick={() => fileInputRef.current?.click()}
                 >
-                  <div className="w-16 h-16 bg-indigo-100 dark:bg-indigo-900/30 rounded-full flex items-center justify-center mb-4 text-indigo-600 dark:text-indigo-400">
+                  <div className={`w-16 h-16 ${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)}/30 rounded-full flex items-center justify-center mb-4 ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)}`}>
                     {isProcessing ? (
-                      <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                      <div className={`w-8 h-8 border-2 ${getThemeBorderClass(colorTheme)} border-t-transparent rounded-full animate-spin`} />
                     ) : (
                       <FileSpreadsheet size={32} />
                     )}
@@ -641,18 +644,18 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
               <div className="space-y-6">
                 {/* Bulk edit mode */}
                 {bulkEditMode && hasSelected && (
-                  <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl">
+                  <div className={`p-4 ${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)}/20 border ${getThemeBorderClass(colorTheme)}/30 dark:${getThemeBorderClass(colorTheme)}/50 rounded-xl`}>
                     <div className="flex items-center gap-3">
-                      <Sparkles size={18} className="text-indigo-600 dark:text-indigo-400" />
+                      <Sparkles size={18} className={`${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)}`} />
                       <div className="flex-1">
-                        <p className="text-sm font-semibold text-indigo-900 dark:text-indigo-100">
+                        <p className={`text-sm font-semibold ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)}`}>
                           Ändra kategori för {selectedCount} valda transaktion{selectedCount !== 1 ? 'er' : ''}
                         </p>
                         <div className="flex items-center gap-2 mt-2">
                           <select
                             value={bulkCategory}
                             onChange={(e) => setBulkCategory(e.target.value)}
-                            className="flex-1 px-3 py-2 bg-white dark:bg-zinc-800 border border-indigo-300 dark:border-indigo-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                            className={`flex-1 px-3 py-2 bg-white dark:bg-zinc-800 border ${getThemeBorderClass(colorTheme)}/40 dark:${getThemeBorderClass(colorTheme)}/50 rounded-lg text-sm focus:ring-2 ${getThemeRingClass(colorTheme)} outline-none`}
                           >
                             <option value="">Välj kategori...</option>
                             {localCategories.map(cat => (
@@ -662,7 +665,7 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
                           <button
                             onClick={handleBulkCategoryChange}
                             disabled={!bulkCategory || isBulkChanging}
-                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                            className={`px-4 py-2 ${getThemeButtonClass(colorTheme, 'primary')} text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2`}
                           >
                             {isBulkChanging ? (
                               <>
@@ -703,7 +706,7 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
                             type="checkbox"
                             checked={allNonDuplicatesSelected}
                             onChange={(e) => handleSelectAll(e.target.checked)}
-                            className="w-4 h-4 text-indigo-600 border-zinc-300 rounded focus:ring-indigo-500"
+                            className={`w-4 h-4 ${getThemeTextClass(colorTheme, false)} border-zinc-300 rounded ${getThemeRingClass(colorTheme)}`}
                           />
                         </th>
                         <th className="px-4 py-3">Datum</th>
@@ -720,7 +723,7 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
                             row.isDuplicate 
                               ? 'bg-rose-50 dark:bg-rose-900/20' 
                               : 'bg-white dark:bg-zinc-900'
-                          } ${selectedTransactions.has(i) ? 'ring-2 ring-indigo-500' : ''}`}
+                          } ${selectedTransactions.has(i) ? `ring-2 ${getThemeRingClass(colorTheme)}` : ''}`}
                         >
                           <td className="px-4 py-3">
                             <input
@@ -728,7 +731,7 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
                               checked={selectedTransactions.has(i)}
                               onChange={() => handleToggleTransaction(i)}
                               disabled={row.isDuplicate}
-                              className="w-4 h-4 text-indigo-600 border-zinc-300 rounded focus:ring-indigo-500 disabled:opacity-50"
+                              className={`w-4 h-4 ${getThemeTextClass(colorTheme, false)} border-zinc-300 rounded ${getThemeRingClass(colorTheme)} disabled:opacity-50`}
                             />
                           </td>
                           <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">{row.date}</td>
@@ -760,7 +763,7 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
                                     }
                                   }}
                                   autoFocus
-                                  className="px-2 py-1 bg-white dark:bg-zinc-800 border border-indigo-500 rounded text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
+                                  className={`px-2 py-1 bg-white dark:bg-zinc-800 border ${getThemeBorderClass(colorTheme)} rounded text-xs focus:ring-2 ${getThemeRingClass(colorTheme)} outline-none`}
                                 >
                                   {localCategories.map(cat => (
                                     <option key={cat} value={cat}>{cat}</option>
@@ -782,7 +785,7 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
                                       }}
                                       placeholder="Kategorinamn"
                                       autoFocus
-                                      className="px-2 py-1 bg-white dark:bg-zinc-800 border border-indigo-500 rounded text-xs w-32 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                      className={`px-2 py-1 bg-white dark:bg-zinc-800 border ${getThemeBorderClass(colorTheme)} rounded text-xs w-32 focus:ring-2 ${getThemeRingClass(colorTheme)} outline-none`}
                                     />
                                     <button
                                       onClick={() => {
@@ -790,7 +793,7 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
                                           handleCategoryChange(i, newCategoryName);
                                         });
                                       }}
-                                      className="p-1 bg-indigo-600 text-white rounded"
+                                      className={`p-1 ${getThemeButtonClass(colorTheme, 'primary')} rounded`}
                                     >
                                       <CheckCircle size={14} />
                                     </button>
@@ -801,14 +804,14 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
                               <div className="flex items-center gap-1">
                                 <button
                                   onClick={() => setEditingCategoryIndex(i)}
-                                  className="px-2 py-1 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded text-xs border border-zinc-200 dark:border-zinc-700 hover:border-indigo-500 transition-colors flex items-center gap-1"
+                                  className={`px-2 py-1 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded text-xs border border-zinc-200 dark:border-zinc-700 hover:${getThemeBorderClass(colorTheme)} transition-colors flex items-center gap-1`}
                                 >
                                   <span>{row.category}</span>
                                   <Edit2 size={12} />
                                 </button>
                                 <button
                                   onClick={() => handleQuickCategorize(i, row.category)}
-                                  className="p-1 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded transition-colors"
+                                  className={`p-1 ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} ${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)}/30 rounded transition-colors hover:opacity-80`}
                                   title="Använd denna kategori för alla liknande"
                                 >
                                   <Sparkles size={12} />
@@ -843,7 +846,7 @@ const ImportModal = ({ onClose, onImport, categories = [], existingTransactions 
               <button 
                 onClick={handleImport}
                 disabled={selectedTransactions.size === 0}
-                className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg shadow-lg shadow-indigo-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className={`px-6 py-2 ${getThemeButtonClass(colorTheme, 'primary')} font-semibold rounded-lg shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed`}
               >
                 Importera {selectedTransactions.size} transaktion{selectedTransactions.size !== 1 ? 'er' : ''}
               </button>
@@ -1318,7 +1321,7 @@ const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories, onCateg
                       value={pattern}
                       onChange={(e) => handlePatternChange(index, e.target.value)}
                       placeholder="Beskrivning innehåller..."
-                      className="flex-1 px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                      className={`flex-1 px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 ${getThemeRingClass(colorTheme)} outline-none`}
                     />
                     {newPatterns.length > 1 && (
                       <button
@@ -1333,7 +1336,7 @@ const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories, onCateg
                 ))}
                 <button
                   onClick={handleAddPattern}
-                  className="w-full px-3 py-2 text-sm text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 rounded-lg transition-colors flex items-center justify-center gap-2"
+                  className={`w-full px-3 py-2 text-sm ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} ${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)}/30 border ${getThemeBorderClass(colorTheme)}/30 dark:${getThemeBorderClass(colorTheme)}/50 rounded-lg transition-colors flex items-center justify-center gap-2 hover:opacity-80`}
                 >
                   <Plus size={16} />
                   Lägg till mönster
@@ -1349,7 +1352,7 @@ const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories, onCateg
                       setNewCategory(e.target.value);
                     }
                   }}
-                  className="flex-1 px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className={`flex-1 px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 ${getThemeRingClass(colorTheme)} outline-none`}
                 >
                   <option value="">Välj kategori...</option>
                   {localCategories.map(cat => (
@@ -1370,12 +1373,12 @@ const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories, onCateg
                       }}
                       placeholder="Kategorinamn"
                       autoFocus
-                      className="px-3 py-2 bg-white dark:bg-zinc-900 border border-indigo-500 rounded-lg text-sm w-40 focus:ring-2 focus:ring-indigo-500 outline-none"
+                      className={`px-3 py-2 bg-white dark:bg-zinc-900 border ${getThemeBorderClass(colorTheme)} rounded-lg text-sm w-40 focus:ring-2 ${getThemeRingClass(colorTheme)} outline-none`}
                     />
                     <button
                       onClick={handleCreateCategory}
                       disabled={isCreatingCategoryLoading || !newCategoryName.trim()}
-                      className="p-2 bg-indigo-600 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                      className={`p-2 ${getThemeButtonClass(colorTheme, 'primary')} rounded-lg disabled:opacity-50 disabled:cursor-not-allowed`}
                     >
                       {isCreatingCategoryLoading ? (
                         <Loader2 size={16} className="animate-spin" />
@@ -1399,7 +1402,7 @@ const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories, onCateg
             <button
               onClick={handleAddRule}
               disabled={newPatterns.every(p => !p.trim()) || !newCategory || isCreatingRule}
-              className="mt-3 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+              className={`mt-3 px-4 py-2 ${getThemeButtonClass(colorTheme, 'primary')} text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2`}
             >
               {isCreatingRule ? (
                 <>
@@ -1428,7 +1431,7 @@ const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories, onCateg
                       rule.is_active
                         ? 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700'
                         : 'bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 opacity-60'
-                    } ${isEditing ? 'border-indigo-400 dark:border-indigo-600 ring-2 ring-indigo-200 dark:ring-indigo-800' : 'cursor-pointer hover:border-indigo-300 dark:hover:border-indigo-700'}`}
+                    } ${isEditing ? `${getThemeBorderClass(colorTheme)}/60 dark:${getThemeBorderClass(colorTheme)}/60 ring-2 ${getThemeRingClass(colorTheme)}/30 dark:${getThemeRingClass(colorTheme)}/30` : `cursor-pointer hover:${getThemeBorderClass(colorTheme)}/40 dark:hover:${getThemeBorderClass(colorTheme)}/40`}`}
                     onClick={() => !isEditing && handleEditRule(rule)}
                   >
                     {isEditing ? (
@@ -1440,7 +1443,7 @@ const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories, onCateg
                           </p>
                           <div className="flex items-center gap-2">
                             {isSavingRule === rule.id && (
-                              <span className="text-xs text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
+                              <span className={`text-xs ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} flex items-center gap-1`}>
                                 <Loader2 size={12} className="animate-spin" />
                                 Sparar...
                               </span>
@@ -1472,7 +1475,7 @@ const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories, onCateg
                                 onBlur={handleEditingPatternBlur}
                                 onClick={(e) => e.stopPropagation()}
                                 placeholder="Beskrivning innehåller..."
-                                className="flex-1 px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                className={`flex-1 px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 ${getThemeRingClass(colorTheme)} outline-none`}
                               />
                               {editingPatterns.length > 1 && (
                                 <button
@@ -1493,7 +1496,7 @@ const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories, onCateg
                               e.stopPropagation();
                               handleAddEditingPattern();
                             }}
-                            className="w-full px-3 py-2 text-sm text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 rounded-lg transition-colors flex items-center justify-center gap-2"
+                            className={`w-full px-3 py-2 text-sm ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} ${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)}/30 border ${getThemeBorderClass(colorTheme)}/30 dark:${getThemeBorderClass(colorTheme)}/50 rounded-lg transition-colors flex items-center justify-center gap-2 hover:opacity-80`}
                           >
                             <Plus size={16} />
                             Lägg till mönster
@@ -1516,7 +1519,7 @@ const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories, onCateg
                             }}
                             onBlur={handleEditingCategoryBlur}
                             onClick={(e) => e.stopPropagation()}
-                            className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                            className={`w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 ${getThemeRingClass(colorTheme)} outline-none`}
                           >
                             <option value="">Välj kategori...</option>
                             {localCategories.map(cat => (
@@ -1537,7 +1540,7 @@ const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories, onCateg
                             {patterns.map((pattern, idx) => (
                               <span
                                 key={`view-pattern-${rule.id}-${idx}-${pattern}`}
-                                className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 font-mono text-xs rounded"
+                                className={`px-2 py-0.5 ${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)}/30 ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} font-mono text-xs rounded`}
                               >
                                 "{pattern}"
                               </span>
@@ -1590,7 +1593,7 @@ const CategoryRulesModal = ({ onClose, rules, onRulesChange, categories, onCateg
         <div className="p-6 border-t border-zinc-200 dark:border-zinc-800 flex justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg transition-colors"
+            className={`px-4 py-2 ${getThemeButtonClass(colorTheme, 'primary')} font-semibold rounded-lg transition-colors`}
           >
             Klar
           </button>

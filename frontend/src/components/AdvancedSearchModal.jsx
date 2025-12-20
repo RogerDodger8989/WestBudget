@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Search, X, Filter, Calendar, Save, Star, Trash2, SlidersHorizontal } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { api } from '../api';
+import { useTheme } from '../contexts/ThemeContext';
+import { getThemeButtonClass, getThemeTextClass, getThemeBorderClass, getThemeRingClass, getThemeBgClass } from '../utils/getThemeClasses';
 
 const AdvancedSearchModal = ({ 
   isOpen, 
@@ -14,6 +16,7 @@ const AdvancedSearchModal = ({
   initialFilters = null
 }) => {
   const { showToast } = useToast();
+  const { colorTheme } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState({
     type: 'all',
@@ -180,6 +183,32 @@ const AdvancedSearchModal = ({
 
   const categoryList = categories.map(c => typeof c === 'string' ? c : c.name || c);
 
+  // Helper function to get active tab classes
+  const getActiveTabClass = () => {
+    const themeMap = {
+      indigo: 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400 bg-indigo-50/50 dark:bg-indigo-900/10',
+      blue: 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400 bg-blue-50/50 dark:bg-blue-900/10',
+      emerald: 'text-emerald-600 dark:text-emerald-400 border-b-2 border-emerald-600 dark:border-emerald-400 bg-emerald-50/50 dark:bg-emerald-900/10',
+      purple: 'text-purple-600 dark:text-purple-400 border-b-2 border-purple-600 dark:border-purple-400 bg-purple-50/50 dark:bg-purple-900/10',
+      rose: 'text-rose-600 dark:text-rose-400 border-b-2 border-rose-600 dark:border-rose-400 bg-rose-50/50 dark:bg-rose-900/10',
+      amber: 'text-amber-600 dark:text-amber-400 border-b-2 border-amber-600 dark:border-amber-400 bg-amber-50/50 dark:bg-amber-900/10'
+    };
+    return themeMap[colorTheme] || themeMap.indigo;
+  };
+
+  // Helper function to get hover button classes
+  const getHoverButtonClass = () => {
+    const themeMap = {
+      indigo: 'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30',
+      blue: 'text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30',
+      emerald: 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30',
+      purple: 'text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30',
+      rose: 'text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30',
+      amber: 'text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30'
+    };
+    return themeMap[colorTheme] || themeMap.indigo;
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -190,7 +219,7 @@ const AdvancedSearchModal = ({
         {/* Header */}
         <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between flex-shrink-0">
           <h2 className="text-lg font-bold text-zinc-900 dark:text-white flex items-center gap-2">
-            <Search size={20} className="text-indigo-500" />
+            <Search size={20} className={getThemeTextClass(colorTheme, false)} />
             Avancerad Sökning
           </h2>
           <button onClick={onClose} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors">
@@ -204,7 +233,7 @@ const AdvancedSearchModal = ({
             onClick={() => setActiveTab('search')}
             className={`flex-1 px-6 py-3 text-sm font-medium transition-colors ${
               activeTab === 'search'
-                ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400 bg-indigo-50/50 dark:bg-indigo-900/10'
+                ? getActiveTabClass()
                 : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
             }`}
           >
@@ -215,7 +244,7 @@ const AdvancedSearchModal = ({
             onClick={() => setActiveTab('saved')}
             className={`flex-1 px-6 py-3 text-sm font-medium transition-colors ${
               activeTab === 'saved'
-                ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400 bg-indigo-50/50 dark:bg-indigo-900/10'
+                ? getActiveTabClass()
                 : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
             }`}
           >
@@ -238,7 +267,7 @@ const AdvancedSearchModal = ({
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Sök i titel, beskrivning, noteringar, referens..."
-                  className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className={`w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm focus:ring-2 ${getThemeRingClass(colorTheme)} outline-none`}
                 />
                 <div className="mt-2 flex flex-wrap gap-2">
                   <span className="text-xs text-zinc-500 dark:text-zinc-400">Sök i:</span>
@@ -261,7 +290,7 @@ const AdvancedSearchModal = ({
               {/* Date Range */}
               <div>
                 <label className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-2 block flex items-center gap-2">
-                  <Calendar size={16} className="text-indigo-500" />
+                  <Calendar size={16} className={getThemeTextClass(colorTheme, false)} />
                   Datumintervall
                 </label>
                 <div className="grid grid-cols-2 gap-3">
@@ -271,7 +300,7 @@ const AdvancedSearchModal = ({
                       type="date"
                       value={filters.dateFrom}
                       onChange={(e) => handleFilterChange('dateFrom', e.target.value)}
-                      className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                      className={`w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 ${getThemeRingClass(colorTheme)} outline-none`}
                     />
                   </div>
                   <div>
@@ -280,7 +309,7 @@ const AdvancedSearchModal = ({
                       type="date"
                       value={filters.dateTo}
                       onChange={(e) => handleFilterChange('dateTo', e.target.value)}
-                      className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                      className={`w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 ${getThemeRingClass(colorTheme)} outline-none`}
                     />
                   </div>
                 </div>
@@ -298,7 +327,7 @@ const AdvancedSearchModal = ({
                       onClick={() => handleFilterChange('type', type)}
                       className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                         filters.type === type
-                          ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
+                          ? `${getThemeButtonClass(colorTheme, 'primary')} shadow-lg`
                           : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
                       }`}
                     >
@@ -323,7 +352,7 @@ const AdvancedSearchModal = ({
                           type="checkbox"
                           checked={filters.categories?.includes(cat) || false}
                           onChange={() => handleCategoryToggle(cat)}
-                          className="rounded border-zinc-300 dark:border-zinc-600 text-indigo-600 focus:ring-indigo-500"
+                          className={`rounded border-zinc-300 dark:border-zinc-600 ${getThemeTextClass(colorTheme, false)} ${getThemeRingClass(colorTheme)}`}
                         />
                         <span className="text-sm text-zinc-700 dark:text-zinc-300">{cat}</span>
                       </label>
@@ -349,7 +378,7 @@ const AdvancedSearchModal = ({
                       onClick={() => handleFilterChange('status', status)}
                       className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                         filters.status === status
-                          ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
+                          ? `${getThemeButtonClass(colorTheme, 'primary')} shadow-lg`
                           : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
                       }`}
                     >
@@ -372,7 +401,7 @@ const AdvancedSearchModal = ({
                       value={filters.minAmount}
                       onChange={(e) => handleFilterChange('minAmount', e.target.value)}
                       placeholder="0"
-                      className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                      className={`w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 ${getThemeRingClass(colorTheme)} outline-none`}
                     />
                   </div>
                   <div>
@@ -382,7 +411,7 @@ const AdvancedSearchModal = ({
                       value={filters.maxAmount}
                       onChange={(e) => handleFilterChange('maxAmount', e.target.value)}
                       placeholder="Ingen gräns"
-                      className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                      className={`w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 ${getThemeRingClass(colorTheme)} outline-none`}
                     />
                   </div>
                 </div>
@@ -401,7 +430,7 @@ const AdvancedSearchModal = ({
                         onClick={() => handleFilterChange('hasReceipt', option)}
                         className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                           filters.hasReceipt === option
-                            ? 'bg-indigo-600 text-white'
+                            ? getThemeButtonClass(colorTheme, 'primary')
                             : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
                         }`}
                       >
@@ -421,7 +450,7 @@ const AdvancedSearchModal = ({
                         onClick={() => handleFilterChange('hasNote', option)}
                         className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                           filters.hasNote === option
-                            ? 'bg-indigo-600 text-white'
+                            ? getThemeButtonClass(colorTheme, 'primary')
                             : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
                         }`}
                       >
@@ -443,12 +472,12 @@ const AdvancedSearchModal = ({
                     value={searchName}
                     onChange={(e) => setSearchName(e.target.value)}
                     placeholder="Namn på sökningen..."
-                    className="flex-1 px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                    className={`flex-1 px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 ${getThemeRingClass(colorTheme)} outline-none`}
                   />
                   <button
                     onClick={handleSaveSearch}
                     disabled={isSaving || !searchName.trim() || !hasActiveFilters()}
-                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                    className={`px-4 py-2 ${getThemeButtonClass(colorTheme, 'primary')} rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2`}
                   >
                     <Save size={16} />
                     {isSaving ? 'Sparar...' : 'Spara'}
@@ -479,7 +508,7 @@ const AdvancedSearchModal = ({
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => handleLoadSearch(search)}
-                        className="p-2 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"
+                        className={`p-2 ${getHoverButtonClass()} rounded-lg transition-colors`}
                         title="Ladda sökning"
                       >
                         <Search size={16} />
@@ -519,7 +548,7 @@ const AdvancedSearchModal = ({
                 onClick={handleApply}
                 className={`px-6 py-2 rounded-lg text-sm font-medium transition-colors ${
                   hasActiveFilters()
-                    ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-500/20'
+                    ? `${getThemeButtonClass(colorTheme, 'primary')} shadow-lg`
                     : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400 cursor-not-allowed'
                 }`}
                 disabled={!hasActiveFilters()}

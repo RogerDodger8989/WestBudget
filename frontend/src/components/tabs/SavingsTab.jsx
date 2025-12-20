@@ -3,9 +3,12 @@ import { PiggyBank, Target, Wallet, Plus, Edit2, Trash2, ArrowUp, ArrowDown, Tre
 import { api } from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { formatAmount, getAmountClassName } from '../../utils/formatAmount';
+import { useTheme } from '../../contexts/ThemeContext';
+import { getThemeButtonClass, getThemeRingClass } from '../../utils/getThemeClasses';
 
 const SavingsTab = ({ getTitle, reloadData }) => {
   const { showToast } = useToast();
+  const { colorTheme } = useTheme();
   const [goals, setGoals] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -212,7 +215,7 @@ const SavingsTab = ({ getTitle, reloadData }) => {
               setGoalForm({ name: '', target_amount: '', deadline: '', category: '', description: '', status: 'Aktiv' });
               setIsGoalModalOpen(true);
             }}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm"
+            className={`flex items-center gap-2 ${getThemeButtonClass(colorTheme, 'primary')} px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm`}
           >
             <Plus size={16} /> Nytt Sparmål
           </button>
@@ -223,7 +226,7 @@ const SavingsTab = ({ getTitle, reloadData }) => {
               setAccountForm({ name: '', description: '', category: '', status: 'Aktiv' });
               setIsAccountModalOpen(true);
             }}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm"
+            className={`flex items-center gap-2 ${getThemeButtonClass(colorTheme, 'primary')} px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm`}
           >
             <Plus size={16} /> Nytt Spar-konto
           </button>
@@ -497,7 +500,7 @@ const SavingsTab = ({ getTitle, reloadData }) => {
                   type="text"
                   value={goalForm.name}
                   onChange={(e) => setGoalForm({ ...goalForm, name: e.target.value })}
-                  className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className={`w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-white focus:outline-none focus:ring-2 ${getThemeRingClass(colorTheme)}`}
                   placeholder="T.ex. Resekassa"
                 />
               </div>
@@ -508,7 +511,7 @@ const SavingsTab = ({ getTitle, reloadData }) => {
                   type="number"
                   value={goalForm.target_amount}
                   onChange={(e) => setGoalForm({ ...goalForm, target_amount: e.target.value })}
-                  className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className={`w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-white focus:outline-none focus:ring-2 ${getThemeRingClass(colorTheme)}`}
                   placeholder="50000"
                 />
               </div>
@@ -519,7 +522,7 @@ const SavingsTab = ({ getTitle, reloadData }) => {
                   type="date"
                   value={goalForm.deadline}
                   onChange={(e) => setGoalForm({ ...goalForm, deadline: e.target.value })}
-                  className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className={`w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-white focus:outline-none focus:ring-2 ${getThemeRingClass(colorTheme)}`}
                 />
               </div>
 
@@ -528,7 +531,7 @@ const SavingsTab = ({ getTitle, reloadData }) => {
                 <textarea
                   value={goalForm.description}
                   onChange={(e) => setGoalForm({ ...goalForm, description: e.target.value })}
-                  className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className={`w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-white focus:outline-none focus:ring-2 ${getThemeRingClass(colorTheme)}`}
                   rows={3}
                   placeholder="Beskrivning av målet..."
                 />
@@ -537,7 +540,7 @@ const SavingsTab = ({ getTitle, reloadData }) => {
               <div className="flex gap-3 pt-4">
                 <button
                   onClick={editingGoal ? handleUpdateGoal : handleCreateGoal}
-                  className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all"
+                  className={`flex-1 ${getThemeButtonClass(colorTheme, 'primary')} px-4 py-2.5 rounded-xl text-sm font-medium transition-all`}
                 >
                   {editingGoal ? 'Spara ändringar' : 'Skapa mål'}
                 </button>
@@ -603,7 +606,7 @@ const SavingsTab = ({ getTitle, reloadData }) => {
               <div className="flex gap-3 pt-4">
                 <button
                   onClick={editingAccount ? handleUpdateAccount : handleCreateAccount}
-                  className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all"
+                  className={`flex-1 ${getThemeButtonClass(colorTheme, 'primary')} px-4 py-2.5 rounded-xl text-sm font-medium transition-all`}
                 >
                   {editingAccount ? 'Spara ändringar' : 'Skapa konto'}
                 </button>
@@ -683,7 +686,7 @@ const SavingsTab = ({ getTitle, reloadData }) => {
                           setTransferData({ ...transferData, goal_id: parseInt(value.replace('goal_', '')), account_id: null });
                         }
                       }}
-                      className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      className={`w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-white focus:outline-none focus:ring-2 ${getThemeRingClass(colorTheme)}`}
                     >
                       <option value="">Välj...</option>
                       <optgroup label="Spar-konton">
@@ -707,7 +710,7 @@ const SavingsTab = ({ getTitle, reloadData }) => {
                   type="number"
                   value={transferData.amount}
                   onChange={(e) => setTransferData({ ...transferData, amount: e.target.value })}
-                  className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className={`w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-white focus:outline-none focus:ring-2 ${getThemeRingClass(colorTheme)}`}
                   placeholder="1000"
                 />
               </div>
@@ -718,7 +721,7 @@ const SavingsTab = ({ getTitle, reloadData }) => {
                   type="date"
                   value={transferData.date}
                   onChange={(e) => setTransferData({ ...transferData, date: e.target.value })}
-                  className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className={`w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-white focus:outline-none focus:ring-2 ${getThemeRingClass(colorTheme)}`}
                 />
               </div>
 
@@ -727,7 +730,7 @@ const SavingsTab = ({ getTitle, reloadData }) => {
                 <textarea
                   value={transferData.notes}
                   onChange={(e) => setTransferData({ ...transferData, notes: e.target.value })}
-                  className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className={`w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-white focus:outline-none focus:ring-2 ${getThemeRingClass(colorTheme)}`}
                   rows={2}
                   placeholder="Notering..."
                 />
@@ -736,7 +739,7 @@ const SavingsTab = ({ getTitle, reloadData }) => {
               <div className="flex gap-3 pt-4">
                 <button
                   onClick={handleTransfer}
-                  className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all"
+                  className={`flex-1 ${getThemeButtonClass(colorTheme, 'primary')} px-4 py-2.5 rounded-xl text-sm font-medium transition-all`}
                 >
                   Genomför överföring
                 </button>

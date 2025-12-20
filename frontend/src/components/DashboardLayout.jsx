@@ -86,6 +86,17 @@ const DashboardLayout = ({
     previousTabRef.current = activeTab;
   }, [activeTab, reloadData]);
 
+  // Uppdatera selectedAgreement när agreements ändras (t.ex. efter bilduppladdning)
+  useEffect(() => {
+    if (selectedAgreement) {
+      const updatedAgreement = agreements.find(a => a.id === selectedAgreement.id);
+      if (updatedAgreement && JSON.stringify(updatedAgreement.images) !== JSON.stringify(selectedAgreement.images)) {
+        console.log('📸 [DashboardLayout] Uppdaterar selectedAgreement från agreements prop:', updatedAgreement.images);
+        setSelectedAgreement(updatedAgreement);
+      }
+    }
+  }, [agreements]);
+
   const handleCategoryChange = async (id, newCategory) => {
     // Spara gamla kategorin för undo
     const oldTransaction = transactions.find(t => t.id === id);
@@ -792,11 +803,39 @@ const DashboardLayout = ({
       
       console.log('✅ [DashboardLayout] Bild uppladdat, resultat:', result);
       
-      // Ladda om data för att få uppdaterad bildlista
+      // Uppdatera selectedAgreement direkt med den nya bilden
+      if (selectedAgreement && selectedAgreement.id === agreementId && result && result.image_path) {
+        // Parse existing images
+        let currentImages = [];
+        if (selectedAgreement.images) {
+          try {
+            currentImages = Array.isArray(selectedAgreement.images) 
+              ? selectedAgreement.images 
+              : JSON.parse(selectedAgreement.images);
+          } catch (e) {
+            currentImages = [];
+          }
+        }
+        
+        // Lägg till den nya bilden
+        const updatedImages = [...currentImages, result.image_path];
+        
+        // Uppdatera selectedAgreement
+        setSelectedAgreement({
+          ...selectedAgreement,
+          images: JSON.stringify(updatedImages)
+        });
+        
+        console.log('📸 [DashboardLayout] Uppdaterade selectedAgreement med ny bild:', updatedImages);
+      }
+      
+      // Ladda om data för att synka med backend
       if (reloadData) {
         console.log('🔄 Laddar om data...');
         await reloadData();
       }
+      
+      // selectedAgreement kommer att uppdateras automatiskt via useEffect när agreements ändras
       
       return result;
     } catch (error) {
@@ -927,7 +966,7 @@ const DashboardLayout = ({
       />
       
       <div 
-        className={`fixed inset-y-0 right-0 w-full sm:w-[400px] bg-white dark:bg-zinc-900 shadow-2xl z-50 transform transition-transform duration-300 ease-in-out border-l border-zinc-200 dark:border-zinc-800 ${
+        className={`fixed inset-y-0 right-0 w-full sm:w-[500px] bg-white dark:bg-zinc-900 shadow-2xl z-50 transform transition-transform duration-300 ease-in-out border-l border-zinc-200 dark:border-zinc-800 ${
           (selectedTransaction || selectedAgreement || selectedVehicle || selectedVehicleExpense) ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
@@ -1221,6 +1260,8 @@ const DashboardLayout = ({
                 transactions={transactions}
                 userName={userName}
                 setUserName={setUserName}
+                setActiveTab={setActiveTab}
+                setSelectedTransaction={setSelectedTransaction}
               />
             )}
 

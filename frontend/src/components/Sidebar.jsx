@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import NavItem from './NavItem';
 import logo from '../logo.png';
+import { useTheme } from '../contexts/ThemeContext';
+import { getThemeTextClass } from '../utils/getThemeClasses';
 
 const Sidebar = ({ 
   isSidebarCollapsed, 
@@ -27,6 +29,18 @@ const Sidebar = ({
   toggleTheme,
   onLogout
 }) => {
+  const { colorTheme } = useTheme();
+  
+  const getHoverTextClass = () => {
+    if (colorTheme === 'indigo') return 'hover:text-indigo-600 dark:hover:text-indigo-400';
+    if (colorTheme === 'blue') return 'hover:text-blue-600 dark:hover:text-blue-400';
+    if (colorTheme === 'emerald') return 'hover:text-emerald-600 dark:hover:text-emerald-400';
+    if (colorTheme === 'purple') return 'hover:text-purple-600 dark:hover:text-purple-400';
+    if (colorTheme === 'rose') return 'hover:text-rose-600 dark:hover:text-rose-400';
+    if (colorTheme === 'amber') return 'hover:text-amber-600 dark:hover:text-amber-400';
+    return 'hover:text-indigo-600 dark:hover:text-indigo-400';
+  };
+  
   return (
     <aside 
       className={`${
@@ -45,7 +59,7 @@ const Sidebar = ({
 
       <button 
         onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-        className="absolute -right-3 top-8 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-full p-1 text-zinc-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all shadow-sm z-50 hover:scale-110"
+        className={`absolute -right-3 top-8 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-full p-1 text-zinc-500 transition-all shadow-sm z-50 hover:scale-110 ${getHoverTextClass()}`}
       >
         {isSidebarCollapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
       </button>

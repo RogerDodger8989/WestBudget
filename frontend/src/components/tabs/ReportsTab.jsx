@@ -5,6 +5,8 @@ import StatCard from '../StatCard';
 import { filterByDateRange } from '../../utils/filterByDateRange';
 import { formatAmount, getAmountClassName } from '../../utils/formatAmount';
 import { useToast } from '../../contexts/ToastContext';
+import { useTheme } from '../../contexts/ThemeContext';
+import { getThemeButtonClass, getThemeTextClass } from '../../utils/getThemeClasses';
 
 const ReportsTab = ({ 
   transactions = [], 
@@ -19,6 +21,7 @@ const ReportsTab = ({
   loading 
 }) => {
   const { showToast } = useToast();
+  const { colorTheme } = useTheme();
   const [compareMode, setCompareMode] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState(new Set());
   const [includeLoans, setIncludeLoans] = useState(false);
@@ -819,24 +822,20 @@ const ReportsTab = ({
             <DateRangeBtn active={dateRange === 'month'} onClick={() => setDateRange('month')}>Denna Månad</DateRangeBtn>
             <DateRangeBtn active={dateRange === 'lastMonth'} onClick={() => setDateRange('lastMonth')}>Föregående Månad</DateRangeBtn>
             <DateRangeBtn active={dateRange === 'year'} onClick={() => setDateRange('year')}>Hela Året</DateRangeBtn>
-            <DateRangeBtn active={dateRange === 'custom'} onClick={() => setIsCustomDateModalOpen(true)} icon={<Calendar size={14} className="text-indigo-500 dark:text-indigo-400" />}>Anpassad</DateRangeBtn>
+            <DateRangeBtn active={dateRange === 'custom'} onClick={() => setIsCustomDateModalOpen(true)} icon={<Calendar size={14} className={getThemeTextClass(colorTheme, false) + ' dark:' + getThemeTextClass(colorTheme, true)} />}>Anpassad</DateRangeBtn>
           </div>
         </div>
         <div className="flex gap-3">
           <button
             onClick={() => setCompareMode(!compareMode)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
-              compareMode
-                ? 'bg-indigo-600 text-white hover:bg-indigo-500'
-                : 'bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700'
-            }`}
+            className={`flex items-center gap-2 ${getThemeButtonClass(colorTheme, 'primary')} px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-lg hover:shadow-xl active:scale-95`}
           >
             <BarChart3 size={16} />
             {compareMode ? 'Stäng Jämförelse' : 'Jämför Period'}
           </button>
           <button 
             onClick={handleExportPDF}
-            className="flex items-center gap-2 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm"
+            className={`flex items-center gap-2 ${getThemeButtonClass(colorTheme, 'primary')} px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-lg hover:shadow-xl active:scale-95`}
           >
             <Download size={16} /> Exportera PDF
           </button>

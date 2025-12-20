@@ -1,8 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Tag, FileText, UploadCloud, Trash2, ChevronRight, Calendar, DollarSign, Building2, Image as ImageIcon, Car } from 'lucide-react';
 import { formatAmount } from '../utils/formatAmount';
+import { useTheme } from '../contexts/ThemeContext';
+import { getThemeBgClass, getThemeBorderClass, getThemeButtonClass, getThemeTextClass, getThemeRingClass } from '../utils/getThemeClasses';
+import ImageLightbox from './ImageLightbox';
+import { useImageLightbox } from '../hooks/useImageLightbox';
 
 const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, categories, vehicles = [] }) => {
+  const { colorTheme, isDarkMode } = useTheme();
+  const { lightboxImages, lightboxIndex, openLightbox, closeLightbox, setLightboxIndex } = useImageLightbox();
   const fileInputRef = useRef(null);
   const [formData, setFormData] = useState({
     name: agreement.name || '',
@@ -55,7 +61,10 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
       start_date: agreement.start_date || '',
       end_date: agreement.end_date || ''
     });
-    setImages(parseImages(agreement.images));
+    // Parse och uppdatera bilder
+    const parsedImages = parseImages(agreement.images);
+    console.log('🖼️ [AgreementDrawer] useEffect - Parsed images:', parsedImages, 'from agreement.images:', agreement.images);
+    setImages(parsedImages);
     
     // Uppdatera linkedVehicleId
     if (linkedVehicle) {
@@ -230,7 +239,7 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
             type="text"
             value={formData.name}
             onChange={(e) => handleChange('name', e.target.value)}
-            className="w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+            className={`w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:ring-2 ${getThemeRingClass(colorTheme)} focus:border-transparent outline-none`}
           />
         </div>
 
@@ -243,7 +252,7 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
             type="text"
             value={formData.provider}
             onChange={(e) => handleChange('provider', e.target.value)}
-            className="w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+            className={`w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:ring-2 ${getThemeRingClass(colorTheme)} focus:border-transparent outline-none`}
           />
         </div>
 
@@ -259,19 +268,19 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
               min="0"
               value={formData.cost}
               onChange={(e) => handleChange('cost', e.target.value)}
-              className="w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+              className={`w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:ring-2 ${getThemeRingClass(colorTheme)} focus:border-transparent outline-none`}
             />
           </div>
 
           <div className="space-y-2">
             <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
-              <Calendar size={14} className="text-indigo-500 dark:text-indigo-400" /> Frekvens
+              <Calendar size={14} className={getThemeTextClass(colorTheme, false) + ' dark:' + getThemeTextClass(colorTheme, true)} /> Frekvens
             </label>
             <div className="relative">
               <select
                 value={formData.frequency}
                 onChange={(e) => handleChange('frequency', e.target.value)}
-                className="w-full appearance-none bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none cursor-pointer"
+                className={`w-full appearance-none bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 ${getThemeRingClass(colorTheme)} focus:border-transparent outline-none cursor-pointer`}
               >
                 <option value="Månadsvis">Månadsvis</option>
                 <option value="Kvartalsvis">Kvartalsvis</option>
@@ -286,7 +295,7 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
-              <Calendar size={14} className="text-indigo-500 dark:text-indigo-400" /> Startdatum
+              <Calendar size={14} className={getThemeTextClass(colorTheme, false) + ' dark:' + getThemeTextClass(colorTheme, true)} /> Startdatum
             </label>
             <div className="relative">
               <input
@@ -327,14 +336,14 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
                 onClick={() => startDatePickerRef.current?.showPicker?.() || startDatePickerRef.current?.click()}
                 className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded transition-colors"
               >
-                <Calendar size={18} className="text-indigo-500 dark:text-indigo-400" />
+                <Calendar size={18} className={getThemeTextClass(colorTheme, false) + ' dark:' + getThemeTextClass(colorTheme, true)} />
               </button>
             </div>
           </div>
 
           <div className="space-y-2">
             <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
-              <Calendar size={14} className="text-indigo-500 dark:text-indigo-400" /> Slutdatum
+              <Calendar size={14} className={getThemeTextClass(colorTheme, false) + ' dark:' + getThemeTextClass(colorTheme, true)} /> Slutdatum
             </label>
             <div className="relative">
               <input
@@ -375,7 +384,7 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
                 onClick={() => endDatePickerRef.current?.showPicker?.() || endDatePickerRef.current?.click()}
                 className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded transition-colors"
               >
-                <Calendar size={18} className="text-indigo-500 dark:text-indigo-400" />
+                <Calendar size={18} className={getThemeTextClass(colorTheme, false) + ' dark:' + getThemeTextClass(colorTheme, true)} />
               </button>
             </div>
           </div>
@@ -426,7 +435,7 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
                 onClick={() => nextPaymentPickerRef.current?.showPicker?.() || nextPaymentPickerRef.current?.click()}
                 className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded transition-colors"
               >
-                <Calendar size={18} className="text-indigo-500 dark:text-indigo-400" />
+                <Calendar size={18} className={getThemeTextClass(colorTheme, false) + ' dark:' + getThemeTextClass(colorTheme, true)} />
               </button>
             </div>
           </div>
@@ -439,7 +448,7 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
               <select
                 value={formData.status}
                 onChange={(e) => handleChange('status', e.target.value)}
-                className="w-full appearance-none bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none cursor-pointer"
+                className={`w-full appearance-none bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 ${getThemeRingClass(colorTheme)} focus:border-transparent outline-none cursor-pointer`}
               >
                 <option value="Aktiv">Aktiv</option>
                 <option value="Uppsagd">Uppsagd</option>
@@ -482,7 +491,7 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
                   const vehicleId = e.target.value ? parseInt(e.target.value) : null;
                   setLinkedVehicleId(vehicleId);
                 }}
-                className="w-full appearance-none bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none cursor-pointer"
+                className={`w-full appearance-none bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 ${getThemeRingClass(colorTheme)} focus:border-transparent outline-none cursor-pointer`}
               >
                 <option value="">Ingen koppling</option>
                 {vehicles
@@ -514,7 +523,7 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
               value={formData.icon}
               onChange={(e) => handleChange('icon', e.target.value)}
               maxLength={2}
-              className="w-20 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-2xl text-center outline-none focus:ring-2 focus:ring-indigo-500"
+              className={`w-20 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-2xl text-center outline-none focus:ring-2 ${getThemeRingClass(colorTheme)}`}
             />
             <div className="flex-1 flex flex-wrap gap-1">
               {iconOptions.map(icon => (
@@ -524,8 +533,15 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
                   onClick={() => handleChange('icon', icon)}
                   className={`w-8 h-8 rounded-lg flex items-center justify-center text-lg transition-all ${
                     formData.icon === icon
-                      ? 'bg-indigo-100 dark:bg-indigo-900/30 border-2 border-indigo-500'
-                      : 'bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:border-indigo-500'
+                      ? `${getThemeBgClass(colorTheme, isDarkMode)} border-2 ${getThemeBorderClass(colorTheme)}`
+                      : `bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 ${
+                        colorTheme === 'indigo' ? 'hover:border-indigo-500' :
+                        colorTheme === 'blue' ? 'hover:border-blue-500' :
+                        colorTheme === 'emerald' ? 'hover:border-emerald-500' :
+                        colorTheme === 'purple' ? 'hover:border-purple-500' :
+                        colorTheme === 'rose' ? 'hover:border-rose-500' :
+                        'hover:border-amber-500'
+                      }`
                   }`}
                 >
                   {icon}
@@ -572,7 +588,14 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
           
           <div 
             onClick={() => fileInputRef.current?.click()}
-            className="border-2 border-dashed border-zinc-300 dark:border-zinc-700 hover:border-indigo-500 dark:hover:border-indigo-500 rounded-xl p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-colors bg-zinc-50 dark:bg-zinc-800/30 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 group"
+            className={`border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-xl p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-colors bg-zinc-50 dark:bg-zinc-800/30 group ${
+              colorTheme === 'indigo' ? 'hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10' :
+              colorTheme === 'blue' ? 'hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10' :
+              colorTheme === 'emerald' ? 'hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10' :
+              colorTheme === 'purple' ? 'hover:border-purple-500 hover:bg-purple-50 dark:hover:bg-purple-500/10' :
+              colorTheme === 'rose' ? 'hover:border-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10' :
+              'hover:border-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10'
+            }`}
           >
             <div className="w-12 h-12 bg-white dark:bg-zinc-800 rounded-full flex items-center justify-center mb-3 shadow-sm group-hover:scale-110 transition-transform">
               <UploadCloud className="w-6 h-6 text-zinc-400 group-hover:text-indigo-500" />
@@ -587,27 +610,84 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
               {images.map((imagePath, index) => {
                 // Hantera både relativa och absoluta sökvägar
                 let imageUrl;
+                const normalizedPath = imagePath.replace(/\\/g, '/');
+                
+                console.log(`🖼️ [AgreementDrawer] Bild ${index + 1}:`, imagePath, 'Normaliserad:', normalizedPath);
+                
                 if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
                   // Fullständig URL
                   imageUrl = imagePath;
-                } else if (imagePath.includes(':\\') || imagePath.startsWith('/')) {
-                  // Absolut sökväg - använd custom file endpoint
-                  const normalizedPath = imagePath.replace(/\\/g, '/');
+                } else if (imagePath.includes(':\\') || (imagePath.startsWith('/') && !imagePath.startsWith('/uploads'))) {
+                  // Absolut sökväg (Windows eller Unix absolut) - använd custom file endpoint
                   imageUrl = `http://192.168.1.232:5000/api/files/${encodeURIComponent(normalizedPath)}`;
                 } else {
                   // Relativ sökväg - använd uploads endpoint
-                  const normalizedPath = imagePath.replace(/\\/g, '/');
-                  imageUrl = `http://192.168.1.232:5000/uploads/${normalizedPath}`;
+                  // Om sökvägen redan börjar med "uploads/", ta bort det
+                  let pathToUse = normalizedPath;
+                  if (pathToUse.startsWith('uploads/')) {
+                    pathToUse = pathToUse.replace('uploads/', '');
+                  }
+                  // Om sökvägen börjar med "avtal/", använd den direkt
+                  if (pathToUse.startsWith('avtal/')) {
+                    imageUrl = `http://192.168.1.232:5000/uploads/${pathToUse}`;
+                  } else {
+                    // Annars, försök med avtal/ prefix
+                    imageUrl = `http://192.168.1.232:5000/uploads/avtal/${pathToUse}`;
+                  }
                 }
+                
+                console.log(`🖼️ [AgreementDrawer] Bild URL:`, imageUrl);
                 
                 return (
                   <div key={index} className="relative group">
                     <img 
                       src={imageUrl}
                       alt={`Avtalsbild ${index + 1}`}
-                      className="w-full h-32 object-cover rounded-lg border border-zinc-200 dark:border-zinc-700"
+                      className="w-full h-32 object-cover rounded-lg border border-zinc-200 dark:border-zinc-700 cursor-pointer hover:opacity-90 transition-opacity"
+                      onDoubleClick={() => {
+                        openLightbox(images, index);
+                      }}
+                      onLoad={() => {
+                        console.log(`✅ [AgreementDrawer] Bild ${index + 1} laddad:`, imageUrl);
+                      }}
                       onError={(e) => {
-                        e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23ccc" width="100" height="100"/%3E%3Ctext fill="%23999" x="50%" y="50%" text-anchor="middle" dy=".3em" font-size="12"%3EBild saknas%3C/text%3E%3C/svg%3E';
+                        console.error('❌ [AgreementDrawer] Kunde inte ladda bild:', imageUrl, 'Original sökväg:', imagePath);
+                        
+                        // Försök alternativa sökvägar
+                        const alternatives = [];
+                        
+                        // Om det är en relativ sökväg, försök olika varianter
+                        if (!imagePath.includes(':\\') && !imagePath.startsWith('/')) {
+                          const basePath = normalizedPath.replace('avtal/', '');
+                          alternatives.push(
+                            `http://192.168.1.232:5000/api/files/${encodeURIComponent(normalizedPath)}`,
+                            `http://192.168.1.232:5000/uploads/${normalizedPath}`,
+                            `http://192.168.1.232:5000/uploads/avtal/${basePath}`,
+                            `http://192.168.1.232:5000/api/files/${encodeURIComponent(basePath)}`
+                          );
+                        } else {
+                          // För absoluta sökvägar, försök med olika encoding
+                          alternatives.push(
+                            `http://192.168.1.232:5000/api/files/${normalizedPath}`,
+                            `http://192.168.1.232:5000/api/files/${encodeURIComponent(normalizedPath)}`
+                          );
+                        }
+                        
+                        // Försök nästa alternativ
+                        let altIndex = 0;
+                        const tryNext = () => {
+                          if (altIndex < alternatives.length) {
+                            console.log(`🔄 [AgreementDrawer] Försöker alternativ ${altIndex + 1}:`, alternatives[altIndex]);
+                            e.target.src = alternatives[altIndex];
+                            altIndex++;
+                            e.target.onerror = tryNext;
+                          } else {
+                            // Alla alternativ misslyckades
+                            e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23ccc" width="100" height="100"/%3E%3Ctext fill="%23999" x="50%" y="50%" text-anchor="middle" dy=".3em" font-size="12"%3EBild saknas%3C/text%3E%3C/svg%3E';
+                            e.target.onerror = null;
+                          }
+                        };
+                        tryNext();
                       }}
                     />
                     <button
@@ -633,12 +713,21 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
         </div>
 
       </div>
+      
+      {/* Image Lightbox */}
+      {lightboxImages && lightboxImages.length > 0 && (
+        <ImageLightbox
+          images={lightboxImages}
+          currentIndex={lightboxIndex}
+          onClose={closeLightbox}
+        />
+      )}
 
       <div className="p-6 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 flex gap-3">
         <button 
           onClick={handleSave}
           disabled={isSaving || isDeleting}
-          className="flex-1 bg-zinc-900 dark:bg-white text-white dark:text-black font-semibold py-3 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+          className={`flex-1 ${getThemeButtonClass(colorTheme, 'primary')} font-semibold py-3 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed`}
         >
           {isSaving ? 'Sparar...' : 'Spara Ändringar'}
         </button>

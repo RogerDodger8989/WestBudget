@@ -1,8 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { FileText, X, Calendar, DollarSign, Tag, AlertCircle, PiggyBank } from 'lucide-react';
 import { api } from '../api';
+import { useTheme } from '../contexts/ThemeContext';
+import { getThemeButtonClass, getThemeBgClass } from '../utils/getThemeClasses';
 
 const AddTransactionModal = ({ onClose, onSave, categories = [] }) => {
+  const { colorTheme, isDarkMode } = useTheme();
   const [formData, setFormData] = useState({
     title: '',
     date: new Date().toISOString().split('T')[0],
@@ -363,7 +366,7 @@ const AddTransactionModal = ({ onClose, onSave, categories = [] }) => {
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 px-4 py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+              className={`flex-1 px-4 py-3 text-white rounded-xl font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 ${getThemeButtonClass(colorTheme, 'primary')}`}
             >
               {loading ? (
                 <>

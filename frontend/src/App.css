@@ -1,31 +1,72 @@
-.animate-fade-in {
-  animation: fadeIn 0.5s ease-in-out;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --theme-primary: 99 102 241; /* indigo-500 */
+  --theme-primary-hover: 79 70 229; /* indigo-600 */
+  --theme-primary-light: 238 242 255; /* indigo-50 */
+  --theme-primary-dark: 30 27 75; /* indigo-900 */
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+[data-theme="indigo"] {
+  --theme-primary: 99 102 241;
+  --theme-primary-hover: 79 70 229;
+  --theme-primary-light: 238 242 255;
+  --theme-primary-dark: 30 27 75;
 }
 
-/* Toast animations */
-@keyframes slide-in-right {
-  from {
-    transform: translateX(100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
+[data-theme="blue"] {
+  --theme-primary: 59 130 246;
+  --theme-primary-hover: 37 99 235;
+  --theme-primary-light: 239 246 255;
+  --theme-primary-dark: 30 58 138;
 }
 
-.animate-slide-in-right {
-  animation: slide-in-right 0.3s ease-out;
+[data-theme="emerald"] {
+  --theme-primary: 16 185 129;
+  --theme-primary-hover: 5 150 105;
+  --theme-primary-light: 236 253 245;
+  --theme-primary-dark: 6 78 59;
 }
 
+[data-theme="purple"] {
+  --theme-primary: 168 85 247;
+  --theme-primary-hover: 147 51 234;
+  --theme-primary-light: 250 245 255;
+  --theme-primary-dark: 88 28 135;
+}
+
+[data-theme="rose"] {
+  --theme-primary: 244 63 94;
+  --theme-primary-hover: 225 29 72;
+  --theme-primary-light: 255 241 242;
+  --theme-primary-dark: 127 29 29;
+}
+
+[data-theme="amber"] {
+  --theme-primary: 245 158 11;
+  --theme-primary-hover: 217 119 6;
+  --theme-primary-light: 255 251 235;
+  --theme-primary-dark: 120 53 15;
+}
+
+.theme-primary {
+  background-color: rgb(var(--theme-primary));
+}
+
+.theme-primary-hover:hover {
+  background-color: rgb(var(--theme-primary-hover));
+}
+
+.theme-primary-text {
+  color: rgb(var(--theme-primary));
+}
+
+.theme-primary-bg {
+  background-color: rgb(var(--theme-primary-light));
+}
+
+.dark .theme-primary-bg {
+  background-color: rgb(var(--theme-primary-dark) / 0.3);
+}

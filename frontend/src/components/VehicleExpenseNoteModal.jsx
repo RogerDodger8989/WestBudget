@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { MessageSquare, X } from 'lucide-react';
+import { useTheme } from '../contexts/ThemeContext';
+import { getThemeButtonClass, getThemeTextClass, getThemeRingClass } from '../utils/getThemeClasses';
 
 const VehicleExpenseNoteModal = ({ expense, vehicle, onClose, onSave }) => {
+  const { colorTheme } = useTheme();
   const [note, setNote] = useState(expense?.note || "");
 
   const handleSubmit = async (e) => {
@@ -16,7 +19,7 @@ const VehicleExpenseNoteModal = ({ expense, vehicle, onClose, onSave }) => {
       <div className="relative w-full max-w-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[90vh]">
         <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between flex-shrink-0">
           <h2 className="text-lg font-bold text-zinc-900 dark:text-white flex items-center gap-2">
-            <MessageSquare size={18} className="text-indigo-500" />
+            <MessageSquare size={18} className={getThemeTextClass(colorTheme, false)} />
             Notering
           </h2>
           <button onClick={onClose} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors">
@@ -40,7 +43,7 @@ const VehicleExpenseNoteModal = ({ expense, vehicle, onClose, onSave }) => {
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="Lägg till noteringar..."
-              className="w-full h-32 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+              className={`w-full h-32 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white outline-none focus:ring-2 ${getThemeRingClass(colorTheme)} resize-none`}
               autoFocus
             />
           </div>
@@ -55,7 +58,7 @@ const VehicleExpenseNoteModal = ({ expense, vehicle, onClose, onSave }) => {
             </button>
             <button 
               type="submit"
-              className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg shadow-lg shadow-indigo-500/20 transition-all"
+              className={`px-6 py-2 ${getThemeButtonClass(colorTheme, 'primary')} font-semibold rounded-lg shadow-lg transition-all`}
             >
               Spara
             </button>

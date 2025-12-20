@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Merge, X, AlertCircle } from 'lucide-react';
+import { useTheme } from '../contexts/ThemeContext';
+import { getThemeButtonClass, getThemeTextClass, getThemeRingClass } from '../utils/getThemeClasses';
 
 const MergeCategoryModal = ({ isOpen, onClose, categories, onMerge }) => {
+  const { colorTheme } = useTheme();
   const [sourceId, setSourceId] = useState('');
   const [targetId, setTargetId] = useState('');
   const [newName, setNewName] = useState('');
@@ -49,7 +52,7 @@ const MergeCategoryModal = ({ isOpen, onClose, categories, onMerge }) => {
       <div className="relative w-full max-w-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[90vh]">
         <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between flex-shrink-0">
           <h2 className="text-lg font-bold text-zinc-900 dark:text-white flex items-center gap-2">
-            <Merge size={18} className="text-indigo-500" />
+            <Merge size={18} className={getThemeTextClass(colorTheme, false)} />
             Merga Kategorier
           </h2>
           <button onClick={onClose} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors">
@@ -75,7 +78,7 @@ const MergeCategoryModal = ({ isOpen, onClose, categories, onMerge }) => {
             <select
               value={sourceId}
               onChange={(e) => setSourceId(e.target.value)}
-              className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-4 py-2 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+              className={`w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-4 py-2 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 ${getThemeRingClass(colorTheme)}`}
             >
               <option value="">Välj kategori...</option>
               {categories.map(cat => (
@@ -98,7 +101,7 @@ const MergeCategoryModal = ({ isOpen, onClose, categories, onMerge }) => {
             <select
               value={targetId}
               onChange={(e) => setTargetId(e.target.value)}
-              className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-4 py-2 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+              className={`w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-4 py-2 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 ${getThemeRingClass(colorTheme)}`}
             >
               <option value="">Välj kategori...</option>
               {categories.filter(c => c.id !== parseInt(sourceId)).map(cat => (
@@ -141,7 +144,7 @@ const MergeCategoryModal = ({ isOpen, onClose, categories, onMerge }) => {
           <button
             onClick={handleMerge}
             disabled={!sourceId || !targetId || !newName.trim() || sourceId === targetId}
-            className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg shadow-lg shadow-indigo-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`px-6 py-2 ${getThemeButtonClass(colorTheme, 'primary')} font-semibold rounded-lg shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             Merga Kategorier
           </button>

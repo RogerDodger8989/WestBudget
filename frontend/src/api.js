@@ -45,6 +45,13 @@ export const api = {
     return handleResponse(res);
   },
 
+  deleteTransactionReceipt: async (transactionId, receiptPathToDelete) => {
+    const res = await fetch(`${API_BASE_URL}/transactions/${transactionId}/receipt?path=${encodeURIComponent(receiptPathToDelete)}`, {
+      method: 'DELETE',
+    });
+    return handleResponse(res);
+  },
+
   // --- Filuppladdning (Kvitton) ---
   uploadReceipt: async (file, transactionId = null) => {
     const formData = new FormData();
@@ -539,6 +546,32 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ widgets }),
+    });
+    return handleResponse(res);
+  },
+
+  // --- History ---
+  getHistory: async (limit = 100, entityType = null) => {
+    const params = new URLSearchParams();
+    if (limit) params.append('limit', limit);
+    if (entityType) params.append('entity_type', entityType);
+    
+    const res = await fetch(`${API_BASE_URL}/history?${params.toString()}`);
+    return handleResponse(res);
+  },
+
+  undoHistoryAction: async (historyId) => {
+    const res = await fetch(`${API_BASE_URL}/history/${historyId}/undo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    return handleResponse(res);
+  },
+
+  clearHistory: async () => {
+    const res = await fetch(`${API_BASE_URL}/history/clear`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
     });
     return handleResponse(res);
   },

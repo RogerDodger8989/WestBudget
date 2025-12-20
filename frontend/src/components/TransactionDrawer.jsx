@@ -3,9 +3,13 @@ import { X, Tag, FileText, CheckCircle, UploadCloud, Trash2, ChevronRight, Piggy
 import { formatAmount, getAmountClassName } from '../utils/formatAmount';
 import { api } from '../api';
 import { useToast } from '../contexts/ToastContext';
+import { useTheme } from '../contexts/ThemeContext';
+import { getThemeButtonClass, getThemeTextClass, getThemeBgClass, getThemeBorderClass, getThemeRingClass } from '../utils/getThemeClasses';
+import ImageLightbox from './ImageLightbox';
 
 const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUpload, categories, onSave, reloadData, vehicles = [] }) => {
   const { showToast } = useToast();
+  const { colorTheme } = useTheme();
   const fileInputRef = useRef(null);
   const [savingsGoals, setSavingsGoals] = useState([]);
   const [savingsAccounts, setSavingsAccounts] = useState([]);
@@ -20,6 +24,21 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
+  const [lightboxImages, setLightboxImages] = useState(null);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
+  
+  // Parse receipt paths (support both old single path and new JSON array)
+  const parseReceiptPaths = (receiptPathData) => {
+    if (!receiptPathData) return [];
+    try {
+      const parsed = JSON.parse(receiptPathData);
+      return Array.isArray(parsed) ? parsed : [receiptPathData];
+    } catch {
+      return [receiptPathData];
+    }
+  };
+  
+  const receiptPaths = parseReceiptPaths(transaction.receipt_path);
   
   // Parse amount to determine formatting
   const amountValue = typeof transaction.amount === 'string' 
@@ -278,7 +297,7 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
 
   return (
     <div className="h-full flex flex-col">
-      <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-start justify-between bg-zinc-50 dark:bg-zinc-900/50">
+      <div className="p-4 sm:p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-start justify-between bg-zinc-50 dark:bg-zinc-900/50">
         <div>
           <h2 className="text-lg font-bold text-zinc-900 dark:text-white mb-1">{transaction.title}</h2>
           <p className="text-sm text-zinc-500">{transaction.date}</p>
@@ -291,7 +310,7 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-8">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 space-y-6">
         
         <div className="text-center py-4">
           <span className={`text-4xl font-bold tracking-tight ${amountClass}`}>
@@ -316,7 +335,7 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
             {!isAddingCategory && (
               <button
                 onClick={() => setIsAddingCategory(true)}
-                className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 flex items-center gap-1"
+                className={`text-xs ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} hover:opacity-80 flex items-center gap-1 shrink-0`}
               >
                 <Plus size={12} />
                 Lägg till kategori
@@ -341,12 +360,12 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
                   }}
                   placeholder="Nytt kategorinamn"
                   autoFocus
-                  className="flex-1 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className={`flex-1 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 ${getThemeRingClass(colorTheme)}`}
                 />
                 <button
                   onClick={handleCreateCategory}
                   disabled={isCreatingCategory || !newCategoryName.trim()}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-400 text-white rounded-xl text-sm font-medium transition-all flex items-center gap-2"
+                  className={`px-4 py-2 disabled:bg-zinc-400 text-white rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${getThemeButtonClass(colorTheme, 'primary')}`}
                 >
                   {isCreatingCategory ? 'Skapar...' : 'Spara'}
                 </button>
@@ -355,7 +374,7 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
                     setIsAddingCategory(false);
                     setNewCategoryName('');
                   }}
-                  className="px-4 py-2 bg-zinc-200 dark:bg-zinc-700 hover:bg-zinc-300 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-300 rounded-xl text-sm font-medium transition-all"
+                  className={getThemeButtonClass(colorTheme, 'outline') + ' px-4 py-2 rounded-xl text-sm font-medium transition-all'}
                 >
                   <X size={16} />
                 </button>
@@ -366,7 +385,7 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
               <select 
                 value={transaction.category}
                 onChange={(e) => onCategoryChange(transaction.id, e.target.value)}
-                className="w-full appearance-none bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all cursor-pointer"
+                className={`w-full appearance-none bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 ${getThemeRingClass(colorTheme)} focus:border-transparent outline-none transition-all cursor-pointer`}
               >
                 {categories.map(cat => (
                   <option key={cat} value={cat}>{cat}</option>
@@ -382,9 +401,9 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
             <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
               <FileText size={14} /> Underlag & Kvitto
             </label>
-            {transaction.receipt && (
+            {receiptPaths.length > 0 && (
               <span className="text-xs text-emerald-500 flex items-center gap-1 font-medium">
-                <CheckCircle size={12} /> Kvitto finns
+                <CheckCircle size={12} /> {receiptPaths.length} kvitto{receiptPaths.length !== 1 ? 'n' : ''}
               </span>
             )}
           </div>
@@ -397,23 +416,137 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
             className="hidden"
           />
           
-          <div 
-            onClick={() => fileInputRef.current?.click()}
-            className="border-2 border-dashed border-zinc-300 dark:border-zinc-700 hover:border-indigo-500 dark:hover:border-indigo-500 rounded-xl p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-colors bg-zinc-50 dark:bg-zinc-800/30 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 group"
-          >
-            <div className="w-12 h-12 bg-white dark:bg-zinc-800 rounded-full flex items-center justify-center mb-3 shadow-sm group-hover:scale-110 transition-transform">
-              <UploadCloud className="w-6 h-6 text-zinc-400 group-hover:text-indigo-500" />
-            </div>
-            <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Klicka för att ladda upp</p>
-            <p className="text-xs text-zinc-500 mt-1">PDF, PNG, JPG (max 16MB)</p>
-          </div>
-          
-          {transaction.receipt_path && (
-            <div className="mt-2 p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-100 dark:border-emerald-800">
-              <p className="text-xs text-emerald-700 dark:text-emerald-300 font-medium">Kvitto sparat:</p>
-              <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1 font-mono truncate">{transaction.receipt_path}</p>
+          {/* Visa alla kvitton som thumbnails */}
+          {receiptPaths.length > 0 && (
+            <div className="grid grid-cols-2 gap-3">
+              {receiptPaths.map((receiptPath, index) => {
+                // Konstruera bild-URL
+                let imageUrl;
+                const normalizedPath = receiptPath.replace(/\\/g, '/');
+                
+                if (receiptPath.startsWith('http://') || receiptPath.startsWith('https://')) {
+                  imageUrl = receiptPath;
+                } else if (receiptPath.includes(':\\') || (receiptPath.startsWith('/') && !receiptPath.startsWith('/uploads'))) {
+                  imageUrl = `http://192.168.1.232:5000/api/files/${encodeURIComponent(normalizedPath)}`;
+                } else {
+                  let pathToUse = normalizedPath;
+                  if (pathToUse.startsWith('uploads/')) {
+                    pathToUse = pathToUse.replace('uploads/', '');
+                  }
+                  if (pathToUse.startsWith('kvitto/')) {
+                    imageUrl = `http://192.168.1.232:5000/uploads/${pathToUse}`;
+                  } else {
+                    imageUrl = `http://192.168.1.232:5000/uploads/kvitto/${pathToUse}`;
+                  }
+                }
+                
+                const isImage = /\.(png|jpg|jpeg|gif|webp)$/i.test(receiptPath);
+                const isPdf = /\.pdf$/i.test(receiptPath);
+                
+                return (
+                  <div key={index} className="relative group">
+                    {isImage ? (
+                      <img 
+                        src={imageUrl}
+                        alt={`Kvitto ${index + 1}`}
+                        className="w-full h-32 object-cover rounded-lg border border-zinc-200 dark:border-zinc-700 cursor-pointer hover:opacity-90 transition-opacity"
+                        onDoubleClick={() => {
+                          // Filtrera bara bilder för lightbox
+                          const imagePaths = receiptPaths.filter(p => /\.(png|jpg|jpeg|gif|webp)$/i.test(p));
+                          const imageIndex = imagePaths.indexOf(receiptPath);
+                          if (imageIndex !== -1) {
+                            setLightboxImages(imagePaths);
+                            setLightboxIndex(imageIndex);
+                          }
+                        }}
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                        }}
+                      />
+                    ) : isPdf ? (
+                      <div className="w-full h-32 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 flex flex-col items-center justify-center">
+                        <FileText size={32} className="text-zinc-400 mb-1" />
+                        <p className="text-xs text-zinc-600 dark:text-zinc-400">PDF</p>
+                        <a 
+                          href={imageUrl} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="mt-1 text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          Öppna
+                        </a>
+                      </div>
+                    ) : (
+                      <div className="w-full h-32 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 flex flex-col items-center justify-center">
+                        <FileText size={32} className="text-zinc-400 mb-1" />
+                        <p className="text-xs text-zinc-600 dark:text-zinc-400">Fil</p>
+                        <a 
+                          href={imageUrl} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="mt-1 text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          Öppna
+                        </a>
+                      </div>
+                    )}
+                    
+                    {/* Ta bort-knapp */}
+                    <button
+                      onClick={async (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (window.confirm('Är du säker på att du vill ta bort detta kvitto?')) {
+                          try {
+                            await api.deleteTransactionReceipt(transaction.id, receiptPath);
+                            showToast('Kvitto borttaget!', { type: 'success' });
+                            if (reloadData) await reloadData();
+                          } catch (error) {
+                            console.error('Kunde inte ta bort kvitto:', error);
+                            showToast('Kunde inte ta bort kvitto', { type: 'error' });
+                          }
+                        }
+                      }}
+                      className="absolute top-2 right-2 p-1.5 bg-rose-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Ta bort kvitto"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
+          
+          {/* Upload-område (visas alltid så man kan lägga till fler) */}
+          <div 
+            onClick={() => fileInputRef.current?.click()}
+            className={`border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-xl p-4 sm:p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-colors bg-zinc-50 dark:bg-zinc-800/30 group ${
+              colorTheme === 'indigo' ? 'hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10' :
+              colorTheme === 'blue' ? 'hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10' :
+              colorTheme === 'emerald' ? 'hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10' :
+              colorTheme === 'purple' ? 'hover:border-purple-500 hover:bg-purple-50 dark:hover:bg-purple-500/10' :
+              colorTheme === 'rose' ? 'hover:border-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10' :
+              'hover:border-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10'
+            }`}
+          >
+            <div className={`w-12 h-12 bg-white dark:bg-zinc-800 rounded-full flex items-center justify-center mb-3 shadow-sm group-hover:scale-110 transition-transform`}>
+              <UploadCloud className={`w-6 h-6 text-zinc-400 ${
+                colorTheme === 'indigo' ? 'group-hover:text-indigo-500' :
+                colorTheme === 'blue' ? 'group-hover:text-blue-500' :
+                colorTheme === 'emerald' ? 'group-hover:text-emerald-500' :
+                colorTheme === 'purple' ? 'group-hover:text-purple-500' :
+                colorTheme === 'rose' ? 'group-hover:text-rose-500' :
+                'group-hover:text-amber-500'
+              }`} />
+            </div>
+            <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300 text-center px-2">
+              {receiptPaths.length > 0 ? 'Lägg till ytterligare kvitto' : 'Klicka för att ladda upp'}
+            </p>
+            <p className="text-xs text-zinc-500 mt-1">PDF, PNG, JPG (max 16MB)</p>
+          </div>
         </div>
 
         {/* Link to Savings */}
@@ -434,7 +567,7 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
                     setSelectedSavings({ type, id: parseInt(id) });
                   }
                 }}
-                className="w-full appearance-none bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all cursor-pointer"
+                className={`w-full appearance-none bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 ${getThemeRingClass(colorTheme)} focus:border-transparent outline-none transition-all cursor-pointer`}
               >
                 <option value="">Ingen koppling</option>
                 {savingsAccounts.length > 0 && (
@@ -496,7 +629,7 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
               <select 
                 value={selectedVehicle || ''}
                 onChange={(e) => setSelectedVehicle(e.target.value ? parseInt(e.target.value) : null)}
-                className="w-full appearance-none bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all cursor-pointer"
+                className={`w-full appearance-none bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 ${getThemeRingClass(colorTheme)} focus:border-transparent outline-none transition-all cursor-pointer`}
               >
                 <option value="">Ingen koppling</option>
                 {vehicles.filter(v => v.status === 'Aktiv').map(vehicle => (
@@ -511,7 +644,7 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
               <button
                 onClick={handleLinkToVehicle}
                 disabled={isLinkingVehicle}
-                className="w-full mt-2 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-400 text-white px-4 py-2 rounded-xl text-sm font-medium transition-all"
+                className={`w-full mt-2 flex items-center justify-center gap-2 disabled:bg-zinc-400 text-white px-4 py-2 rounded-xl text-sm font-medium transition-all ${getThemeButtonClass(colorTheme, 'primary')}`}
               >
                 {isLinkingVehicle ? 'Kopplar...' : 'Koppla till Fordon'}
               </button>
@@ -548,7 +681,7 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
                 <select 
                   value={selectedLoan || ''}
                   onChange={(e) => setSelectedLoan(e.target.value ? parseInt(e.target.value) : null)}
-                  className="w-full appearance-none bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all cursor-pointer"
+                  className={`w-full appearance-none bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 ${getThemeRingClass(colorTheme)} focus:border-transparent outline-none transition-all cursor-pointer`}
                 >
                   <option value="">Välj lån...</option>
                   {loans.map(loan => (
@@ -562,8 +695,8 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
             )}
             {selectedLoan && (
               <div className="space-y-2 mt-2">
-                <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-3 border border-indigo-200 dark:border-indigo-800">
-                  <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-2">
+                <div className={`${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} rounded-lg p-3 border ${getThemeBorderClass(colorTheme)}`}>
+                  <p className={`text-xs font-medium ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} mb-2`}>
                     Fyll i betalningsdetaljer:
                   </p>
                   <div className="grid grid-cols-2 gap-2">
@@ -577,7 +710,7 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
                         value={loanPaymentData.principal_paid}
                         onChange={(e) => setLoanPaymentData({ ...loanPaymentData, principal_paid: e.target.value })}
                         placeholder="0.00"
-                        className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        className={`w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 ${getThemeRingClass(colorTheme)}`}
                       />
                     </div>
                     <div>
@@ -590,7 +723,7 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
                         value={loanPaymentData.interest_paid}
                         onChange={(e) => setLoanPaymentData({ ...loanPaymentData, interest_paid: e.target.value })}
                         placeholder="0.00"
-                        className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        className={`w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 ${getThemeRingClass(colorTheme)}`}
                       />
                     </div>
                   </div>
@@ -611,7 +744,7 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
                 <button
                   onClick={handleLinkToLoan}
                   disabled={isLinkingLoan || !loanPaymentData.principal_paid || !loanPaymentData.interest_paid}
-                  className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-400 disabled:cursor-not-allowed text-white px-4 py-2 rounded-xl text-sm font-medium transition-all"
+                  className={`w-full flex items-center justify-center gap-2 disabled:bg-zinc-400 disabled:cursor-not-allowed text-white px-4 py-2 rounded-xl text-sm font-medium transition-all ${getThemeButtonClass(colorTheme, 'primary')}`}
                 >
                   {isLinkingLoan ? 'Kopplar...' : 'Koppla till Lån'}
                 </button>
@@ -640,7 +773,7 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
 
       </div>
 
-      <div className="p-6 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 flex gap-3">
+      <div className="p-4 sm:p-6 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 flex gap-2 sm:gap-3">
         {onSave ? (
           <button 
             onClick={async (e) => {
@@ -653,7 +786,7 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
                 onSave(transaction);
               }
             }}
-            className="flex-1 bg-zinc-900 dark:bg-white text-white dark:text-black font-semibold py-3 rounded-xl hover:opacity-90 transition-opacity"
+            className={`flex-1 ${getThemeButtonClass(colorTheme, 'primary')} font-semibold py-3 rounded-xl hover:opacity-90 transition-opacity`}
           >
             Spara Ändringar
           </button>
@@ -669,9 +802,11 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
               }
             }}
             disabled={!selectedSavings.type || !selectedSavings.id || isLinking}
-            className="flex-1 bg-zinc-900 dark:bg-white text-white dark:text-black font-semibold py-3 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`flex-1 ${getThemeButtonClass(colorTheme, 'primary')} font-semibold py-3 px-3 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed text-sm`}
           >
-            {isLinking ? 'Kopplar...' : selectedSavings.type && selectedSavings.id ? 'Koppla till Sparande' : 'Välj sparande först'}
+            <span className="block text-center">
+              {isLinking ? 'Kopplar...' : selectedSavings.type && selectedSavings.id ? 'Koppla till Sparande' : 'Välj sparande först'}
+            </span>
           </button>
         )}
         <button 
@@ -759,6 +894,15 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
           <Trash2 size={20} />
         </button>
       </div>
+      
+      {/* Image Lightbox */}
+      {lightboxImages && lightboxImages.length > 0 && (
+        <ImageLightbox
+          images={lightboxImages}
+          currentIndex={lightboxIndex}
+          onClose={() => setLightboxImages(null)}
+        />
+      )}
     </div>
   );
 };

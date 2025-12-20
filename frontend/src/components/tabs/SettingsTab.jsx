@@ -1,16 +1,27 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Settings, FolderOpen, Save, CheckCircle, Image as ImageIcon, Tag, Plus, Edit2, Trash2, X, Merge, AlertCircle, Loader2, Download, Upload, Database, Search, Filter, Calendar, FileText, Grid3x3, List, User, Mail, Phone, MapPin } from 'lucide-react';
+import { Settings, FolderOpen, Save, CheckCircle, Image as ImageIcon, Tag, Plus, Edit2, Trash2, X, Merge, AlertCircle, Loader2, Download, Upload, Database, Search, Filter, Calendar, FileText, Grid3x3, List, User, Mail, Phone, MapPin, Palette, History } from 'lucide-react';
 import { api } from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import CategoryEditForm from '../CategoryEditForm';
 import MergeCategoryModal from '../MergeCategoryModal';
+import ThemeCustomizer from '../ThemeCustomizer';
+import HistoryTab from './HistoryTab';
+import { applyTheme, getCurrentTheme } from '../../utils/themes';
+import { useTheme } from '../../contexts/ThemeContext';
+import { getThemeButtonClass, getThemeBgClass, getThemeTextClass, getThemeBorderClass } from '../../utils/getThemeClasses';
+import ImageLightbox from '../ImageLightbox';
+import { useImageLightbox } from '../../hooks/useImageLightbox';
 
-const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactions = [], userName: externalUserName, setUserName: setExternalUserName }) => {
+const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactions = [], userName: externalUserName, setUserName: setExternalUserName, setActiveTab, setSelectedTransaction }) => {
   const { showToast } = useToast();
-  const [activeSubTab, setActiveSubTab] = useState('general'); // 'general', 'categories', 'images'
+  const { colorTheme, changeTheme } = useTheme();
+  const { lightboxImages, lightboxIndex, openLightbox, closeLightbox, setLightboxIndex } = useImageLightbox();
+  const [activeSubTab, setActiveSubTab] = useState('general'); // 'general', 'categories', 'images', 'history'
+  const [localColorTheme, setLocalColorTheme] = useState(colorTheme || 'indigo');
   const [receiptPath, setReceiptPath] = useState('C:\\Users\\Documents\\Kvitton');
   const [agreementImagesPath, setAgreementImagesPath] = useState('C:\\Users\\Documents\\Avtal\\Bilder');
   const [defaultTheme, setDefaultTheme] = useState('dark'); // 'dark' or 'light'
+  const [isThemeCustomizerOpen, setIsThemeCustomizerOpen] = useState(false);
   const [userName, setUserName] = useState(externalUserName || '');
   const [userAddress, setUserAddress] = useState('');
   const [userPhone, setUserPhone] = useState('');
@@ -100,6 +111,14 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
         // Om ingen inställning finns, använd nuvarande tema
         const currentTheme = isDarkMode ? 'dark' : 'light';
         setDefaultTheme(currentTheme);
+      }
+      
+      // Load color theme
+      if (settings.color_theme) {
+        setLocalColorTheme(settings.color_theme);
+        changeTheme(settings.color_theme);
+      } else if (colorTheme) {
+        setLocalColorTheme(colorTheme);
       }
       
       // Load user information
@@ -452,7 +471,7 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
           onClick={() => setActiveSubTab('general')}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
             activeSubTab === 'general'
-              ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm'
+              ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
               : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
           }`}
         >
@@ -463,7 +482,7 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
           onClick={() => setActiveSubTab('categories')}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
             activeSubTab === 'categories'
-              ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm'
+              ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
               : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
           }`}
         >
@@ -474,12 +493,23 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
           onClick={() => setActiveSubTab('images')}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
             activeSubTab === 'images'
-              ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm'
+              ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
               : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
           }`}
         >
           <ImageIcon size={16} />
           Bilder
+        </button>
+        <button
+          onClick={() => setActiveSubTab('history')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+            activeSubTab === 'history'
+              ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
+              : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+          }`}
+        >
+          <History size={16} />
+          Historik
         </button>
       </div>
 
@@ -575,7 +605,7 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
                 className={`w-full px-6 py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2 ${
                   saved 
                     ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' 
-                    : 'bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed'
+                    : `${getThemeButtonClass(colorTheme, 'primary')} disabled:opacity-50 disabled:cursor-not-allowed`
                 }`}
               >
                 {saved ? (
@@ -607,86 +637,19 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
           </div>
 
           <div className="space-y-4">
-            {/* Default Theme Selection */}
+            {/* Color Theme */}
             <div className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl">
               <div>
-                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Standardtema vid start</p>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">Välj standardtema när appen startar</p>
+                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Färgtema</p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">Välj primärfärg för applikationen</p>
               </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={async () => {
-                    setDefaultTheme('light');
-                    // Ändra temat omedelbart om det inte redan är ljust
-                    if (isDarkMode && toggleTheme) {
-                      await toggleTheme();
-                    }
-                    // Spara inställningen
-                    try {
-                      await api.saveSettings({
-                        receipt_storage_path: receiptPath,
-                        agreement_images_path: agreementImagesPath,
-                        default_theme: 'light',
-                        user_name: userName,
-                        user_address: userAddress,
-                        user_phone: userPhone,
-                        user_email: userEmail
-                      });
-                      // Update external userName if setter is provided
-                      if (setExternalUserName) {
-                        setExternalUserName(userName);
-                      }
-                      showToast('Tema ändrat till ljust!', { type: 'success' });
-                    } catch (error) {
-                      console.error('❌ Kunde inte spara tema-inställning:', error);
-                      showToast('Kunde inte spara tema-inställning.', { type: 'error' });
-                    }
-                  }}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                    defaultTheme === 'light'
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-300 dark:hover:bg-zinc-600'
-                  }`}
-                >
-                  Ljust
-                </button>
-                <button
-                  onClick={async () => {
-                    setDefaultTheme('dark');
-                    // Ändra temat omedelbart om det inte redan är mörkt
-                    if (!isDarkMode && toggleTheme) {
-                      await toggleTheme();
-                    }
-                    // Spara inställningen
-                    try {
-                      await api.saveSettings({
-                        receipt_storage_path: receiptPath,
-                        agreement_images_path: agreementImagesPath,
-                        default_theme: 'dark',
-                        user_name: userName,
-                        user_address: userAddress,
-                        user_phone: userPhone,
-                        user_email: userEmail
-                      });
-                      // Update external userName if setter is provided
-                      if (setExternalUserName) {
-                        setExternalUserName(userName);
-                      }
-                      showToast('Tema ändrat till mörkt!', { type: 'success' });
-                    } catch (error) {
-                      console.error('❌ Kunde inte spara tema-inställning:', error);
-                      showToast('Kunde inte spara tema-inställning.', { type: 'error' });
-                    }
-                  }}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                    defaultTheme === 'dark'
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-300 dark:hover:bg-zinc-600'
-                  }`}
-                >
-                  Mörkt
-                </button>
-              </div>
+              <button
+                onClick={() => setIsThemeCustomizerOpen(true)}
+                className={`px-4 py-2 rounded-lg transition-colors text-sm font-medium flex items-center gap-2 ${getThemeButtonClass(colorTheme, 'primary')}`}
+              >
+                <Palette size={16} />
+                Anpassa
+              </button>
             </div>
 
             {/* Language */}
@@ -735,7 +698,7 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
                   showToast(`Kunde inte skapa backup: ${error.message}`, { type: 'error' });
                 }
               }}
-              className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-3 rounded-xl text-sm font-medium transition-all shadow-sm"
+              className={`w-full flex items-center justify-center gap-2 text-white px-4 py-3 rounded-xl text-sm font-medium transition-all shadow-sm ${getThemeButtonClass(colorTheme, 'primary')}`}
             >
               <Download size={16} />
               Skapa Backup
@@ -873,7 +836,7 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
                   </button>
                   <button
                     onClick={() => setIsAddingCategory(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-all"
+                    className={`flex items-center gap-2 px-4 py-2 text-white rounded-lg text-sm font-medium transition-all ${getThemeButtonClass(colorTheme, 'primary')}`}
                   >
                     <Plus size={16} />
                     Lägg till
@@ -918,7 +881,7 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
                   />
                   <button
                     onClick={handleAddCategory}
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-all"
+                    className={`px-4 py-2 text-white rounded-lg text-sm font-medium transition-all ${getThemeButtonClass(colorTheme, 'primary')}`}
                   >
                     Spara
                   </button>
@@ -1088,7 +1051,7 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
                   }
                 }}
                 disabled={newRulePatterns.every(p => !p.trim()) || !newRuleCategory}
-                className="mt-3 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className={`mt-3 px-4 py-2 text-white text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${getThemeButtonClass(colorTheme, 'primary')}`}
               >
                 Lägg till regel
               </button>
@@ -1509,18 +1472,102 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
                 <div
                   key={idx}
                   className="bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl p-3 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer group"
-                  onClick={() => {
-                    // Open file in new window/tab
-                    window.open(`http://192.168.1.232:5000/api/files/${encodeURIComponent(file.path)}`, '_blank');
+                  onClick={(e) => {
+                    // Only open in new tab if not double-clicking on image
+                    if (e.detail === 1 && !e.target.closest('img')) {
+                      window.open(`http://192.168.1.232:5000/api/files/${encodeURIComponent(file.path)}`, '_blank');
+                    }
                   }}
                 >
-                  <div className="aspect-square bg-white dark:bg-zinc-900 rounded-lg mb-2 flex items-center justify-center overflow-hidden">
+                  <div className="aspect-square bg-white dark:bg-zinc-900 rounded-lg mb-2 flex items-center justify-center overflow-hidden relative">
                     {file.filename.match(/\.(jpg|jpeg|png|gif)$/i) ? (
-                      <img
-                        src={`http://192.168.1.232:5000/api/files/${encodeURIComponent(file.path)}`}
-                        alt={file.filename}
-                        className="w-full h-full object-cover"
-                      />
+                      <>
+                        <img
+                          src={`http://192.168.1.232:5000/api/files/${encodeURIComponent(file.path)}`}
+                          alt={file.filename}
+                          className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                          onDoubleClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const imageFiles = filteredAndSortedMedia.filter(f => 
+                              f.filename.match(/\.(jpg|jpeg|png|gif)$/i)
+                            );
+                            const imageIndex = imageFiles.findIndex(f => f.path === file.path);
+                            if (imageIndex !== -1) {
+                              openLightbox(imageFiles.map(f => f.path), imageIndex);
+                            }
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                          }}
+                        />
+                        {file.transaction_id && (
+                          <button
+                            onClick={async (e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (window.confirm(`Är du säker på att du vill ta bort detta kvitto från transaktionen "${file.transaction_title}"?`)) {
+                                // Spara kvittodata för undo
+                                const receiptPath = file.path;
+                                const transactionId = file.transaction_id;
+                                const transactionTitle = file.transaction_title;
+                                
+                                try {
+                                  const result = await api.deleteTransactionReceipt(transactionId, receiptPath);
+                                  const deletedPath = result.deleted_path;
+                                  
+                                  await loadMediaFiles();
+                                  if (reloadData) await reloadData();
+                                  
+                                  // Visa toast med undo-funktionalitet
+                                  showToast('Kvitto borttaget!', { 
+                                    type: 'success',
+                                    undo: true,
+                                    undoAction: async () => {
+                                      try {
+                                        if (!deletedPath) {
+                                          throw new Error('Kunde inte hitta filen i deleted-mappen');
+                                        }
+                                        
+                                        // Hämta filen från deleted-mappen
+                                        const deletedFileUrl = `http://192.168.1.232:5000/api/files/${encodeURIComponent(deletedPath.replace(/\\/g, '/'))}`;
+                                        
+                                        // Hämta filen som blob
+                                        const response = await fetch(deletedFileUrl);
+                                        if (!response.ok) {
+                                          throw new Error('Kunde inte hitta filen i deleted-mappen');
+                                        }
+                                        
+                                        const blob = await response.blob();
+                                        const filename = deletedPath.split(/[/\\]/).pop();
+                                        const fileToUpload = new File([blob], filename, { type: blob.type });
+                                        
+                                        // Ladda upp filen igen
+                                        await api.uploadReceipt(fileToUpload, transactionId);
+                                        
+                                        await loadMediaFiles();
+                                        if (reloadData) await reloadData();
+                                        
+                                        showToast('Kvitto återställt!', { type: 'success' });
+                                      } catch (err) {
+                                        console.error('Kunde inte ångra radering av kvitto:', err);
+                                        showToast('Kunde inte ångra: ' + (err.message || 'Okänt fel'), { type: 'error' });
+                                      }
+                                    }
+                                  });
+                                } catch (error) {
+                                  console.error('Kunde inte ta bort kvitto:', error);
+                                  showToast('Kunde inte ta bort kvitto: ' + (error.message || 'Okänt fel'), { type: 'error' });
+                                }
+                              }
+                            }}
+                            className="absolute top-2 right-2 p-1.5 bg-rose-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600 z-10"
+                            title="Ta bort kvitto"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </>
                     ) : (
                       <FileText className="w-12 h-12 text-zinc-400" />
                     )}
@@ -1539,7 +1586,24 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
                     <span>{(file.size / 1024).toFixed(1)} KB</span>
                   </div>
                   {file.transaction_title && (
-                    <p className="text-xs text-zinc-400 mt-1 truncate" title={file.transaction_title}>
+                    <p 
+                      className="text-xs text-zinc-400 mt-1 truncate hover:text-zinc-600 dark:hover:text-zinc-300 cursor-pointer transition-colors"
+                      title={`Klicka för att öppna transaktion: ${file.transaction_title}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (file.transaction_id && setActiveTab && setSelectedTransaction) {
+                          // Hitta transaktionen
+                          const transaction = transactions.find(t => t.id === file.transaction_id);
+                          if (transaction) {
+                            setActiveTab('transactions');
+                            // Vänta lite så att tabben hinner bytas
+                            setTimeout(() => {
+                              setSelectedTransaction(transaction);
+                            }, 100);
+                          }
+                        }
+                      }}
+                    >
                       {file.transaction_title}
                     </p>
                   )}
@@ -1557,17 +1621,102 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
                 <div
                   key={idx}
                   className="flex items-center gap-4 p-4 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer group"
-                  onClick={() => {
-                    window.open(`http://192.168.1.232:5000/api/files/${encodeURIComponent(file.path)}`, '_blank');
+                  onClick={(e) => {
+                    // Only open in new tab if not double-clicking on image
+                    if (e.detail === 1 && !e.target.closest('img')) {
+                      window.open(`http://192.168.1.232:5000/api/files/${encodeURIComponent(file.path)}`, '_blank');
+                    }
                   }}
                 >
-                  <div className="w-16 h-16 bg-white dark:bg-zinc-900 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden">
+                  <div className="w-16 h-16 bg-white dark:bg-zinc-900 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden relative">
                     {file.filename.match(/\.(jpg|jpeg|png|gif)$/i) ? (
-                      <img
-                        src={`http://192.168.1.232:5000/api/files/${encodeURIComponent(file.path)}`}
-                        alt={file.filename}
-                        className="w-full h-full object-cover"
-                      />
+                      <>
+                        <img
+                          src={`http://192.168.1.232:5000/api/files/${encodeURIComponent(file.path)}`}
+                          alt={file.filename}
+                          className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                          onDoubleClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const imageFiles = filteredAndSortedMedia.filter(f => 
+                              f.filename.match(/\.(jpg|jpeg|png|gif)$/i)
+                            );
+                            const imageIndex = imageFiles.findIndex(f => f.path === file.path);
+                            if (imageIndex !== -1) {
+                              openLightbox(imageFiles.map(f => f.path), imageIndex);
+                            }
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                          }}
+                        />
+                        {file.transaction_id && (
+                          <button
+                            onClick={async (e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (window.confirm(`Är du säker på att du vill ta bort detta kvitto från transaktionen "${file.transaction_title}"?`)) {
+                                // Spara kvittodata för undo
+                                const receiptPath = file.path;
+                                const transactionId = file.transaction_id;
+                                const transactionTitle = file.transaction_title;
+                                
+                                try {
+                                  const result = await api.deleteTransactionReceipt(transactionId, receiptPath);
+                                  const deletedPath = result.deleted_path;
+                                  
+                                  await loadMediaFiles();
+                                  if (reloadData) await reloadData();
+                                  
+                                  // Visa toast med undo-funktionalitet
+                                  showToast('Kvitto borttaget!', { 
+                                    type: 'success',
+                                    undo: true,
+                                    undoAction: async () => {
+                                      try {
+                                        if (!deletedPath) {
+                                          throw new Error('Kunde inte hitta filen i deleted-mappen');
+                                        }
+                                        
+                                        // Hämta filen från deleted-mappen
+                                        const deletedFileUrl = `http://192.168.1.232:5000/api/files/${encodeURIComponent(deletedPath.replace(/\\/g, '/'))}`;
+                                        
+                                        // Hämta filen som blob
+                                        const response = await fetch(deletedFileUrl);
+                                        if (!response.ok) {
+                                          throw new Error('Kunde inte hitta filen i deleted-mappen');
+                                        }
+                                        
+                                        const blob = await response.blob();
+                                        const filename = deletedPath.split(/[/\\]/).pop();
+                                        const fileToUpload = new File([blob], filename, { type: blob.type });
+                                        
+                                        // Ladda upp filen igen
+                                        await api.uploadReceipt(fileToUpload, transactionId);
+                                        
+                                        await loadMediaFiles();
+                                        if (reloadData) await reloadData();
+                                        
+                                        showToast('Kvitto återställt!', { type: 'success' });
+                                      } catch (err) {
+                                        console.error('Kunde inte ångra radering av kvitto:', err);
+                                        showToast('Kunde inte ångra: ' + (err.message || 'Okänt fel'), { type: 'error' });
+                                      }
+                                    }
+                                  });
+                                } catch (error) {
+                                  console.error('Kunde inte ta bort kvitto:', error);
+                                  showToast('Kunde inte ta bort kvitto: ' + (error.message || 'Okänt fel'), { type: 'error' });
+                                }
+                              }
+                            }}
+                            className="absolute top-1 right-1 p-1 bg-rose-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600 z-10"
+                            title="Ta bort kvitto"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        )}
+                      </>
                     ) : (
                       <FileText className="w-8 h-8 text-zinc-400" />
                     )}
@@ -1585,7 +1734,26 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
                         {file.type === 'receipt' ? 'Kvitto' : 'Avtal'}
                       </span>
                       {file.transaction_title && (
-                        <span className="truncate">{file.transaction_title}</span>
+                        <span 
+                          className="truncate hover:text-zinc-600 dark:hover:text-zinc-300 cursor-pointer transition-colors"
+                          title={`Klicka för att öppna transaktion: ${file.transaction_title}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (file.transaction_id && setActiveTab && setSelectedTransaction) {
+                              // Hitta transaktionen
+                              const transaction = transactions.find(t => t.id === file.transaction_id);
+                              if (transaction) {
+                                setActiveTab('transactions');
+                                // Vänta lite så att tabben hinner bytas
+                                setTimeout(() => {
+                                  setSelectedTransaction(transaction);
+                                }, 100);
+                              }
+                            }
+                          }}
+                        >
+                          {file.transaction_title}
+                        </span>
                       )}
                       {file.agreement_name && (
                         <span className="truncate">{file.agreement_name}</span>
@@ -1606,6 +1774,11 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
           </>
         )}
 
+        {/* History Tab */}
+        {activeSubTab === 'history' && (
+          <HistoryTab reloadData={reloadData} />
+        )}
+
       </div>
 
       {/* Merge Category Modal */}
@@ -1615,6 +1788,70 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
         categories={categories}
         onMerge={handleMergeCategories}
       />
+      
+      {/* Theme Customizer Modal */}
+      <ThemeCustomizer
+        isOpen={isThemeCustomizerOpen}
+        onClose={() => setIsThemeCustomizerOpen(false)}
+        currentTheme={localColorTheme}
+        onThemeChange={async (newTheme) => {
+          setLocalColorTheme(newTheme);
+          changeTheme(newTheme);
+          // Save to backend
+          try {
+            await api.saveSettings({
+              receipt_storage_path: receiptPath,
+              agreement_images_path: agreementImagesPath,
+              default_theme: defaultTheme,
+              color_theme: newTheme,
+              user_name: userName,
+              user_address: userAddress,
+              user_phone: userPhone,
+              user_email: userEmail
+            });
+            showToast('Tema sparad!', { type: 'success' });
+          } catch (error) {
+            console.error('Kunde inte spara tema:', error);
+            showToast('Kunde inte spara tema.', { type: 'error' });
+          }
+        }}
+        isDarkMode={isDarkMode}
+        toggleTheme={toggleTheme}
+        defaultTheme={defaultTheme}
+        onSave={async ({ colorTheme: newTheme, darkMode: newDarkMode }) => {
+          // Update local state
+          setLocalColorTheme(newTheme);
+          const newDefaultTheme = newDarkMode ? 'dark' : 'light';
+          setDefaultTheme(newDefaultTheme);
+          
+          // Save to backend
+          try {
+            await api.saveSettings({
+              receipt_storage_path: receiptPath,
+              agreement_images_path: agreementImagesPath,
+              default_theme: newDefaultTheme,
+              color_theme: newTheme,
+              user_name: userName,
+              user_address: userAddress,
+              user_phone: userPhone,
+              user_email: userEmail
+            });
+            showToast('Tema sparad!', { type: 'success' });
+          } catch (error) {
+            console.error('Kunde inte spara tema:', error);
+            showToast('Kunde inte spara tema.', { type: 'error' });
+          }
+        }}
+      />
+      
+      {/* Image Lightbox */}
+      {lightboxImages && lightboxImages.length > 0 && (
+        <ImageLightbox
+          images={lightboxImages}
+          currentIndex={lightboxIndex}
+          onClose={closeLightbox}
+        />
+      )}
     </div>
   );
 };

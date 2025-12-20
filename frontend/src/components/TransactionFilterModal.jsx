@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { Filter, X, SlidersHorizontal } from 'lucide-react';
+import { useTheme } from '../contexts/ThemeContext';
+import { getThemeButtonClass, getThemeTextClass, getThemeRingClass } from '../utils/getThemeClasses';
 
 const TransactionFilterModal = ({ 
   isOpen, 
@@ -8,6 +10,7 @@ const TransactionFilterModal = ({
   filters, 
   onFiltersChange 
 }) => {
+  const { colorTheme } = useTheme();
   const [localFilters, setLocalFilters] = useState(filters || {
     type: 'all',
     category: 'all',
@@ -64,7 +67,7 @@ const TransactionFilterModal = ({
       <div className="relative w-full max-w-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[90vh]">
         <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between flex-shrink-0">
           <h2 className="text-lg font-bold text-zinc-900 dark:text-white flex items-center gap-2">
-            <SlidersHorizontal size={18} className="text-indigo-500" />
+            <SlidersHorizontal size={18} className={getThemeTextClass(colorTheme, false)} />
             Filtrera Transaktioner
           </h2>
           <button onClick={onClose} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors">
@@ -85,7 +88,7 @@ const TransactionFilterModal = ({
                   onClick={() => handleFilterChange('type', type)}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                     localFilters.type === type
-                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
+                      ? `${getThemeButtonClass(colorTheme, 'primary')} shadow-lg`
                       : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
                   }`}
                 >
@@ -103,7 +106,7 @@ const TransactionFilterModal = ({
             <select
               value={localFilters.category}
               onChange={(e) => handleFilterChange('category', e.target.value)}
-              className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+              className={`w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 ${getThemeRingClass(colorTheme)} outline-none`}
             >
               <option value="all">Alla Kategorier</option>
               {categoryList.map(cat => (
@@ -124,7 +127,7 @@ const TransactionFilterModal = ({
                   onClick={() => handleFilterChange('status', status)}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                     localFilters.status === status
-                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
+                      ? `${getThemeButtonClass(colorTheme, 'primary')} shadow-lg`
                       : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
                   }`}
                 >
@@ -147,7 +150,7 @@ const TransactionFilterModal = ({
                   value={localFilters.minAmount}
                   onChange={(e) => handleFilterChange('minAmount', e.target.value)}
                   placeholder="0"
-                  className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className={`w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 ${getThemeRingClass(colorTheme)} outline-none`}
                 />
               </div>
               <div>
@@ -157,7 +160,7 @@ const TransactionFilterModal = ({
                   value={localFilters.maxAmount}
                   onChange={(e) => handleFilterChange('maxAmount', e.target.value)}
                   placeholder="Ingen gräns"
-                  className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className={`w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 ${getThemeRingClass(colorTheme)} outline-none`}
                 />
               </div>
             </div>
@@ -175,7 +178,7 @@ const TransactionFilterModal = ({
                   onClick={() => handleFilterChange('hasReceipt', option)}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                     localFilters.hasReceipt === option
-                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
+                      ? `${getThemeButtonClass(colorTheme, 'primary')} shadow-lg`
                       : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
                   }`}
                 >
@@ -197,7 +200,7 @@ const TransactionFilterModal = ({
                   onClick={() => handleFilterChange('hasNote', option)}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                     localFilters.hasNote === option
-                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
+                      ? `${getThemeButtonClass(colorTheme, 'primary')} shadow-lg`
                       : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
                   }`}
                 >
@@ -226,7 +229,7 @@ const TransactionFilterModal = ({
               onClick={handleApply}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                 hasActiveFilters()
-                  ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-500/20'
+                  ? `${getThemeButtonClass(colorTheme, 'primary')} shadow-lg`
                   : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400 cursor-not-allowed'
               }`}
               disabled={!hasActiveFilters()}

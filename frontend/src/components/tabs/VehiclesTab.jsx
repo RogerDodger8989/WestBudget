@@ -6,6 +6,8 @@ import VehicleExpenseFilterModal from '../VehicleExpenseFilterModal';
 import { filterByDateRange } from '../../utils/filterByDateRange';
 import { formatAmount, getAmountClassName } from '../../utils/formatAmount';
 import { useToast } from '../../contexts/ToastContext';
+import { useTheme } from '../../contexts/ThemeContext';
+import { getThemeButtonClass, getThemeBgClass, getThemeBorderClass, getThemeTextClass, getThemeRingClass } from '../../utils/getThemeClasses';
 import { api } from '../../api';
 
 const VehiclesTab = ({ 
@@ -28,6 +30,20 @@ const VehiclesTab = ({
   reloadData
 }) => {
   const { showToast } = useToast();
+  const { colorTheme } = useTheme();
+  
+  // Helper function to get selected row classes
+  const getSelectedRowClass = () => {
+    const themeMap = {
+      indigo: 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800',
+      blue: 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800',
+      emerald: 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800',
+      purple: 'bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800',
+      rose: 'bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-800',
+      amber: 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'
+    };
+    return themeMap[colorTheme] || themeMap.indigo;
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedVehicleId, setSelectedVehicleId] = useState(null);
   const [selectedExpenses, setSelectedExpenses] = useState(new Set());
@@ -343,19 +359,19 @@ const VehiclesTab = ({
             <DateRangeBtn active={dateRange === 'month'} onClick={() => setDateRange('month')}>Denna Månad</DateRangeBtn>
             <DateRangeBtn active={dateRange === 'lastMonth'} onClick={() => setDateRange('lastMonth')}>Föregående Månad</DateRangeBtn>
             <DateRangeBtn active={dateRange === 'year'} onClick={() => setDateRange('year')}>Hela Året</DateRangeBtn>
-            <DateRangeBtn active={dateRange === 'custom'} onClick={() => setIsCustomDateModalOpen(true)} icon={<Calendar size={14} className="text-indigo-500 dark:text-indigo-400" />}>Anpassad</DateRangeBtn>
+            <DateRangeBtn active={dateRange === 'custom'} onClick={() => setIsCustomDateModalOpen(true)} icon={<Calendar size={14} className={getThemeTextClass(colorTheme, false) + ' dark:' + getThemeTextClass(colorTheme, true)} />}>Anpassad</DateRangeBtn>
           </div>
         </div>
         <div className="flex gap-3">
           <button
             onClick={handleExportCSV}
-            className="flex items-center gap-2 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm"
+            className={`flex items-center gap-2 ${getThemeButtonClass(colorTheme, 'primary')} px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-lg hover:shadow-xl active:scale-95`}
           >
             <Download size={16} /> Exportera CSV
           </button>
           <button
             onClick={handleExportPDF}
-            className="flex items-center gap-2 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm"
+            className={`flex items-center gap-2 ${getThemeButtonClass(colorTheme, 'primary')} px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-lg hover:shadow-xl active:scale-95`}
           >
             <Download size={16} /> Exportera PDF
           </button>
@@ -377,7 +393,7 @@ const VehiclesTab = ({
         <StatCard 
           title="Totalt" 
           amount={formatAmount(stats.total)} 
-          icon={<Gauge className="text-indigo-500 dark:text-indigo-400" />} 
+                  icon={<Gauge className={getThemeTextClass(colorTheme, false) + ' dark:' + getThemeTextClass(colorTheme, true)} />}
         />
       </div>
 
@@ -386,14 +402,14 @@ const VehiclesTab = ({
         <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
           <div className="flex items-center justify-between mb-6">
             <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-              <Car size={18} className="text-indigo-500" /> Mina Fordon
+              <Car size={18} className={getThemeTextClass(colorTheme, false)} /> Mina Fordon
             </h3>
             <button
               onClick={onAddVehicle}
               className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
               title="Lägg till fordon"
             >
-              <Plus size={18} className="text-indigo-500" />
+              <Plus size={18} className={getThemeTextClass(colorTheme, false)} />
             </button>
           </div>
           <div className="space-y-3">
@@ -404,7 +420,7 @@ const VehiclesTab = ({
                 <p className="mb-3">Inga fordon registrerade</p>
                 <button
                   onClick={onAddVehicle}
-                  className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline"
+                  className={`text-sm ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} hover:underline`}
                 >
                   Lägg till fordon
                 </button>
@@ -419,7 +435,7 @@ const VehiclesTab = ({
                   }}
                   className={`bg-zinc-50 dark:bg-zinc-800/50 rounded-xl p-4 border cursor-pointer transition-all ${
                     selectedVehicleId === vehicle.id
-                      ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20'
+                      ? `${getThemeBorderClass(colorTheme)} ${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)}`
                       : 'border-zinc-100 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'
                   }`}
                 >
@@ -452,7 +468,7 @@ const VehiclesTab = ({
                     {vehicle.agreement_id && agreements && (
                       <div className="flex justify-between">
                         <span className="text-zinc-500">Försäkringsavtal</span>
-                        <span className="text-indigo-600 dark:text-indigo-400 font-medium">
+                          <span className={`${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} font-medium`}>
                           {agreements.find(a => a.id === vehicle.agreement_id)?.name || 'Okänt avtal'}
                         </span>
                       </div>
@@ -483,18 +499,18 @@ const VehiclesTab = ({
                 onClick={() => setIsFilterModalOpen(true)}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm relative ${
                   filters.vehicle !== 'all' || filters.category !== 'all' || filters.minAmount || filters.maxAmount
-                    ? 'bg-indigo-600 text-white hover:bg-indigo-500'
+                    ? getThemeButtonClass(colorTheme, 'primary')
                     : 'bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700'
                 }`}
               >
                 <Filter size={16} />
                 {(filters.vehicle !== 'all' || filters.category !== 'all' || filters.minAmount || filters.maxAmount) && (
-                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-white rounded-full border-2 border-indigo-600" />
+                  <span className={`absolute -top-1 -right-1 w-2.5 h-2.5 bg-white rounded-full border-2 ${getThemeBorderClass(colorTheme)}`} />
                 )}
               </button>
               <button
                 onClick={onAddExpense}
-                className="flex items-center gap-2 bg-zinc-900 dark:bg-indigo-600 hover:bg-zinc-800 dark:hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-all shadow-lg hover:shadow-xl active:scale-95"
+                className={`flex items-center gap-2 ${getThemeButtonClass(colorTheme, 'primary')} px-5 py-2.5 rounded-xl text-sm font-medium transition-all shadow-lg hover:shadow-xl active:scale-95`}
               >
                 <Plus size={16} /> Lägg till utgift
               </button>
@@ -503,8 +519,8 @@ const VehiclesTab = ({
 
           {/* Bulk actions */}
           {selectedExpenses.size > 0 && (
-            <div className="mb-4 p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl flex items-center justify-between">
-              <span className="text-sm text-indigo-700 dark:text-indigo-300">
+            <div className={`mb-4 p-3 ${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} border ${getThemeBorderClass(colorTheme)} rounded-xl flex items-center justify-between`}>
+              <span className={`text-sm ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)}`}>
                 {selectedExpenses.size} vald(a)
               </span>
               <button
@@ -536,7 +552,7 @@ const VehiclesTab = ({
                 {!searchQuery && (
                   <button
                     onClick={onAddExpense}
-                    className="block mt-3 text-sm text-indigo-600 dark:text-indigo-400 hover:underline mx-auto"
+                    className={`block mt-3 text-sm ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} hover:underline mx-auto`}
                   >
                     Lägg till första kostnaden
                   </button>
@@ -551,7 +567,7 @@ const VehiclesTab = ({
                       ref={selectAllCheckboxRef}
                       type="checkbox"
                       onChange={handleSelectAll}
-                      className="w-4 h-4 text-indigo-600 rounded border-zinc-300 focus:ring-indigo-500"
+                      className={`w-4 h-4 ${getThemeTextClass(colorTheme, false)} rounded border-zinc-300 ${getThemeRingClass(colorTheme)}`}
                     />
                   </div>
                   <div className="col-span-2">Datum</div>
@@ -572,7 +588,7 @@ const VehiclesTab = ({
                       key={expense.id}
                       className={`grid grid-cols-12 gap-4 px-4 py-3 rounded-xl border transition-all ${
                         isSelected
-                          ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800'
+                          ? getSelectedRowClass()
                           : 'bg-zinc-50 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600'
                       }`}
                     >
@@ -582,7 +598,7 @@ const VehiclesTab = ({
                           checked={isSelected}
                           onChange={() => handleToggleExpense(expense.id)}
                           onClick={(e) => e.stopPropagation()}
-                          className="w-4 h-4 text-indigo-600 rounded border-zinc-300 focus:ring-indigo-500"
+                          className={`w-4 h-4 ${getThemeTextClass(colorTheme, false)} rounded border-zinc-300 ${getThemeRingClass(colorTheme)}`}
                         />
                       </div>
                       <div className="col-span-2 flex items-center text-sm text-zinc-700 dark:text-zinc-300">
@@ -620,7 +636,14 @@ const VehiclesTab = ({
                               className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${
                                 hasNote
                                   ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 hover:scale-110 cursor-pointer'
-                                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 hover:text-indigo-500 cursor-pointer'
+                                  : `bg-zinc-100 dark:bg-zinc-800 text-zinc-400 cursor-pointer ${
+                                    colorTheme === 'indigo' ? 'hover:bg-indigo-100 dark:hover:bg-indigo-900/30 hover:text-indigo-500' :
+                                    colorTheme === 'blue' ? 'hover:bg-blue-100 dark:hover:bg-blue-900/30 hover:text-blue-500' :
+                                    colorTheme === 'emerald' ? 'hover:bg-emerald-100 dark:hover:bg-emerald-900/30 hover:text-emerald-500' :
+                                    colorTheme === 'purple' ? 'hover:bg-purple-100 dark:hover:bg-purple-900/30 hover:text-purple-500' :
+                                    colorTheme === 'rose' ? 'hover:bg-rose-100 dark:hover:bg-rose-900/30 hover:text-rose-500' :
+                                    'hover:bg-amber-100 dark:hover:bg-amber-900/30 hover:text-amber-500'
+                                  }`
                               }`}
                               title={hasNote ? expense.note : "Lägg till notering"}
                             >
@@ -635,7 +658,7 @@ const VehiclesTab = ({
                             e.stopPropagation();
                             onEditExpense?.(expense);
                           }}
-                          className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+                          className={`text-xs ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} hover:underline`}
                         >
                           Redigera
                         </button>

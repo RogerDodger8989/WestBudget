@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save } from 'lucide-react';
 import { TrendingUp, TrendingDown, BarChart3, List, PieChart } from 'lucide-react';
+import { useTheme } from '../contexts/ThemeContext';
+import { getThemeButtonClass, getThemeTextClass, getThemeBorderClass, getThemeRingClass, getThemeBgClass } from '../utils/getThemeClasses';
 
 const WidgetConfigModal = ({ 
   isOpen, 
@@ -9,6 +11,7 @@ const WidgetConfigModal = ({
   onSave,
   availableData = {}
 }) => {
+  const { colorTheme } = useTheme();
   const [widgetType, setWidgetType] = useState(widget?.type || 'kpi');
   const [config, setConfig] = useState(widget?.config || {});
 
@@ -79,13 +82,13 @@ const WidgetConfigModal = ({
                   onClick={() => setWidgetType(type)}
                   className={`p-4 border-2 rounded-xl transition-all text-left ${
                     widgetType === type
-                      ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20'
+                      ? `${getThemeBorderClass(colorTheme)} ${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)}/20`
                       : 'border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600'
                   }`}
                 >
                   <Icon size={24} className={`mb-2 ${
                     widgetType === type 
-                      ? 'text-indigo-600 dark:text-indigo-400' 
+                      ? `${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)}` 
                       : 'text-zinc-400'
                   }`} />
                   <div className="text-sm font-medium text-zinc-900 dark:text-white">
@@ -106,7 +109,7 @@ const WidgetConfigModal = ({
               value={config.title || getDefaultTitle(widgetType)}
               onChange={(e) => setConfig({ ...config, title: e.target.value })}
               placeholder="Widget-titel"
-              className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+              className={`w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 ${getThemeRingClass(colorTheme)} outline-none`}
             />
           </div>
 
@@ -122,7 +125,7 @@ const WidgetConfigModal = ({
                   value={config.label || ''}
                   onChange={(e) => setConfig({ ...config, label: e.target.value })}
                   placeholder="t.ex. Inkomst, Utgifter, Netto"
-                  className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className={`w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 ${getThemeRingClass(colorTheme)} outline-none`}
                 />
               </div>
               <div>
@@ -163,14 +166,14 @@ const WidgetConfigModal = ({
                 onChange={(e) => setConfig({ ...config, limit: parseInt(e.target.value) || 5 })}
                 min="1"
                 max="20"
-                className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                className={`w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 ${getThemeRingClass(colorTheme)} outline-none`}
               />
               <label className="flex items-center gap-2 mt-3">
                 <input
                   type="checkbox"
                   checked={config.showCategory !== false}
                   onChange={(e) => setConfig({ ...config, showCategory: e.target.checked })}
-                  className="rounded border-zinc-300 dark:border-zinc-600 text-indigo-600 focus:ring-indigo-500"
+                  className={`rounded border-zinc-300 dark:border-zinc-600 ${getThemeTextClass(colorTheme, false)} ${getThemeRingClass(colorTheme)}`}
                 />
                 <span className="text-sm text-zinc-700 dark:text-zinc-300">Visa kategori</span>
               </label>
@@ -189,7 +192,7 @@ const WidgetConfigModal = ({
                     onClick={() => setConfig({ ...config, chartType: type })}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                       config.chartType === type
-                        ? 'bg-indigo-600 text-white'
+                        ? getThemeButtonClass(colorTheme, 'primary')
                         : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
                     }`}
                   >
@@ -206,7 +209,7 @@ const WidgetConfigModal = ({
                 type="checkbox"
                 checked={config.showPercentages !== false}
                 onChange={(e) => setConfig({ ...config, showPercentages: e.target.checked })}
-                className="rounded border-zinc-300 dark:border-zinc-600 text-indigo-600 focus:ring-indigo-500"
+                className={`rounded border-zinc-300 dark:border-zinc-600 ${getThemeTextClass(colorTheme, false)} ${getThemeRingClass(colorTheme)}`}
               />
               <span className="text-sm text-zinc-700 dark:text-zinc-300">Visa procent</span>
             </label>
@@ -217,13 +220,13 @@ const WidgetConfigModal = ({
         <div className="p-6 border-t border-zinc-200 dark:border-zinc-800 flex justify-end gap-3 flex-shrink-0">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors text-sm font-medium"
+            className={`px-4 py-2 ${getThemeButtonClass(colorTheme, 'primary')} rounded-lg transition-colors text-sm font-medium`}
           >
             Avbryt
           </button>
           <button
             onClick={handleSave}
-            className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium flex items-center gap-2"
+            className={`px-6 py-2 ${getThemeButtonClass(colorTheme, 'primary')} rounded-lg transition-colors text-sm font-medium flex items-center gap-2`}
           >
             <Save size={16} />
             Spara

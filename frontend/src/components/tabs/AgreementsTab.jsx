@@ -5,10 +5,13 @@ import StatCard from '../StatCard';
 import ImageLightbox from '../ImageLightbox';
 import AgreementFilterModal from '../AgreementFilterModal';
 import { useToast } from '../../contexts/ToastContext';
+import { useTheme } from '../../contexts/ThemeContext';
+import { getThemeButtonClass, getThemeBgClass, getThemeBorderClass, getThemeTextClass } from '../../utils/getThemeClasses';
 import { api } from '../../api';
 
 const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreement, setSelectedAgreement, setEditingNoteAgreementId, reloadData, vehicles = [] }) => {
   const { showToast } = useToast();
+  const { colorTheme } = useTheme();
   const [lightboxImages, setLightboxImages] = useState(null);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
@@ -505,20 +508,20 @@ const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreeme
           <div className="flex gap-2">
             <button 
               onClick={handleExport}
-              className="flex items-center gap-2 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm"
+              className={`flex items-center gap-2 ${getThemeButtonClass(colorTheme, 'primary')} px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-lg hover:shadow-xl active:scale-95`}
             >
               <Download size={16} /> Exportera CSV
             </button>
             <button 
               onClick={handleExportPDF}
-              className="flex items-center gap-2 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm"
+              className={`flex items-center gap-2 ${getThemeButtonClass(colorTheme, 'primary')} px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-lg hover:shadow-xl active:scale-95`}
             >
               <Download size={16} /> Exportera PDF
             </button>
           </div>
           <button 
             onClick={onAddAgreement}
-            className="flex items-center gap-2 bg-zinc-900 dark:bg-indigo-600 hover:bg-zinc-800 dark:hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-all shadow-lg hover:shadow-xl active:scale-95"
+            className={`flex items-center gap-2 ${getThemeButtonClass(colorTheme, 'primary')} px-5 py-2.5 rounded-xl text-sm font-medium transition-all shadow-lg hover:shadow-xl active:scale-95`}
           >
             <Plus size={16} /> Lägg till Avtal
           </button>
@@ -660,14 +663,21 @@ const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreeme
               onClick={() => setIsFilterModalOpen(true)}
               className={`relative p-2 border rounded-lg transition-all ${
                 Object.values(filters).some(v => v !== 'all' && v !== '')
-                  ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400'
+                  ? `${getThemeBorderClass(colorTheme)} ${getThemeBgClass(colorTheme, isDarkMode)} ${getThemeTextClass(colorTheme, isDarkMode)}`
                   : 'border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-500'
               }`}
               title="Filtrera avtal"
             >
               <Filter size={18} />
               {Object.values(filters).some(v => v !== 'all' && v !== '') && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 bg-indigo-600 dark:bg-indigo-500 rounded-full border-2 border-white dark:border-zinc-900"></span>
+                <span className={`absolute -top-1 -right-1 w-4 h-4 rounded-full border-2 border-white dark:border-zinc-900 ${
+                  colorTheme === 'indigo' ? 'bg-indigo-600 dark:bg-indigo-500' :
+                  colorTheme === 'blue' ? 'bg-blue-600 dark:bg-blue-500' :
+                  colorTheme === 'emerald' ? 'bg-emerald-600 dark:bg-emerald-500' :
+                  colorTheme === 'purple' ? 'bg-purple-600 dark:bg-purple-500' :
+                  colorTheme === 'rose' ? 'bg-rose-600 dark:bg-rose-500' :
+                  'bg-amber-600 dark:bg-amber-500'
+                }`}></span>
               )}
             </button>
             {selectedAgreements.size > 0 && (
@@ -855,7 +865,14 @@ const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreeme
                         className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${
                           hasNotice
                             ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 hover:scale-110 cursor-pointer'
-                            : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 hover:text-indigo-500 cursor-pointer'
+                            : `bg-zinc-100 dark:bg-zinc-800 text-zinc-400 cursor-pointer ${
+                              colorTheme === 'indigo' ? 'hover:bg-indigo-100 dark:hover:bg-indigo-900/30 hover:text-indigo-500' :
+                              colorTheme === 'blue' ? 'hover:bg-blue-100 dark:hover:bg-blue-900/30 hover:text-blue-500' :
+                              colorTheme === 'emerald' ? 'hover:bg-emerald-100 dark:hover:bg-emerald-900/30 hover:text-emerald-500' :
+                              colorTheme === 'purple' ? 'hover:bg-purple-100 dark:hover:bg-purple-900/30 hover:text-purple-500' :
+                              colorTheme === 'rose' ? 'hover:bg-rose-100 dark:hover:bg-rose-900/30 hover:text-rose-500' :
+                              'hover:bg-amber-100 dark:hover:bg-amber-900/30 hover:text-amber-500'
+                            }`
                         }`}
                         title={hasNotice ? agreement.notice : "Lägg till notering"}
                       >
