@@ -4083,51 +4083,6 @@ def delete_transaction_receipt(transaction_id):
             'remaining_receipts': len(receipt_paths),
             'deleted_path': deleted_path  # Return deleted path for undo functionality
         }), 200
-            try:
-                # Get receipt storage path
-                cursor.execute('SELECT value FROM settings WHERE key = ?', ('receipt_storage_path',))
-                result = cursor.fetchone()
-                storage_path = result['value'] if result else app.config['UPLOAD_FOLDER']
-                
-                # Create deleted subfolder
-                deleted_folder = os.path.join(storage_path, 'deleted')
-                os.makedirs(deleted_folder, exist_ok=True)
-                
-                # Move file to deleted folder
-                filename = os.path.basename(old_receipt_path)
-                deleted_filename = f"{transaction_id}_{filename}"
-                deleted_path = os.path.join(deleted_folder, deleted_filename)
-                
-                shutil.move(old_receipt_path, deleted_path)
-                moved_path = deleted_path
-            except Exception as e:
-                print(f"⚠️ [Backend] Kunde inte flytta kvittofil: {e}")
-        
-        # Update transaction
-        cursor.execute('UPDATE transactions SET receipt = ?, receipt_path = ?, updated_at = ? WHERE id = ?',
-                      (False, None, datetime.now().isoformat(), transaction_id))
-        conn.commit()
-        
-        # Get updated transaction for history
-        cursor.execute('SELECT * FROM transactions WHERE id = ?', (transaction_id,))
-        updated_transaction = dict(cursor.fetchone())
-        
-        # Add to history
-        add_history_entry(
-            action_type='update',
-            action=f'Raderade kvitto för transaktion: {updated_transaction.get("title", "Okänt")}',
-            entity_type='transaction',
-            entity_id=transaction_id,
-            entity_data=updated_transaction,
-            undo_data={'receipt_path': moved_path or old_receipt_path}
-        )
-        
-        conn.close()
-        
-        return jsonify({
-            'message': 'Receipt deleted successfully',
-            'moved_path': moved_path
-        }), 200
         
     except Exception as e:
         print(f"[Backend] Error deleting receipt: {e}")
