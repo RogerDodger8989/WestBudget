@@ -106,6 +106,20 @@ def init_db():
             ''')
             conn.commit()
         
+        # Check if dashboard_layouts table exists, if not create it
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='dashboard_layouts'")
+        if not cursor.fetchone():
+            print("⚠️  Creating dashboard_layouts table...")
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS dashboard_layouts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    layout_data TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            conn.commit()
+        
         # Check if vehicles table exists, if not create it
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='vehicles'")
         if not cursor.fetchone():
@@ -829,6 +843,65 @@ def delete_saved_search(search_id):
     conn.close()
     
     return jsonify({'message': 'Search deleted successfully'}), 200
+
+
+# ============================================================================
+# DASHBOARD LAYOUT ENDPOINTS
+# ============================================================================
+
+@app.route('/api/dashboard-layout', methods=['GET'])
+def get_dashboard_layout():
+    """Get dashboard widget layout"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT layout_data FROM dashboard_layouts ORDER BY updated_at DESC LIMIT 1')
+    row = cursor.fetchone()
+    
+    conn.close()
+    
+    if row and row[0]:
+        layout_data = json.loads(row[0])
+        return jsonify(layout_data.get('widgets', [])), 200
+    
+    return jsonify([]), 200
+
+
+@app.route('/api/dashboard-layout', methods=['POST'])
+def save_dashboard_layout():
+    """Save dashboard widget layout"""
+    data = request.get_json()
+    
+    if not data or 'widgets' not in data:
+        return jsonify({'error': 'Widgets data is required'}), 400
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Check if dashboard_layouts table exists, if not create it
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='dashboard_layouts'")
+    if not cursor.fetchone():
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS dashboard_layouts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                layout_data TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.commit()
+    
+    # Save or update layout
+    layout_data = json.dumps({'widgets': data['widgets']})
+    cursor.execute('''
+        INSERT INTO dashboard_layouts (layout_data, updated_at)
+        VALUES (?, ?)
+    ''', (layout_data, datetime.now().isoformat()))
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'message': 'Dashboard layout saved successfully'}), 200
 
 
 # ============================================================================

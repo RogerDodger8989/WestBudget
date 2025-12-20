@@ -63,27 +63,28 @@
 ---
 
 ## 4. Dashboard widgets
-**Status:** ⏳ Pending
+**Status:** ✅ Implementerad (delvis)
 
 ### Funktioner:
-- Anpassningsbar dashboard med dra-och-släpp
-- Olika widget-typer:
-  - KPI-kort (Inkomst, Utgifter, Netto)
-  - Diagram (linje, stapel, cirkel)
-  - Transaktionslista
-  - Kategorifördelning
-  - Sparande-progress
-  - Lån-översikt
-- Spara dashboard-layout
-- Återställ till standardlayout
+- ✅ Anpassningsbar dashboard med dra-och-släpp (enkel implementation)
+- ✅ Olika widget-typer:
+  - ✅ KPI-kort (Inkomst, Utgifter, Netto)
+  - ⏳ Diagram (linje, stapel, cirkel) - placeholder implementerad
+  - ✅ Transaktionslista
+  - ✅ Kategorifördelning
+  - ⏳ Sparande-progress (kommer snart)
+  - ⏳ Lån-översikt (kommer snart)
+- ✅ Spara dashboard-layout
+- ✅ Återställ till standardlayout (via edit mode)
 
 ### Implementation:
-- [ ] Implementera drag-and-drop bibliotek (react-dnd eller dnd-kit)
-- [ ] Skapa widget-komponenter
-- [ ] Bygg widget-configurator
-- [ ] Spara widget-layout i databasen
-- [ ] Uppdatera `OverviewTab` med widget-system
-- [ ] Lägg till widget-inställningar (storlek, data, färger)
+- [x] Implementera drag-and-drop (enkel implementation utan externa bibliotek)
+- [x] Skapa widget-komponenter (KPIWidget, ChartWidget, TransactionListWidget, CategoryDistributionWidget)
+- [x] Bygg widget-configurator (WidgetConfigModal)
+- [x] Spara widget-layout i databasen
+- [x] Uppdatera `OverviewTab` med widget-system
+- [x] Lägg till widget-inställningar (färger, titel, konfiguration)
+- [ ] Integrera riktiga diagram-bibliotek (recharts eller chart.js)
 
 ---
 

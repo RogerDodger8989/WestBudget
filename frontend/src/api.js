@@ -527,4 +527,19 @@ export const api = {
     });
     return handleResponse(res);
   },
+
+  // --- Dashboard Layout ---
+  getDashboardLayout: async () => {
+    const res = await fetch(`${API_BASE_URL}/dashboard-layout`);
+    return handleResponse(res);
+  },
+
+  saveDashboardLayout: async (widgets) => {
+    const res = await fetch(`${API_BASE_URL}/dashboard-layout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ widgets }),
+    });
+    return handleResponse(res);
+  },
 };
