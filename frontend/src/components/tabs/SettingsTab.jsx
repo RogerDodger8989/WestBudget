@@ -6,6 +6,9 @@ import CategoryEditForm from '../CategoryEditForm';
 import MergeCategoryModal from '../MergeCategoryModal';
 import ThemeCustomizer from '../ThemeCustomizer';
 import HistoryTab from './HistoryTab';
+import LicenseStatus from '../LicenseStatus';
+import AdminPanel from './AdminPanel';
+import { useAuth } from '../../contexts/AuthContext';
 import { applyTheme, getCurrentTheme } from '../../utils/themes';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getThemeButtonClass, getThemeBgClass, getThemeTextClass, getThemeBorderClass } from '../../utils/getThemeClasses';
@@ -15,6 +18,7 @@ import { useImageLightbox } from '../../hooks/useImageLightbox';
 const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactions = [], userName: externalUserName, setUserName: setExternalUserName, setActiveTab, setSelectedTransaction }) => {
   const { showToast } = useToast();
   const { colorTheme, changeTheme } = useTheme();
+  const { user } = useAuth();
   const { lightboxImages, lightboxIndex, openLightbox, closeLightbox, setLightboxIndex } = useImageLightbox();
   const [activeSubTab, setActiveSubTab] = useState('general'); // 'general', 'categories', 'images', 'history'
   const [localColorTheme, setLocalColorTheme] = useState(colorTheme || 'indigo');
@@ -628,6 +632,19 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
           <History size={16} />
           Historik
         </button>
+        {user?.role === 'admin' && (
+          <button
+            onClick={() => setActiveSubTab('admin')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+              activeSubTab === 'admin'
+                ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
+                : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+            }`}
+          >
+            <Settings size={16} />
+            Admin
+          </button>
+        )}
       </div>
 
       {/* Settings Sections */}
@@ -636,6 +653,9 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
         {/* Allmänna inställningar Tab */}
         {activeSubTab === 'general' && (
           <>
+        
+        {/* License Status */}
+        <LicenseStatus />
         
         {/* User Information */}
         <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
@@ -1919,6 +1939,11 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
         {/* History Tab */}
         {activeSubTab === 'history' && (
           <HistoryTab reloadData={reloadData} />
+        )}
+
+        {/* Admin Tab */}
+        {activeSubTab === 'admin' && user?.role === 'admin' && (
+          <AdminPanel />
         )}
 
       </div>

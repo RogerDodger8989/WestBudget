@@ -4,16 +4,23 @@ import sqlite3
 import zipfile
 import shutil
 import tempfile
-from datetime import datetime
+import bcrypt
+import jwt
+import secrets
+from datetime import datetime, timedelta
 from pathlib import Path
 from flask import Flask, request, jsonify, send_from_directory, send_file
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
+from functools import wraps
 
 # Configuration
 DATABASE = 'westbudget.db'
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'gif'}
+JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', secrets.token_urlsafe(32))  # Generate random key if not set
+JWT_ALGORITHM = 'HS256'
+JWT_EXPIRATION_HOURS = 24 * 7  # 7 days
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
@@ -366,6 +373,60 @@ def init_db():
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_savings_transactions_account_id ON savings_transactions(account_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_savings_transactions_transaction_id ON savings_transactions(transaction_id)')
             conn.commit()
+        
+        # Check if users table exists, if not create it
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+        if not cursor.fetchone():
+            print("⚠️  Creating users table...")
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    role TEXT DEFAULT 'user' CHECK(role IN ('user', 'admin')),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_login TIMESTAMP
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)')
+            conn.commit()
+        else:
+            # Check if role column exists, if not add it
+            cursor.execute("PRAGMA table_info(users)")
+            columns = [col[1] for col in cursor.fetchall()]
+            if 'role' not in columns:
+                print("⚠️  Adding role column to users table...")
+                cursor.execute('ALTER TABLE users ADD COLUMN role TEXT DEFAULT "user" CHECK(role IN ("user", "admin"))')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)')
+                conn.commit()
+            if 'last_login' not in columns:
+                print("⚠️  Adding last_login column to users table...")
+                cursor.execute('ALTER TABLE users ADD COLUMN last_login TIMESTAMP')
+                conn.commit()
+        
+        # Check if licenses table exists, if not create it
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='licenses'")
+        if not cursor.fetchone():
+            print("⚠️  Creating licenses table...")
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS licenses (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    license_type TEXT NOT NULL CHECK(license_type IN ('trial', 'premium')),
+                    status TEXT NOT NULL CHECK(status IN ('active', 'expired', 'cancelled')),
+                    starts_at TIMESTAMP NOT NULL,
+                    expires_at TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_validated_at TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_licenses_user_id ON licenses(user_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_licenses_status ON licenses(status)')
+            conn.commit()
     
     conn.close()
 
@@ -375,6 +436,73 @@ def get_db():
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row  # Return rows as dictionaries
     return conn
+
+
+# ============================================================================
+# AUTHENTICATION HELPERS
+# ============================================================================
+
+def hash_password(password):
+    """Hash a password using bcrypt"""
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+def verify_password(password, password_hash):
+    """Verify a password against a hash"""
+    return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
+
+def generate_token(user_id, email, role):
+    """Generate JWT token for user"""
+    payload = {
+        'user_id': user_id,
+        'email': email,
+        'role': role,
+        'exp': datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS),
+        'iat': datetime.utcnow()
+    }
+    return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+def verify_token(token):
+    """Verify and decode JWT token"""
+    try:
+        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        return payload
+    except jwt.ExpiredSignatureError:
+        return None
+    except jwt.InvalidTokenError:
+        return None
+
+def get_token_from_request():
+    """Extract token from Authorization header"""
+    auth_header = request.headers.get('Authorization')
+    if auth_header and auth_header.startswith('Bearer '):
+        return auth_header.split(' ')[1]
+    return None
+
+def require_auth(f):
+    """Decorator to require authentication"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        token = get_token_from_request()
+        if not token:
+            return jsonify({'error': 'No token provided'}), 401
+        
+        payload = verify_token(token)
+        if not payload:
+            return jsonify({'error': 'Invalid or expired token'}), 401
+        
+        request.current_user = payload
+        return f(*args, **kwargs)
+    return decorated_function
+
+def require_admin(f):
+    """Decorator to require admin role"""
+    @wraps(f)
+    @require_auth
+    def decorated_function(*args, **kwargs):
+        if request.current_user.get('role') != 'admin':
+            return jsonify({'error': 'Admin access required'}), 403
+        return f(*args, **kwargs)
+    return decorated_function
 
 
 def allowed_file(filename):
@@ -867,6 +995,875 @@ def delete_agreement(agreement_id):
     
     conn.close()
     return jsonify({'message': 'Agreement deleted successfully'}), 200
+
+
+# ============================================================================
+# AUTHENTICATION ENDPOINTS
+# ============================================================================
+
+@app.route('/api/auth/register', methods=['POST'])
+def register():
+    """Register a new user"""
+    try:
+        data = request.get_json()
+        
+        if not data or not data.get('email') or not data.get('password'):
+            return jsonify({'error': 'Email and password are required'}), 400
+        
+        email = data['email'].lower().strip()
+        password = data['password']
+        
+        # Validate email format
+        if '@' not in email or '.' not in email.split('@')[1]:
+            return jsonify({'error': 'Invalid email format'}), 400
+        
+        # Validate password length
+        if len(password) < 8:
+            return jsonify({'error': 'Password must be at least 8 characters'}), 400
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Check if user already exists
+        cursor.execute('SELECT id FROM users WHERE email = ?', (email,))
+        if cursor.fetchone():
+            conn.close()
+            return jsonify({'error': 'User with this email already exists'}), 409
+        
+        # Hash password
+        password_hash = hash_password(password)
+        
+        # Create user
+        cursor.execute('''
+            INSERT INTO users (email, password_hash, role, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (email, password_hash, 'user', datetime.now().isoformat(), datetime.now().isoformat()))
+        
+        user_id = cursor.lastrowid
+        
+        # Create trial license (30 days)
+        from datetime import datetime, timedelta
+        trial_start = datetime.now()
+        trial_end = trial_start + timedelta(days=30)
+        
+        cursor.execute('''
+            INSERT INTO licenses (user_id, license_type, status, starts_at, expires_at, created_at, updated_at, last_validated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            user_id,
+            'trial',
+            'active',
+            trial_start.isoformat(),
+            trial_end.isoformat(),
+            datetime.now().isoformat(),
+            datetime.now().isoformat(),
+            datetime.now().isoformat()
+        ))
+        
+        conn.commit()
+        
+        # Generate token
+        token = generate_token(user_id, email, 'user')
+        
+        cursor.execute('SELECT id, email, role, created_at FROM users WHERE id = ?', (user_id,))
+        user = dict(cursor.fetchone())
+        
+        conn.close()
+        
+        return jsonify({
+            'message': 'User registered successfully',
+            'user': user,
+            'token': token
+        }), 201
+        
+    except Exception as e:
+        print(f"[Backend] Error registering user: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    """Login user"""
+    try:
+        data = request.get_json()
+        
+        if not data or not data.get('email') or not data.get('password'):
+            return jsonify({'error': 'Email and password are required'}), 400
+        
+        email = data['email'].lower().strip()
+        password = data['password']
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Find user
+        cursor.execute('SELECT id, email, password_hash, role FROM users WHERE email = ?', (email,))
+        user = cursor.fetchone()
+        
+        if not user:
+            conn.close()
+            return jsonify({'error': 'Invalid email or password'}), 401
+        
+        # Verify password
+        if not verify_password(password, user['password_hash']):
+            conn.close()
+            return jsonify({'error': 'Invalid email or password'}), 401
+        
+        # Update last login
+        cursor.execute('''
+            UPDATE users SET last_login = ?, updated_at = ? WHERE id = ?
+        ''', (datetime.now().isoformat(), datetime.now().isoformat(), user['id']))
+        conn.commit()
+        
+        # Generate token
+        token = generate_token(user['id'], user['email'], user['role'])
+        
+        user_dict = {
+            'id': user['id'],
+            'email': user['email'],
+            'role': user['role']
+        }
+        
+        conn.close()
+        
+        return jsonify({
+            'message': 'Login successful',
+            'user': user_dict,
+            'token': token
+        }), 200
+        
+    except Exception as e:
+        print(f"[Backend] Error logging in: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/auth/me', methods=['GET'])
+@require_auth
+def get_current_user():
+    """Get current authenticated user"""
+    try:
+        user_id = request.current_user['user_id']
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT id, email, role, created_at, last_login FROM users WHERE id = ?', (user_id,))
+        user = cursor.fetchone()
+        
+        conn.close()
+        
+        if user:
+            return jsonify(dict(user)), 200
+        return jsonify({'error': 'User not found'}), 404
+        
+    except Exception as e:
+        print(f"[Backend] Error getting current user: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/auth/logout', methods=['POST'])
+@require_auth
+def logout():
+    """Logout user (client-side token removal, this is just for consistency)"""
+    return jsonify({'message': 'Logout successful'}), 200
+
+@app.route('/api/auth/forgot-password', methods=['POST'])
+def forgot_password():
+    """Request password reset"""
+    try:
+        data = request.get_json()
+        
+        if not data or not data.get('email'):
+            return jsonify({'error': 'Email is required'}), 400
+        
+        email = data['email'].lower().strip()
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT id FROM users WHERE email = ?', (email,))
+        user = cursor.fetchone()
+        
+        conn.close()
+        
+        # Always return success (security: don't reveal if email exists)
+        # In production, send email only if user exists
+        return jsonify({
+            'message': 'If an account with this email exists, a password reset link has been sent'
+        }), 200
+        
+    except Exception as e:
+        print(f"[Backend] Error in forgot password: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/auth/reset-password', methods=['POST'])
+def reset_password():
+    """Reset password with token"""
+    try:
+        data = request.get_json()
+        
+        if not data or not data.get('token') or not data.get('password'):
+            return jsonify({'error': 'Token and password are required'}), 400
+        
+        # TODO: Implement token validation and password reset
+        # For now, return placeholder
+        return jsonify({'error': 'Password reset not yet implemented'}), 501
+        
+    except Exception as e:
+        print(f"[Backend] Error resetting password: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# ============================================================================
+# LICENSE ENDPOINTS
+# ============================================================================
+
+@app.route('/api/licenses/current', methods=['GET'])
+@require_auth
+def get_current_license():
+    """Get current user's license"""
+    try:
+        user_id = request.current_user['user_id']
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get most recent active license
+        cursor.execute('''
+            SELECT * FROM licenses 
+            WHERE user_id = ? AND status = 'active'
+            ORDER BY created_at DESC
+            LIMIT 1
+        ''', (user_id,))
+        license = cursor.fetchone()
+        
+        conn.close()
+        
+        if license:
+            license_dict = dict(license)
+            # Check if license is expired
+            if license_dict['expires_at']:
+                expires_at = datetime.fromisoformat(license_dict['expires_at'])
+                if datetime.now() > expires_at:
+                    # Update status to expired
+                    conn = get_db()
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        UPDATE licenses SET status = 'expired', updated_at = ?
+                        WHERE id = ?
+                    ''', (datetime.now().isoformat(), license_dict['id']))
+                    conn.commit()
+                    conn.close()
+                    license_dict['status'] = 'expired'
+            
+            return jsonify(license_dict), 200
+        
+        return jsonify({'error': 'No active license found'}), 404
+        
+    except Exception as e:
+        print(f"[Backend] Error getting current license: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/licenses/status', methods=['GET'])
+@require_auth
+def get_license_status():
+    """Get license status with validation info"""
+    try:
+        user_id = request.current_user['user_id']
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get most recent license
+        cursor.execute('''
+            SELECT * FROM licenses 
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+        ''', (user_id,))
+        license = cursor.fetchone()
+        
+        if not license:
+            conn.close()
+            return jsonify({
+                'has_license': False,
+                'status': 'no_license',
+                'message': 'No license found'
+            }), 200
+        
+        license_dict = dict(license)
+        
+        # Check expiration
+        is_expired = False
+        days_remaining = None
+        if license_dict['expires_at']:
+            expires_at = datetime.fromisoformat(license_dict['expires_at'])
+            now = datetime.now()
+            if now > expires_at:
+                is_expired = True
+                # Update status
+                cursor.execute('''
+                    UPDATE licenses SET status = 'expired', updated_at = ?
+                    WHERE id = ?
+                ''', (datetime.now().isoformat(), license_dict['id']))
+                conn.commit()
+            else:
+                days_remaining = (expires_at - now).days
+        
+        # Check grace period (7 days offline)
+        grace_period_expired = False
+        if license_dict['last_validated_at']:
+            last_validated = datetime.fromisoformat(license_dict['last_validated_at'])
+            days_since_validation = (datetime.now() - last_validated).days
+            if days_since_validation > 7:
+                grace_period_expired = True
+        
+        conn.close()
+        
+        status = 'expired' if is_expired else license_dict['status']
+        if grace_period_expired and status == 'active':
+            status = 'grace_period_expired'
+        
+        return jsonify({
+            'has_license': True,
+            'license': license_dict,
+            'status': status,
+            'is_expired': is_expired,
+            'days_remaining': days_remaining,
+            'grace_period_expired': grace_period_expired,
+            'license_type': license_dict['license_type'],
+            'can_use': status == 'active' and not grace_period_expired
+        }), 200
+        
+    except Exception as e:
+        print(f"[Backend] Error getting license status: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/licenses/validate', methods=['POST'])
+@require_auth
+def validate_license():
+    """Validate license (online validation)"""
+    try:
+        user_id = request.current_user['user_id']
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get current license
+        cursor.execute('''
+            SELECT * FROM licenses 
+            WHERE user_id = ? AND status = 'active'
+            ORDER BY created_at DESC
+            LIMIT 1
+        ''', (user_id,))
+        license = cursor.fetchone()
+        
+        if not license:
+            conn.close()
+            return jsonify({'error': 'No active license found'}), 404
+        
+        license_dict = dict(license)
+        
+        # Check if license is expired
+        is_valid = True
+        if license_dict['expires_at']:
+            expires_at = datetime.fromisoformat(license_dict['expires_at'])
+            if datetime.now() > expires_at:
+                is_valid = False
+                # Update status
+                cursor.execute('''
+                    UPDATE licenses SET status = 'expired', updated_at = ?
+                    WHERE id = ?
+                ''', (datetime.now().isoformat(), license_dict['id']))
+                conn.commit()
+        
+        # Update last_validated_at
+        cursor.execute('''
+            UPDATE licenses SET last_validated_at = ?, updated_at = ?
+            WHERE id = ?
+        ''', (datetime.now().isoformat(), datetime.now().isoformat(), license_dict['id']))
+        conn.commit()
+        
+        # Log validation
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='license_validations'")
+        if not cursor.fetchone():
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS license_validations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    license_id INTEGER NOT NULL,
+                    validation_type TEXT NOT NULL CHECK(validation_type IN ('online', 'offline')),
+                    success INTEGER DEFAULT 1,
+                    error_message TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE
+                )
+            ''')
+            conn.commit()
+        
+        cursor.execute('''
+            INSERT INTO license_validations (license_id, validation_type, success, created_at)
+            VALUES (?, ?, ?, ?)
+        ''', (license_dict['id'], 'online', 1 if is_valid else 0, datetime.now().isoformat()))
+        conn.commit()
+        
+        conn.close()
+        
+        return jsonify({
+            'valid': is_valid,
+            'license': license_dict,
+            'message': 'License validated successfully' if is_valid else 'License has expired'
+        }), 200
+        
+    except Exception as e:
+        print(f"[Backend] Error validating license: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================================================
+# ADMIN ENDPOINTS
+# ============================================================================
+
+@app.route('/api/admin/users', methods=['GET'])
+@require_admin
+def get_all_users():
+    """Get all users (admin only)"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT id, email, role, created_at, updated_at, last_login
+            FROM users
+            ORDER BY created_at DESC
+        ''')
+        users = [dict(row) for row in cursor.fetchall()]
+        
+        conn.close()
+        return jsonify(users), 200
+        
+    except Exception as e:
+        print(f"[Backend] Error getting all users: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/users', methods=['POST'])
+@require_admin
+def create_user():
+    """Create a new user (admin only)"""
+    try:
+        data = request.get_json()
+        
+        if not data or not data.get('email') or not data.get('password'):
+            return jsonify({'error': 'Email and password are required'}), 400
+        
+        email = data['email'].lower().strip()
+        password = data['password']
+        role = data.get('role', 'user')
+        
+        if role not in ['user', 'admin']:
+            return jsonify({'error': 'Invalid role'}), 400
+        
+        if len(password) < 8:
+            return jsonify({'error': 'Password must be at least 8 characters'}), 400
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Check if user already exists
+        cursor.execute('SELECT id FROM users WHERE email = ?', (email,))
+        if cursor.fetchone():
+            conn.close()
+            return jsonify({'error': 'User with this email already exists'}), 409
+        
+        # Hash password
+        password_hash = hash_password(password)
+        
+        # Create user
+        cursor.execute('''
+            INSERT INTO users (email, password_hash, role, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (email, password_hash, role, datetime.now().isoformat(), datetime.now().isoformat()))
+        
+        user_id = cursor.lastrowid
+        
+        # Create license if specified
+        license_type = data.get('license_type', 'trial')
+        if license_type in ['trial', 'premium']:
+            trial_start = datetime.now()
+            if license_type == 'trial':
+                trial_end = trial_start + timedelta(days=30)
+            else:
+                trial_end = None  # Premium never expires
+            
+            cursor.execute('''
+                INSERT INTO licenses (user_id, license_type, status, starts_at, expires_at, created_at, updated_at, last_validated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                user_id,
+                license_type,
+                'active',
+                trial_start.isoformat(),
+                trial_end.isoformat() if trial_end else None,
+                datetime.now().isoformat(),
+                datetime.now().isoformat(),
+                datetime.now().isoformat()
+            ))
+        
+        conn.commit()
+        
+        cursor.execute('SELECT id, email, role, created_at FROM users WHERE id = ?', (user_id,))
+        user = dict(cursor.fetchone())
+        
+        conn.close()
+        
+        return jsonify(user), 201
+        
+    except Exception as e:
+        print(f"[Backend] Error creating user: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/users/<int:user_id>', methods=['PUT'])
+@require_admin
+def update_user(user_id):
+    """Update a user (admin only)"""
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Check if user exists
+        cursor.execute('SELECT id FROM users WHERE id = ?', (user_id,))
+        if not cursor.fetchone():
+            conn.close()
+            return jsonify({'error': 'User not found'}), 404
+        
+        update_fields = []
+        values = []
+        
+        if 'email' in data:
+            new_email = data['email'].lower().strip()
+            # Check if email is already taken
+            cursor.execute('SELECT id FROM users WHERE email = ? AND id != ?', (new_email, user_id))
+            if cursor.fetchone():
+                conn.close()
+                return jsonify({'error': 'Email already in use'}), 409
+            update_fields.append('email = ?')
+            values.append(new_email)
+        
+        if 'password' in data:
+            new_password = data['password']
+            if len(new_password) < 8:
+                conn.close()
+                return jsonify({'error': 'Password must be at least 8 characters'}), 400
+            password_hash = hash_password(new_password)
+            update_fields.append('password_hash = ?')
+            values.append(password_hash)
+        
+        if 'role' in data:
+            if data['role'] not in ['user', 'admin']:
+                conn.close()
+                return jsonify({'error': 'Invalid role'}), 400
+            update_fields.append('role = ?')
+            values.append(data['role'])
+        
+        if not update_fields:
+            conn.close()
+            return jsonify({'error': 'No valid fields to update'}), 400
+        
+        update_fields.append('updated_at = ?')
+        values.append(datetime.now().isoformat())
+        values.append(user_id)
+        
+        query = f'UPDATE users SET {", ".join(update_fields)} WHERE id = ?'
+        cursor.execute(query, values)
+        conn.commit()
+        
+        cursor.execute('SELECT id, email, role, created_at, last_login FROM users WHERE id = ?', (user_id,))
+        updated_user = dict(cursor.fetchone())
+        
+        conn.close()
+        
+        return jsonify(updated_user), 200
+        
+    except Exception as e:
+        print(f"[Backend] Error updating user: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/users/<int:user_id>', methods=['DELETE'])
+@require_admin
+def delete_user(user_id):
+    """Delete a user (admin only)"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Check if user exists
+        cursor.execute('SELECT id FROM users WHERE id = ?', (user_id,))
+        if not cursor.fetchone():
+            conn.close()
+            return jsonify({'error': 'User not found'}), 404
+        
+        # Delete user (cascade will delete licenses)
+        cursor.execute('DELETE FROM users WHERE id = ?', (user_id,))
+        conn.commit()
+        
+        conn.close()
+        
+        return jsonify({'message': 'User deleted successfully'}), 200
+        
+    except Exception as e:
+        print(f"[Backend] Error deleting user: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/licenses', methods=['GET'])
+@require_admin
+def get_all_licenses():
+    """Get all licenses (admin only)"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT l.*, u.email as user_email
+            FROM licenses l
+            JOIN users u ON l.user_id = u.id
+            ORDER BY l.created_at DESC
+        ''')
+        licenses = [dict(row) for row in cursor.fetchall()]
+        
+        conn.close()
+        return jsonify(licenses), 200
+        
+    except Exception as e:
+        print(f"[Backend] Error getting all licenses: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/licenses/<int:license_id>', methods=['PUT'])
+@require_admin
+def update_license(license_id):
+    """Update a license (admin only)"""
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Check if license exists
+        cursor.execute('SELECT id FROM licenses WHERE id = ?', (license_id,))
+        if not cursor.fetchone():
+            conn.close()
+            return jsonify({'error': 'License not found'}), 404
+        
+        update_fields = []
+        values = []
+        
+        if 'license_type' in data:
+            if data['license_type'] not in ['trial', 'premium']:
+                conn.close()
+                return jsonify({'error': 'Invalid license type'}), 400
+            update_fields.append('license_type = ?')
+            values.append(data['license_type'])
+        
+        if 'status' in data:
+            if data['status'] not in ['active', 'expired', 'cancelled']:
+                conn.close()
+                return jsonify({'error': 'Invalid status'}), 400
+            update_fields.append('status = ?')
+            values.append(data['status'])
+        
+        if 'expires_at' in data:
+            update_fields.append('expires_at = ?')
+            values.append(data['expires_at'] if data['expires_at'] else None)
+        
+        if not update_fields:
+            conn.close()
+            return jsonify({'error': 'No valid fields to update'}), 400
+        
+        update_fields.append('updated_at = ?')
+        values.append(datetime.now().isoformat())
+        values.append(license_id)
+        
+        query = f'UPDATE licenses SET {", ".join(update_fields)} WHERE id = ?'
+        cursor.execute(query, values)
+        conn.commit()
+        
+        cursor.execute('SELECT * FROM licenses WHERE id = ?', (license_id,))
+        updated_license = dict(cursor.fetchone())
+        
+        conn.close()
+        
+        return jsonify(updated_license), 200
+        
+    except Exception as e:
+        print(f"[Backend] Error updating license: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/statistics', methods=['GET'])
+@require_admin
+def get_statistics():
+    """Get usage statistics (admin only)"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Total users
+        cursor.execute('SELECT COUNT(*) as total FROM users')
+        total_users = cursor.fetchone()['total']
+        
+        # Users by role
+        cursor.execute('SELECT role, COUNT(*) as count FROM users GROUP BY role')
+        users_by_role = {row['role']: row['count'] for row in cursor.fetchall()}
+        
+        # Active licenses
+        cursor.execute('SELECT COUNT(*) as total FROM licenses WHERE status = "active"')
+        active_licenses = cursor.fetchone()['total']
+        
+        # Licenses by type
+        cursor.execute('SELECT license_type, COUNT(*) as count FROM licenses GROUP BY license_type')
+        licenses_by_type = {row['license_type']: row['count'] for row in cursor.fetchall()}
+        
+        # New users this month
+        cursor.execute('''
+            SELECT COUNT(*) as count FROM users
+            WHERE created_at >= date('now', 'start of month')
+        ''')
+        new_users_this_month = cursor.fetchone()['count']
+        
+        # Total transactions
+        cursor.execute('SELECT COUNT(*) as total FROM transactions')
+        total_transactions = cursor.fetchone()['total']
+        
+        # Total agreements
+        cursor.execute('SELECT COUNT(*) as total FROM agreements')
+        total_agreements = cursor.fetchone()['total']
+        
+        # Total loans
+        cursor.execute('SELECT COUNT(*) as total FROM loans')
+        total_loans = cursor.fetchone()['total']
+        
+        conn.close()
+        
+        return jsonify({
+            'users': {
+                'total': total_users,
+                'by_role': users_by_role,
+                'new_this_month': new_users_this_month
+            },
+            'licenses': {
+                'active': active_licenses,
+                'by_type': licenses_by_type
+            },
+            'usage': {
+                'transactions': total_transactions,
+                'agreements': total_agreements,
+                'loans': total_loans
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"[Backend] Error getting statistics: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/payments', methods=['GET'])
+@require_admin
+def get_all_payments():
+    """Get all payments (admin only) - placeholder for future Stripe integration"""
+    try:
+        # TODO: Implement when Stripe is integrated
+        return jsonify({
+            'payments': [],
+            'message': 'Payment history will be available after Stripe integration'
+        }), 200
+        
+    except Exception as e:
+        print(f"[Backend] Error getting payments: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/auth/profile', methods=['PUT'])
+@require_auth
+def update_profile():
+    """Update user profile"""
+    try:
+        user_id = request.current_user['user_id']
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        update_fields = []
+        values = []
+        
+        if 'email' in data:
+            new_email = data['email'].lower().strip()
+            # Check if email is already taken
+            cursor.execute('SELECT id FROM users WHERE email = ? AND id != ?', (new_email, user_id))
+            if cursor.fetchone():
+                conn.close()
+                return jsonify({'error': 'Email already in use'}), 409
+            update_fields.append('email = ?')
+            values.append(new_email)
+        
+        if 'password' in data:
+            new_password = data['password']
+            if len(new_password) < 8:
+                conn.close()
+                return jsonify({'error': 'Password must be at least 8 characters'}), 400
+            password_hash = hash_password(new_password)
+            update_fields.append('password_hash = ?')
+            values.append(password_hash)
+        
+        if not update_fields:
+            conn.close()
+            return jsonify({'error': 'No valid fields to update'}), 400
+        
+        update_fields.append('updated_at = ?')
+        values.append(datetime.now().isoformat())
+        values.append(user_id)
+        
+        query = f'UPDATE users SET {", ".join(update_fields)} WHERE id = ?'
+        cursor.execute(query, values)
+        conn.commit()
+        
+        cursor.execute('SELECT id, email, role, created_at, last_login FROM users WHERE id = ?', (user_id,))
+        updated_user = dict(cursor.fetchone())
+        
+        conn.close()
+        
+        return jsonify(updated_user), 200
+        
+    except Exception as e:
+        print(f"[Backend] Error updating profile: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 # ============================================================================
