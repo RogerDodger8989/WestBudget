@@ -1,7 +1,8 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { TrendingUp, TrendingDown, Download, Calendar, DollarSign, PiggyBank, BarChart3, PieChart, CheckSquare, Square, Settings2 } from 'lucide-react';
+import { TrendingUp, TrendingDown, Download, Calendar, DollarSign, PiggyBank, BarChart3, PieChart, CheckSquare, Square, Settings2, FileText } from 'lucide-react';
 import DateRangeBtn from '../DateRangeBtn';
 import StatCard from '../StatCard';
+import CustomReportBuilder from '../CustomReportBuilder';
 import { filterByDateRange } from '../../utils/filterByDateRange';
 import { formatAmount, getAmountClassName } from '../../utils/formatAmount';
 import { useToast } from '../../contexts/ToastContext';
@@ -26,6 +27,7 @@ const ReportsTab = ({
   const [selectedCategories, setSelectedCategories] = useState(new Set());
   const [includeLoans, setIncludeLoans] = useState(false);
   const [showCategorySelector, setShowCategorySelector] = useState(false);
+  const [isCustomReportBuilderOpen, setIsCustomReportBuilderOpen] = useState(false);
 
   // Hämta start- och slutdatum för aktuell period
   const getCurrentPeriodDates = useMemo(() => {
@@ -827,6 +829,13 @@ const ReportsTab = ({
         </div>
         <div className="flex gap-3">
           <button
+            onClick={() => setIsCustomReportBuilderOpen(true)}
+            className={`flex items-center gap-2 ${getThemeButtonClass(colorTheme, 'primary')} px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-lg hover:shadow-xl active:scale-95`}
+          >
+            <FileText size={16} />
+            Skapa Anpassad Rapport
+          </button>
+          <button
             onClick={() => setCompareMode(!compareMode)}
             className={`flex items-center gap-2 ${getThemeButtonClass(colorTheme, 'primary')} px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-lg hover:shadow-xl active:scale-95`}
           >
@@ -1124,6 +1133,18 @@ const ReportsTab = ({
           </div>
         </div>
       </div>
+
+      {/* Custom Report Builder Modal */}
+      <CustomReportBuilder
+        isOpen={isCustomReportBuilderOpen}
+        onClose={() => setIsCustomReportBuilderOpen(false)}
+        transactions={transactions}
+        agreements={agreements}
+        loans={loans}
+        dateRange={dateRange}
+        customStartDate={customStartDate}
+        customEndDate={customEndDate}
+      />
     </div>
   );
 };

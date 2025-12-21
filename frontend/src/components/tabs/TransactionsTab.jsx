@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Search, Filter, Import, ArrowDown, Download, Calendar, Undo2, Trash2, Sparkles, SlidersHorizontal } from 'lucide-react';
+import { Search, Filter, Import, ArrowDown, ArrowUp, Download, Calendar, Undo2, Trash2, Sparkles, SlidersHorizontal } from 'lucide-react';
 import TransactionItem from '../TransactionItem';
 import DateRangeBtn from '../DateRangeBtn';
 import ApplyRulesModal from '../ApplyRulesModal';
@@ -53,6 +53,8 @@ const TransactionsTab = ({
     minAmount: '',
     maxAmount: ''
   });
+  const [sortColumn, setSortColumn] = useState('title');
+  const [sortDirection, setSortDirection] = useState('desc');
   const selectAllCheckboxRef = useRef(null);
 
   // Load saved searches on mount
@@ -83,7 +85,11 @@ const TransactionsTab = ({
       // For now, use first category (we'll enhance this later)
       setFilters(prev => ({ ...prev, category: searchParams.categories[0] }));
     }
-    if (searchParams.status) {
+    // Handle both old 'status' and new 'statuses' for backward compatibility
+    if (searchParams.statuses && searchParams.statuses.length > 0) {
+      // Multi-select statuses - use first one for simple filter (or enhance simple filter to support multiple)
+      setFilters(prev => ({ ...prev, status: searchParams.statuses[0] }));
+    } else if (searchParams.status && searchParams.status !== 'all') {
       setFilters(prev => ({ ...prev, status: searchParams.status }));
     }
     if (searchParams.hasReceipt) {
@@ -246,6 +252,20 @@ const TransactionsTab = ({
         });
       }
 
+      // Apply multi-status filter
+      if (params.statuses && params.statuses.length > 0) {
+        filtered = filtered.filter(t => {
+          const statusName = t.status || '';
+          return params.statuses.includes(statusName);
+        });
+      } else if (params.status && params.status !== 'all') {
+        // Backward compatibility: handle old single status filter
+        filtered = filtered.filter(t => {
+          const statusName = t.status || '';
+          return statusName === params.status;
+        });
+      }
+
       // Apply search query with field selection
       if (params.query && params.query.trim()) {
         const query = params.query.toLowerCase().trim();
@@ -298,6 +318,71 @@ const TransactionsTab = ({
     return filtered;
   }, [categoryAndStatusFiltered, searchQuery, advancedSearchParams]);
 
+  // Sortera filtrerade transaktioner
+  const sortedTransactions = useMemo(() => {
+    if (!sortColumn) return filteredTransactions;
+    
+    const sorted = [...filteredTransactions].sort((a, b) => {
+      let comparison = 0;
+      
+      switch (sortColumn) {
+        case 'title':
+          comparison = (a.title || '').localeCompare(b.title || '');
+          break;
+        case 'date': {
+          const dateA = a.date || '';
+          const dateB = b.date || '';
+          if (!dateA && !dateB) comparison = 0;
+          else if (!dateA) comparison = 1;
+          else if (!dateB) comparison = -1;
+          else comparison = dateA.localeCompare(dateB);
+          break;
+        }
+        case 'category': {
+          const categoryA = typeof a.category === 'string' ? a.category : a.category?.name || '';
+          const categoryB = typeof b.category === 'string' ? b.category : b.category?.name || '';
+          comparison = categoryA.localeCompare(categoryB);
+          break;
+        }
+        case 'note': {
+          const noteA = a.note || '';
+          const noteB = b.note || '';
+          comparison = noteA.localeCompare(noteB);
+          break;
+        }
+        case 'amount': {
+          const amountStrA = a.amount?.replace(/[^\d,.-]/g, '').replace(',', '') || '0';
+          const amountStrB = b.amount?.replace(/[^\d,.-]/g, '').replace(',', '') || '0';
+          const amountA = parseFloat(amountStrA) || 0;
+          const amountB = parseFloat(amountStrB) || 0;
+          comparison = amountA - amountB;
+          break;
+        }
+        case 'status':
+          comparison = (a.status || '').localeCompare(b.status || '');
+          break;
+        default:
+          return 0;
+      }
+      
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+    
+    return sorted;
+  }, [filteredTransactions, sortColumn, sortDirection]);
+
+  // Hantera sortering
+  const handleSort = (column) => {
+    if (sortColumn === column) {
+      // Toggle direction if same column
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      // New column, default to ascending
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+  };
+
   // Calculate date range for filename
   const getDateRangeForFilename = () => {
     const now = new Date();
@@ -333,8 +418,8 @@ const TransactionsTab = ({
           endDateStr = customEndDate;
         } else {
           // If no custom dates, use all transactions date range
-          if (filteredTransactions.length > 0) {
-            const dates = filteredTransactions.map(t => t.date).filter(Boolean).sort();
+          if (sortedTransactions.length > 0) {
+            const dates = sortedTransactions.map(t => t.date).filter(Boolean).sort();
             startDateStr = dates[0] || '';
             endDateStr = dates[dates.length - 1] || '';
           } else {
@@ -346,8 +431,8 @@ const TransactionsTab = ({
       }
       default: {
         // If no date range selected, use all transactions date range
-        if (filteredTransactions.length > 0) {
-          const dates = filteredTransactions.map(t => t.date).filter(Boolean).sort();
+        if (sortedTransactions.length > 0) {
+          const dates = sortedTransactions.map(t => t.date).filter(Boolean).sort();
           startDateStr = dates[0] || '';
           endDateStr = dates[dates.length - 1] || '';
         } else {
@@ -372,7 +457,7 @@ const TransactionsTab = ({
 
   // Export to CSV
   const handleExport = () => {
-    if (filteredTransactions.length === 0) {
+    if (sortedTransactions.length === 0) {
       showToast('Inga transaktioner att exportera', { type: 'info' });
       return;
     }
@@ -386,7 +471,7 @@ const TransactionsTab = ({
     // Convert transactions to CSV rows
     const csvRows = [
       headers.join(','), // Header row
-      ...filteredTransactions.map(transaction => {
+      ...sortedTransactions.map(transaction => {
         // Format amount - handle both string and number
         let amountValue = '';
         if (transaction.amount !== undefined && transaction.amount !== null) {
@@ -427,7 +512,7 @@ const TransactionsTab = ({
     link.click();
     document.body.removeChild(link);
     
-    showToast(`Exporterade ${filteredTransactions.length} transaktioner`, { type: 'success' });
+    showToast(`Exporterade ${sortedTransactions.length} transaktioner`, { type: 'success' });
   };
 
   // Beräkna statistik från filtrerade transaktioner
@@ -435,7 +520,7 @@ const TransactionsTab = ({
     let inkomst = 0;
     let utgifter = 0;
 
-    filteredTransactions.forEach(t => {
+    sortedTransactions.forEach(t => {
       // Extrahera numeriskt värde från amount-strängen (t.ex. "+12,500 kr" -> 12500)
       const amountStr = t.amount.replace(/[^\d,.-]/g, '').replace(',', '.');
       const amount = parseFloat(amountStr) || 0;
@@ -455,11 +540,11 @@ const TransactionsTab = ({
       netto: formatAmount(netto),
       nettoValue: netto
     };
-  }, [filteredTransactions]);
+  }, [sortedTransactions]);
 
   const handleSelectAll = (checked) => {
     if (checked) {
-      const allIds = new Set(filteredTransactions.map(t => t.id));
+      const allIds = new Set(sortedTransactions.map(t => t.id));
       setSelectedTransactions(allIds);
     } else {
       setSelectedTransactions(new Set());
@@ -483,7 +568,7 @@ const TransactionsTab = ({
     }
 
     const idsToDelete = Array.from(selectedTransactions);
-    const transactionsToDelete = filteredTransactions.filter(t => idsToDelete.includes(t.id));
+    const transactionsToDelete = sortedTransactions.filter(t => idsToDelete.includes(t.id));
     
     // Save for undo
     const deletedTransactions = transactionsToDelete.map(t => ({ ...t }));
@@ -559,8 +644,8 @@ const TransactionsTab = ({
     }
   };
 
-  const allSelected = filteredTransactions.length > 0 && 
-    filteredTransactions.every(t => selectedTransactions.has(t.id));
+  const allSelected = sortedTransactions.length > 0 && 
+    sortedTransactions.every(t => selectedTransactions.has(t.id));
   const someSelected = selectedTransactions.size > 0 && !allSelected;
 
   // Update indeterminate state of select all checkbox
@@ -784,21 +869,49 @@ const TransactionsTab = ({
               className="w-4 h-4 text-indigo-600 border-zinc-300 rounded focus:ring-indigo-500"
             />
           </div>
-          <div className="col-span-2 flex items-center gap-1 cursor-pointer hover:text-zinc-800 dark:hover:text-zinc-300">
-            Beskrivning <ArrowDown size={12} />
+          <div 
+            className="col-span-2 flex items-center gap-1 cursor-pointer hover:text-zinc-800 dark:hover:text-zinc-300"
+            onClick={() => handleSort('title')}
+          >
+            Beskrivning {sortColumn === 'title' ? (sortDirection === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />) : <ArrowDown size={12} className="opacity-30" />}
           </div>
-          <div className="col-span-2">Datum</div>
-          <div className="col-span-2 hidden sm:block">Kategori</div>
-          <div className="col-span-1 hidden sm:flex justify-center">Notering</div>
-          <div className="col-span-2 text-right">Belopp</div>
-          <div className="col-span-1 hidden sm:block text-center">Status</div>
+          <div 
+            className="col-span-2 flex items-center gap-1 cursor-pointer hover:text-zinc-800 dark:hover:text-zinc-300"
+            onClick={() => handleSort('date')}
+          >
+            Datum {sortColumn === 'date' ? (sortDirection === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />) : <ArrowDown size={12} className="opacity-30" />}
+          </div>
+          <div 
+            className="col-span-2 hidden sm:flex items-center gap-1 cursor-pointer hover:text-zinc-800 dark:hover:text-zinc-300"
+            onClick={() => handleSort('category')}
+          >
+            Kategori {sortColumn === 'category' ? (sortDirection === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />) : <ArrowDown size={12} className="opacity-30" />}
+          </div>
+          <div 
+            className="col-span-1 hidden sm:flex items-center justify-center gap-1 cursor-pointer hover:text-zinc-800 dark:hover:text-zinc-300"
+            onClick={() => handleSort('note')}
+          >
+            Notering {sortColumn === 'note' ? (sortDirection === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />) : <ArrowDown size={12} className="opacity-30" />}
+          </div>
+          <div 
+            className="col-span-2 text-right flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-800 dark:hover:text-zinc-300"
+            onClick={() => handleSort('amount')}
+          >
+            Belopp {sortColumn === 'amount' ? (sortDirection === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />) : <ArrowDown size={12} className="opacity-30" />}
+          </div>
+          <div 
+            className="col-span-1 hidden sm:flex items-center justify-center gap-1 cursor-pointer hover:text-zinc-800 dark:hover:text-zinc-300"
+            onClick={() => handleSort('status')}
+          >
+            Status {sortColumn === 'status' ? (sortDirection === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />) : <ArrowDown size={12} className="opacity-30" />}
+          </div>
           <div className="col-span-1 hidden sm:block text-center">Kvitto</div>
         </div>
 
         <div className="flex-1 overflow-y-auto">
           {loading ? (
             <div className="text-center py-12">Laddar transaktioner...</div>
-          ) : filteredTransactions.length === 0 ? (
+          ) : sortedTransactions.length === 0 ? (
             <div className="text-center py-12 text-zinc-500">
               {searchQuery ? `Inga transaktioner matchar "${searchQuery}"` : 
                selectedCategory !== 'Alla Kategorier' || selectedStatus !== 'Alla Statusar' 
@@ -806,7 +919,7 @@ const TransactionsTab = ({
                  : 'Inga transaktioner hittades'}
             </div>
           ) : (
-            filteredTransactions.map(t => (
+            sortedTransactions.map(t => (
               <TransactionItem 
                 key={t.id} 
                 data={t} 

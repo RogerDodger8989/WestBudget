@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save } from 'lucide-react';
-import { TrendingUp, TrendingDown, BarChart3, List, PieChart } from 'lucide-react';
+import { TrendingUp, TrendingDown, BarChart3, List, PieChart, Target, Receipt } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { getThemeButtonClass, getThemeTextClass, getThemeBorderClass, getThemeRingClass, getThemeBgClass } from '../utils/getThemeClasses';
 
@@ -43,7 +43,9 @@ const WidgetConfigModal = ({
       kpi: 'KPI',
       chart: 'Diagram',
       'transaction-list': 'Transaktionslista',
-      'category-distribution': 'Kategorifördelning'
+      'category-distribution': 'Kategorifördelning',
+      'savings-progress': 'Sparande-progress',
+      'loans-overview': 'Lån-översikt'
     };
     return titles[type] || 'Widget';
   };
@@ -75,7 +77,9 @@ const WidgetConfigModal = ({
                 { type: 'kpi', label: 'KPI-kort', icon: TrendingUp },
                 { type: 'chart', label: 'Diagram', icon: BarChart3 },
                 { type: 'transaction-list', label: 'Transaktionslista', icon: List },
-                { type: 'category-distribution', label: 'Kategorifördelning', icon: PieChart }
+                { type: 'category-distribution', label: 'Kategorifördelning', icon: PieChart },
+                { type: 'savings-progress', label: 'Sparande-progress', icon: Target },
+                { type: 'loans-overview', label: 'Lån-översikt', icon: Receipt }
               ].map(({ type, label, icon: Icon }) => (
                 <button
                   key={type}
@@ -213,6 +217,56 @@ const WidgetConfigModal = ({
               />
               <span className="text-sm text-zinc-700 dark:text-zinc-300">Visa procent</span>
             </label>
+          )}
+
+          {widgetType === 'savings-progress' && (
+            <div className="space-y-3">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={config.showGoals !== false}
+                  onChange={(e) => setConfig({ ...config, showGoals: e.target.checked })}
+                  className={`rounded border-zinc-300 dark:border-zinc-600 ${getThemeTextClass(colorTheme, false)} ${getThemeRingClass(colorTheme)}`}
+                />
+                <span className="text-sm text-zinc-700 dark:text-zinc-300">Visa spar-mål</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={config.showAccounts !== false}
+                  onChange={(e) => setConfig({ ...config, showAccounts: e.target.checked })}
+                  className={`rounded border-zinc-300 dark:border-zinc-600 ${getThemeTextClass(colorTheme, false)} ${getThemeRingClass(colorTheme)}`}
+                />
+                <span className="text-sm text-zinc-700 dark:text-zinc-300">Visa spar-konton</span>
+              </label>
+            </div>
+          )}
+
+          {widgetType === 'loans-overview' && (
+            <div className="space-y-3">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={config.showDetails !== false}
+                  onChange={(e) => setConfig({ ...config, showDetails: e.target.checked })}
+                  className={`rounded border-zinc-300 dark:border-zinc-600 ${getThemeTextClass(colorTheme, false)} ${getThemeRingClass(colorTheme)}`}
+                />
+                <span className="text-sm text-zinc-700 dark:text-zinc-300">Visa lån-detaljer</span>
+              </label>
+              <div>
+                <label className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-2 block">
+                  Max antal lån att visa
+                </label>
+                <input
+                  type="number"
+                  value={config.maxLoans || 5}
+                  onChange={(e) => setConfig({ ...config, maxLoans: parseInt(e.target.value) || 5 })}
+                  min="1"
+                  max="10"
+                  className={`w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 ${getThemeRingClass(colorTheme)} outline-none`}
+                />
+              </div>
+            </div>
           )}
         </div>
 

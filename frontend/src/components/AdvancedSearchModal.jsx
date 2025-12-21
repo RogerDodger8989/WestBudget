@@ -21,7 +21,7 @@ const AdvancedSearchModal = ({
   const [filters, setFilters] = useState({
     type: 'all',
     categories: [], // Multi-select
-    status: 'all',
+    statuses: [], // Multi-select
     hasReceipt: 'all',
     hasNote: 'all',
     minAmount: '',
@@ -36,7 +36,13 @@ const AdvancedSearchModal = ({
 
   useEffect(() => {
     if (initialFilters) {
-      setFilters(prev => ({ ...prev, ...initialFilters }));
+      // Handle backward compatibility: convert old 'status' to 'statuses' array
+      const updatedFilters = { ...initialFilters };
+      if (updatedFilters.status && !updatedFilters.statuses) {
+        updatedFilters.statuses = updatedFilters.status === 'all' ? [] : [updatedFilters.status];
+        delete updatedFilters.status;
+      }
+      setFilters(prev => ({ ...prev, ...updatedFilters }));
     }
   }, [initialFilters]);
 
@@ -46,7 +52,7 @@ const AdvancedSearchModal = ({
       setFilters({
         type: 'all',
         categories: [],
-        status: 'all',
+        statuses: [],
         hasReceipt: 'all',
         hasNote: 'all',
         minAmount: '',
@@ -71,6 +77,16 @@ const AdvancedSearchModal = ({
         ? categories.filter(c => c !== category)
         : [...categories, category];
       return { ...prev, categories: newCategories };
+    });
+  };
+
+  const handleStatusToggle = (status) => {
+    setFilters(prev => {
+      const statuses = prev.statuses || [];
+      const newStatuses = statuses.includes(status)
+        ? statuses.filter(s => s !== status)
+        : [...statuses, status];
+      return { ...prev, statuses: newStatuses };
     });
   };
 
@@ -172,7 +188,7 @@ const AdvancedSearchModal = ({
     return searchQuery.trim() !== '' ||
            filters.type !== 'all' ||
            (filters.categories && filters.categories.length > 0) ||
-           filters.status !== 'all' ||
+           (filters.statuses && filters.statuses.length > 0) ||
            filters.hasReceipt !== 'all' ||
            filters.hasNote !== 'all' ||
            filters.minAmount !== '' ||
@@ -366,26 +382,29 @@ const AdvancedSearchModal = ({
                 )}
               </div>
 
-              {/* Status Filter */}
+              {/* Status Filter - Multi-select */}
               <div>
                 <label className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-2 block">
-                  Status
+                  Status (välj flera)
                 </label>
-                <div className="flex flex-wrap gap-2">
-                  {['all', 'Bokförd', 'Väntande', 'Makulerad'].map(status => (
-                    <button
-                      key={status}
-                      onClick={() => handleFilterChange('status', status)}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                        filters.status === status
-                          ? `${getThemeButtonClass(colorTheme, 'primary')} shadow-lg`
-                          : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                      }`}
-                    >
-                      {status === 'all' ? 'Alla' : status}
-                    </button>
+                <div className="max-h-40 overflow-y-auto border border-zinc-200 dark:border-zinc-700 rounded-lg p-2 space-y-1">
+                  {['Bokförd', 'Väntande', 'Makulerad'].map(status => (
+                    <label key={status} className="flex items-center gap-2 p-2 hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={filters.statuses?.includes(status) || false}
+                        onChange={() => handleStatusToggle(status)}
+                        className={`rounded border-zinc-300 dark:border-zinc-600 ${getThemeTextClass(colorTheme, false)} ${getThemeRingClass(colorTheme)}`}
+                      />
+                      <span className="text-sm text-zinc-700 dark:text-zinc-300">{status}</span>
+                    </label>
                   ))}
                 </div>
+                {filters.statuses && filters.statuses.length > 0 && (
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                    {filters.statuses.length} status(ar) valda
+                  </p>
+                )}
               </div>
 
               {/* Amount Range */}

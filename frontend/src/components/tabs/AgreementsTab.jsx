@@ -1,9 +1,10 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { formatAmount } from '../../utils/formatAmount';
 import { RefreshCw, FileText, AlertTriangle, Search, Filter, CalendarClock, Download, Plus, CheckCircle2, Check, ArrowUp, ArrowDown, ChevronUp, ChevronDown, Trash2 } from 'lucide-react';
 import StatCard from '../StatCard';
 import ImageLightbox from '../ImageLightbox';
 import AgreementFilterModal from '../AgreementFilterModal';
+import AgreementAdvancedSearchModal from '../AgreementAdvancedSearchModal';
 import { useToast } from '../../contexts/ToastContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getThemeButtonClass, getThemeBgClass, getThemeBorderClass, getThemeTextClass } from '../../utils/getThemeClasses';
@@ -16,6 +17,9 @@ const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreeme
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+  const [isAdvancedSearchOpen, setIsAdvancedSearchOpen] = useState(false);
+  const [advancedSearchParams, setAdvancedSearchParams] = useState(null);
+  const [savedSearches, setSavedSearches] = useState([]);
   const [filters, setFilters] = useState({
     status: 'all',
     category: 'all',
@@ -30,6 +34,77 @@ const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreeme
   const [selectedAgreements, setSelectedAgreements] = useState(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
   const selectAllCheckboxRef = useRef(null);
+
+  // Load saved searches on mount
+  useEffect(() => {
+    loadSavedSearches();
+  }, []);
+
+  const loadSavedSearches = async () => {
+    try {
+      const searches = await api.getSavedSearches();
+      // Filter to only show agreement searches
+      const agreementSearches = searches.filter(s => s.entity_type === 'agreement' || !s.entity_type);
+      setSavedSearches(agreementSearches);
+    } catch (error) {
+      console.error('Kunde inte ladda sparade sökningar:', error);
+    }
+  };
+
+  const handleAdvancedSearch = (searchParams) => {
+    setAdvancedSearchParams(searchParams);
+    // Apply advanced search filters
+    if (searchParams.query) {
+      setSearchQuery(searchParams.query);
+    }
+    // Handle both old 'status' and new 'statuses' for backward compatibility
+    if (searchParams.statuses && searchParams.statuses.length > 0) {
+      // Multi-select statuses - use first one for simple filter (or enhance simple filter to support multiple)
+      setFilters(prev => ({ ...prev, status: searchParams.statuses[0] }));
+    } else if (searchParams.status && searchParams.status !== 'all') {
+      setFilters(prev => ({ ...prev, status: searchParams.status }));
+    }
+    if (searchParams.categories && searchParams.categories.length > 0) {
+      // For now, use first category (we'll enhance this later)
+      setFilters(prev => ({ ...prev, category: searchParams.categories[0] }));
+    }
+    if (searchParams.frequency) {
+      setFilters(prev => ({ ...prev, frequency: searchParams.frequency }));
+    }
+    if (searchParams.hasImages) {
+      setFilters(prev => ({ ...prev, hasImages: searchParams.hasImages }));
+    }
+    if (searchParams.hasNotice) {
+      setFilters(prev => ({ ...prev, hasNotice: searchParams.hasNotice }));
+    }
+    if (searchParams.minCost) {
+      setFilters(prev => ({ ...prev, minCost: searchParams.minCost }));
+    }
+    if (searchParams.maxCost) {
+      setFilters(prev => ({ ...prev, maxCost: searchParams.maxCost }));
+    }
+  };
+
+  const handleSaveSearch = async (searchData) => {
+    try {
+      const saved = await api.saveSearch(searchData);
+      await loadSavedSearches();
+      return saved;
+    } catch (error) {
+      console.error('Kunde inte spara sökning:', error);
+      throw error;
+    }
+  };
+
+  const handleDeleteSearch = async (id) => {
+    try {
+      await api.deleteSearch(id);
+      await loadSavedSearches();
+    } catch (error) {
+      console.error('Kunde inte ta bort sökning:', error);
+      throw error;
+    }
+  };
 
   // Parse images from agreement
   const parseImages = (imagesData) => {
@@ -46,84 +121,187 @@ const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreeme
   const filteredAgreements = useMemo(() => {
     let filtered = [...agreements];
 
-    // Applicera filter
-    filtered = filtered.filter(a => {
-      // Status filter
-      if (filters.status !== 'all' && a.status !== filters.status) {
-        return false;
-      }
-
-      // Category filter
-      if (filters.category !== 'all' && a.category !== filters.category) {
-        return false;
-      }
-
-      // Frequency filter
-      if (filters.frequency !== 'all' && a.frequency !== filters.frequency) {
-        return false;
-      }
-
-      // Has images filter
-      if (filters.hasImages !== 'all') {
-        const hasImages = parseImages(a.images).length > 0;
-        if (filters.hasImages === 'yes' && !hasImages) return false;
-        if (filters.hasImages === 'no' && hasImages) return false;
-      }
-
-      // Has notice filter
-      if (filters.hasNotice !== 'all') {
-        const hasNotice = a.notice && a.notice.trim().length > 0;
-        if (filters.hasNotice === 'yes' && !hasNotice) return false;
-        if (filters.hasNotice === 'no' && hasNotice) return false;
-      }
-
-      // Cost range filter
-      const cost = parseFloat(a.cost) || 0;
-      if (filters.minCost && cost < parseFloat(filters.minCost)) {
-        return false;
-      }
-      if (filters.maxCost && cost > parseFloat(filters.maxCost)) {
-        return false;
-      }
-
-      return true;
-    });
-
-    // Applicera sökfråga
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim();
+    // Apply advanced search if active
+    if (advancedSearchParams) {
+      const params = advancedSearchParams;
       
+      // Apply date range filter from advanced search
+      if (params.dateFrom || params.dateTo) {
+        filtered = filtered.filter(a => {
+          const startDate = a.start_date;
+          const endDate = a.end_date;
+          
+          if (params.dateFrom) {
+            const fromDate = new Date(params.dateFrom);
+            if (startDate && new Date(startDate) > fromDate) return true;
+            if (endDate && new Date(endDate) > fromDate) return true;
+            if (!startDate && !endDate) return false;
+          }
+          if (params.dateTo) {
+            const toDate = new Date(params.dateTo);
+            toDate.setHours(23, 59, 59, 999);
+            if (startDate && new Date(startDate) <= toDate) return true;
+            if (endDate && new Date(endDate) <= toDate) return true;
+            if (!startDate && !endDate) return false;
+          }
+          return true;
+        });
+      }
+
+      // Apply multi-category filter
+      if (params.categories && params.categories.length > 0) {
+        filtered = filtered.filter(a => {
+          const categoryName = a.category || '';
+          return params.categories.includes(categoryName);
+        });
+      }
+
+      // Apply multi-status filter
+      if (params.statuses && params.statuses.length > 0) {
+        filtered = filtered.filter(a => {
+          const statusName = a.status || '';
+          return params.statuses.includes(statusName);
+        });
+      } else if (params.status && params.status !== 'all') {
+        // Backward compatibility: handle old single status filter
+        filtered = filtered.filter(a => {
+          const statusName = a.status || '';
+          return statusName === params.status;
+        });
+      }
+
+      // Apply search query with field selection
+      if (params.query && params.query.trim()) {
+        const query = params.query.toLowerCase().trim();
+        const searchIn = params.searchIn || ['name', 'provider', 'notice'];
+        
+        filtered = filtered.filter(a => {
+          if (searchIn.includes('name') && a.name?.toLowerCase().includes(query)) return true;
+          if (searchIn.includes('provider') && a.provider?.toLowerCase().includes(query)) return true;
+          if (searchIn.includes('notice') && a.notice?.toLowerCase().includes(query)) return true;
+          // Also search in cost and id if query is numeric
+          if (!isNaN(query)) {
+            if (String(a.id).includes(query)) return true;
+            if (String(a.cost).includes(query)) return true;
+          }
+          return false;
+        });
+      }
+
+      // Apply frequency filter from advanced search
+      if (params.frequency && params.frequency !== 'all') {
+        filtered = filtered.filter(a => a.frequency === params.frequency);
+      }
+
+      // Apply hasImages filter from advanced search
+      if (params.hasImages && params.hasImages !== 'all') {
+        filtered = filtered.filter(a => {
+          const hasImages = parseImages(a.images).length > 0;
+          if (params.hasImages === 'yes' && !hasImages) return false;
+          if (params.hasImages === 'no' && hasImages) return false;
+          return true;
+        });
+      }
+
+      // Apply hasNotice filter from advanced search
+      if (params.hasNotice && params.hasNotice !== 'all') {
+        filtered = filtered.filter(a => {
+          const hasNotice = a.notice && a.notice.trim().length > 0;
+          if (params.hasNotice === 'yes' && !hasNotice) return false;
+          if (params.hasNotice === 'no' && hasNotice) return false;
+          return true;
+        });
+      }
+
+      // Apply cost range filter from advanced search
+      if (params.minCost || params.maxCost) {
+        filtered = filtered.filter(a => {
+          const cost = parseFloat(a.cost) || 0;
+          if (params.minCost && cost < parseFloat(params.minCost)) return false;
+          if (params.maxCost && cost > parseFloat(params.maxCost)) return false;
+          return true;
+        });
+      }
+    } else {
+      // Fallback to simple filters if no advanced search
       filtered = filtered.filter(a => {
-        // Sök i name
-        if (a.name?.toLowerCase().includes(query)) return true;
-        
-        // Sök i provider
-        if (a.provider?.toLowerCase().includes(query)) return true;
-        
-        // Sök i cost (som sträng)
-        if (String(a.cost)?.toLowerCase().includes(query)) return true;
-        
-        // Sök i category
-        if (a.category?.toLowerCase().includes(query)) return true;
-        
-        // Sök i notice
-        if (a.notice?.toLowerCase().includes(query)) return true;
-        
-        // Sök i id (som sträng)
-        if (String(a.id).includes(query)) return true;
-        
-        // Sök i status
-        if (a.status?.toLowerCase().includes(query)) return true;
-        
-        // Sök i frequency
-        if (a.frequency?.toLowerCase().includes(query)) return true;
-        
-        return false;
+        // Status filter
+        if (filters.status !== 'all' && a.status !== filters.status) {
+          return false;
+        }
+
+        // Category filter
+        if (filters.category !== 'all' && a.category !== filters.category) {
+          return false;
+        }
+
+        // Frequency filter
+        if (filters.frequency !== 'all' && a.frequency !== filters.frequency) {
+          return false;
+        }
+
+        // Has images filter
+        if (filters.hasImages !== 'all') {
+          const hasImages = parseImages(a.images).length > 0;
+          if (filters.hasImages === 'yes' && !hasImages) return false;
+          if (filters.hasImages === 'no' && hasImages) return false;
+        }
+
+        // Has notice filter
+        if (filters.hasNotice !== 'all') {
+          const hasNotice = a.notice && a.notice.trim().length > 0;
+          if (filters.hasNotice === 'yes' && !hasNotice) return false;
+          if (filters.hasNotice === 'no' && hasNotice) return false;
+        }
+
+        // Cost range filter
+        const cost = parseFloat(a.cost) || 0;
+        if (filters.minCost && cost < parseFloat(filters.minCost)) {
+          return false;
+        }
+        if (filters.maxCost && cost > parseFloat(filters.maxCost)) {
+          return false;
+        }
+
+        return true;
       });
+
+      // Applicera sökfråga
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase().trim();
+        
+        filtered = filtered.filter(a => {
+          // Sök i name
+          if (a.name?.toLowerCase().includes(query)) return true;
+          
+          // Sök i provider
+          if (a.provider?.toLowerCase().includes(query)) return true;
+          
+          // Sök i cost (som sträng)
+          if (String(a.cost)?.toLowerCase().includes(query)) return true;
+          
+          // Sök i category
+          if (a.category?.toLowerCase().includes(query)) return true;
+          
+          // Sök i notice
+          if (a.notice?.toLowerCase().includes(query)) return true;
+          
+          // Sök i id (som sträng)
+          if (String(a.id).includes(query)) return true;
+          
+          // Sök i status
+          if (a.status?.toLowerCase().includes(query)) return true;
+          
+          // Sök i frequency
+          if (a.frequency?.toLowerCase().includes(query)) return true;
+          
+          return false;
+        });
+      }
     }
 
     return filtered;
-  }, [agreements, searchQuery, filters]);
+  }, [agreements, searchQuery, filters, advancedSearchParams]);
 
   // Sortera filtrerade avtal
   const sortedAgreements = useMemo(() => {
@@ -660,10 +838,31 @@ const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreeme
               />
             </div>
             <button 
+              onClick={() => setIsAdvancedSearchOpen(true)}
+              className={`relative p-2 border rounded-lg transition-all ${
+                advancedSearchParams
+                  ? `${getThemeBorderClass(colorTheme)} ${getThemeBgClass(colorTheme, false)} ${getThemeTextClass(colorTheme, false)}`
+                  : 'border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-500'
+              }`}
+              title="Avancerad sökning"
+            >
+              <Search size={18} />
+              {advancedSearchParams && (
+                <span className={`absolute -top-1 -right-1 w-4 h-4 rounded-full border-2 border-white dark:border-zinc-900 ${
+                  colorTheme === 'indigo' ? 'bg-indigo-600 dark:bg-indigo-500' :
+                  colorTheme === 'blue' ? 'bg-blue-600 dark:bg-blue-500' :
+                  colorTheme === 'emerald' ? 'bg-emerald-600 dark:bg-emerald-500' :
+                  colorTheme === 'purple' ? 'bg-purple-600 dark:bg-purple-500' :
+                  colorTheme === 'rose' ? 'bg-rose-600 dark:bg-rose-500' :
+                  'bg-amber-600 dark:bg-amber-500'
+                }`}></span>
+              )}
+            </button>
+            <button 
               onClick={() => setIsFilterModalOpen(true)}
               className={`relative p-2 border rounded-lg transition-all ${
                 Object.values(filters).some(v => v !== 'all' && v !== '')
-                  ? `${getThemeBorderClass(colorTheme)} ${getThemeBgClass(colorTheme, isDarkMode)} ${getThemeTextClass(colorTheme, isDarkMode)}`
+                  ? `${getThemeBorderClass(colorTheme)} ${getThemeBgClass(colorTheme, false)} ${getThemeTextClass(colorTheme, false)}`
                   : 'border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-500'
               }`}
               title="Filtrera avtal"
@@ -935,6 +1134,20 @@ const AgreementsTab = ({ agreements, getTitle, loading, categories, onAddAgreeme
         filters={filters}
         onFiltersChange={setFilters}
       />
+
+      {/* Advanced Search Modal */}
+      {isAdvancedSearchOpen && (
+        <AgreementAdvancedSearchModal
+          isOpen={isAdvancedSearchOpen}
+          onClose={() => setIsAdvancedSearchOpen(false)}
+          categories={categories}
+          onSearch={handleAdvancedSearch}
+          savedSearches={savedSearches}
+          onSaveSearch={handleSaveSearch}
+          onDeleteSearch={handleDeleteSearch}
+          initialFilters={advancedSearchParams}
+        />
+      )}
 
       {/* Image Lightbox */}
       {lightboxImages && lightboxImages.length > 0 && (

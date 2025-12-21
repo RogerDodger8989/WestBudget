@@ -107,10 +107,19 @@ def init_db():
                     name TEXT NOT NULL,
                     query TEXT DEFAULT '',
                     filters TEXT DEFAULT '{}',
+                    entity_type TEXT DEFAULT 'transaction',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
             conn.commit()
+        else:
+            # Check if entity_type column exists, if not add it
+            cursor.execute("PRAGMA table_info(saved_searches)")
+            columns = [col[1] for col in cursor.fetchall()]
+            if 'entity_type' not in columns:
+                print("⚠️  Adding entity_type column to saved_searches table...")
+                cursor.execute('ALTER TABLE saved_searches ADD COLUMN entity_type TEXT DEFAULT "transaction"')
+                conn.commit()
         
         # Check if dashboard_layouts table exists, if not create it
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='dashboard_layouts'")
@@ -120,6 +129,43 @@ def init_db():
                 CREATE TABLE IF NOT EXISTS dashboard_layouts (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     layout_data TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            conn.commit()
+        
+        # Check if custom_themes table exists, if not create it
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='custom_themes'")
+        if not cursor.fetchone():
+            print("⚠️  Creating custom_themes table...")
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS custom_themes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    primary_color TEXT NOT NULL,
+                    secondary_color TEXT,
+                    accent_color TEXT,
+                    is_default INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            conn.commit()
+        
+        # Check if report_templates table exists, if not create it
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='report_templates'")
+        if not cursor.fetchone():
+            print("⚠️  Creating report_templates table...")
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS report_templates (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    categories TEXT,
+                    components TEXT NOT NULL,
+                    date_range TEXT,
+                    custom_start_date TEXT,
+                    custom_end_date TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -840,6 +886,44 @@ def get_settings():
     return jsonify(settings), 200
 
 
+@app.route('/api/select-folder', methods=['POST'])
+def select_folder():
+    """Open a folder selection dialog and return the selected path"""
+    try:
+        # Try to use tkinter for folder selection
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+            
+            # Create a root window and hide it
+            root = tk.Tk()
+            root.withdraw()  # Hide the main window
+            root.attributes('-topmost', True)  # Bring to front
+            
+            # Open folder dialog
+            folder_path = filedialog.askdirectory(title="Välj mapp")
+            
+            # Destroy the root window
+            root.destroy()
+            
+            if folder_path:
+                # Convert to Windows-style path if on Windows
+                if os.name == 'nt':
+                    folder_path = folder_path.replace('/', '\\')
+                return jsonify({'path': folder_path}), 200
+            else:
+                return jsonify({'error': 'No folder selected'}), 400
+                
+        except ImportError:
+            # Fallback: return error if tkinter is not available
+            return jsonify({'error': 'Folder selection not available. Please enter path manually.'}), 501
+        except Exception as e:
+            return jsonify({'error': f'Error opening folder dialog: {str(e)}'}), 500
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/settings', methods=['POST'])
 def update_settings():
     """Update settings"""
@@ -864,6 +948,302 @@ def update_settings():
 
 
 # ============================================================================
+# CUSTOM THEMES ENDPOINTS
+# ============================================================================
+
+@app.route('/api/custom-themes', methods=['GET'])
+def get_custom_themes():
+    """Get all custom themes"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM custom_themes ORDER BY created_at DESC')
+    themes = []
+    for row in cursor.fetchall():
+        themes.append(dict(row))
+    
+    conn.close()
+    return jsonify(themes), 200
+
+
+@app.route('/api/custom-themes', methods=['POST'])
+def create_custom_theme():
+    """Create a new custom theme"""
+    data = request.get_json()
+    
+    if not data or not data.get('name') or not data.get('primary_color'):
+        return jsonify({'error': 'Name and primary_color are required'}), 400
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # If this is set as default, unset other defaults
+    if data.get('is_default'):
+        cursor.execute('UPDATE custom_themes SET is_default = 0 WHERE is_default = 1')
+    
+    cursor.execute('''
+        INSERT INTO custom_themes (name, primary_color, secondary_color, accent_color, is_default, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        data['name'],
+        data['primary_color'],
+        data.get('secondary_color'),
+        data.get('accent_color'),
+        1 if data.get('is_default') else 0,
+        datetime.now().isoformat(),
+        datetime.now().isoformat()
+    ))
+    
+    theme_id = cursor.lastrowid
+    conn.commit()
+    
+    cursor.execute('SELECT * FROM custom_themes WHERE id = ?', (theme_id,))
+    new_theme = dict(cursor.fetchone())
+    
+    conn.close()
+    return jsonify(new_theme), 201
+
+
+@app.route('/api/custom-themes/<int:theme_id>', methods=['PUT'])
+def update_custom_theme(theme_id):
+    """Update a custom theme"""
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # If this is set as default, unset other defaults
+    if data.get('is_default'):
+        cursor.execute('UPDATE custom_themes SET is_default = 0 WHERE is_default = 1 AND id != ?', (theme_id,))
+    
+    update_fields = []
+    values = []
+    
+    if 'name' in data:
+        update_fields.append('name = ?')
+        values.append(data['name'])
+    if 'primary_color' in data:
+        update_fields.append('primary_color = ?')
+        values.append(data['primary_color'])
+    if 'secondary_color' in data:
+        update_fields.append('secondary_color = ?')
+        values.append(data['secondary_color'])
+    if 'accent_color' in data:
+        update_fields.append('accent_color = ?')
+        values.append(data['accent_color'])
+    if 'is_default' in data:
+        update_fields.append('is_default = ?')
+        values.append(1 if data['is_default'] else 0)
+    
+    update_fields.append('updated_at = ?')
+    values.append(datetime.now().isoformat())
+    values.append(theme_id)
+    
+    cursor.execute(f'''
+        UPDATE custom_themes 
+        SET {', '.join(update_fields)}
+        WHERE id = ?
+    ''', values)
+    
+    if cursor.rowcount == 0:
+        conn.close()
+        return jsonify({'error': 'Theme not found'}), 404
+    
+    conn.commit()
+    
+    cursor.execute('SELECT * FROM custom_themes WHERE id = ?', (theme_id,))
+    updated_theme = dict(cursor.fetchone())
+    
+    conn.close()
+    return jsonify(updated_theme), 200
+
+
+@app.route('/api/custom-themes/<int:theme_id>', methods=['DELETE'])
+def delete_custom_theme(theme_id):
+    """Delete a custom theme"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('DELETE FROM custom_themes WHERE id = ?', (theme_id,))
+    
+    if cursor.rowcount == 0:
+        conn.close()
+        return jsonify({'error': 'Theme not found'}), 404
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'message': 'Theme deleted successfully'}), 200
+
+
+# ============================================================================
+# REPORT TEMPLATES ENDPOINTS
+# ============================================================================
+
+@app.route('/api/report-templates', methods=['GET'])
+def get_report_templates():
+    """Get all report templates"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM report_templates ORDER BY created_at DESC')
+    templates = []
+    for row in cursor.fetchall():
+        template = dict(row)
+        # Parse JSON fields
+        if template.get('categories'):
+            try:
+                template['categories'] = json.loads(template['categories'])
+            except:
+                template['categories'] = []
+        if template.get('components'):
+            try:
+                template['components'] = json.loads(template['components'])
+            except:
+                template['components'] = []
+        templates.append(template)
+    
+    conn.close()
+    return jsonify(templates), 200
+
+
+@app.route('/api/report-templates', methods=['POST'])
+def create_report_template():
+    """Create a new report template"""
+    data = request.get_json()
+    
+    if not data or not data.get('name') or not data.get('components'):
+        return jsonify({'error': 'Name and components are required'}), 400
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        INSERT INTO report_templates (name, categories, components, date_range, custom_start_date, custom_end_date, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        data['name'],
+        json.dumps(data.get('categories', [])),
+        json.dumps(data['components']),
+        data.get('dateRange'),
+        data.get('customStartDate'),
+        data.get('customEndDate'),
+        datetime.now().isoformat(),
+        datetime.now().isoformat()
+    ))
+    
+    template_id = cursor.lastrowid
+    conn.commit()
+    
+    cursor.execute('SELECT * FROM report_templates WHERE id = ?', (template_id,))
+    new_template = dict(cursor.fetchone())
+    
+    # Parse JSON fields
+    if new_template.get('categories'):
+        try:
+            new_template['categories'] = json.loads(new_template['categories'])
+        except:
+            new_template['categories'] = []
+    if new_template.get('components'):
+        try:
+            new_template['components'] = json.loads(new_template['components'])
+        except:
+            new_template['components'] = []
+    
+    conn.close()
+    return jsonify(new_template), 201
+
+
+@app.route('/api/report-templates/<int:template_id>', methods=['PUT'])
+def update_report_template(template_id):
+    """Update a report template"""
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    update_fields = []
+    values = []
+    
+    if 'name' in data:
+        update_fields.append('name = ?')
+        values.append(data['name'])
+    if 'categories' in data:
+        update_fields.append('categories = ?')
+        values.append(json.dumps(data['categories']))
+    if 'components' in data:
+        update_fields.append('components = ?')
+        values.append(json.dumps(data['components']))
+    if 'dateRange' in data:
+        update_fields.append('date_range = ?')
+        values.append(data['dateRange'])
+    if 'customStartDate' in data:
+        update_fields.append('custom_start_date = ?')
+        values.append(data['customStartDate'])
+    if 'customEndDate' in data:
+        update_fields.append('custom_end_date = ?')
+        values.append(data['customEndDate'])
+    
+    update_fields.append('updated_at = ?')
+    values.append(datetime.now().isoformat())
+    values.append(template_id)
+    
+    cursor.execute(f'''
+        UPDATE report_templates 
+        SET {', '.join(update_fields)}
+        WHERE id = ?
+    ''', values)
+    
+    if cursor.rowcount == 0:
+        conn.close()
+        return jsonify({'error': 'Template not found'}), 404
+    
+    conn.commit()
+    
+    cursor.execute('SELECT * FROM report_templates WHERE id = ?', (template_id,))
+    updated_template = dict(cursor.fetchone())
+    
+    # Parse JSON fields
+    if updated_template.get('categories'):
+        try:
+            updated_template['categories'] = json.loads(updated_template['categories'])
+        except:
+            updated_template['categories'] = []
+    if updated_template.get('components'):
+        try:
+            updated_template['components'] = json.loads(updated_template['components'])
+        except:
+            updated_template['components'] = []
+    
+    conn.close()
+    return jsonify(updated_template), 200
+
+
+@app.route('/api/report-templates/<int:template_id>', methods=['DELETE'])
+def delete_report_template(template_id):
+    """Delete a report template"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('DELETE FROM report_templates WHERE id = ?', (template_id,))
+    
+    if cursor.rowcount == 0:
+        conn.close()
+        return jsonify({'error': 'Template not found'}), 404
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'message': 'Template deleted successfully'}), 200
+
+
+# ============================================================================
 # SAVED SEARCHES ENDPOINTS
 # ============================================================================
 
@@ -873,7 +1253,7 @@ def get_saved_searches():
     conn = get_db()
     cursor = conn.cursor()
     
-    cursor.execute('SELECT id, name, query, filters, created_at FROM saved_searches ORDER BY created_at DESC')
+    cursor.execute('SELECT id, name, query, filters, entity_type, created_at FROM saved_searches ORDER BY created_at DESC')
     searches = []
     for row in cursor.fetchall():
         searches.append({
@@ -881,7 +1261,8 @@ def get_saved_searches():
             'name': row[1],
             'query': row[2],
             'filters': json.loads(row[3]) if row[3] else {},
-            'created_at': row[4]
+            'entity_type': row[4] if len(row) > 4 else 'transaction',  # Default to transaction for backward compatibility
+            'created_at': row[5] if len(row) > 5 else row[4]  # Handle both old and new schema
         })
     
     conn.close()
@@ -900,12 +1281,13 @@ def create_saved_search():
     cursor = conn.cursor()
     
     cursor.execute('''
-        INSERT INTO saved_searches (name, query, filters, created_at)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO saved_searches (name, query, filters, entity_type, created_at)
+        VALUES (?, ?, ?, ?, ?)
     ''', (
         data['name'],
         data.get('query', ''),
         json.dumps(data.get('filters', {})),
+        data.get('entity_type', 'transaction'),  # Default to transaction for backward compatibility
         datetime.now().isoformat()
     ))
     

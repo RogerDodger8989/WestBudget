@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Settings, FolderOpen, Save, CheckCircle, Image as ImageIcon, Tag, Plus, Edit2, Trash2, X, Merge, AlertCircle, Loader2, Download, Upload, Database, Search, Filter, Calendar, FileText, Grid3x3, List, User, Mail, Phone, MapPin, Palette, History } from 'lucide-react';
+import { Settings, FolderOpen, Save, CheckCircle, Image as ImageIcon, Tag, Plus, Edit2, Trash2, X, Merge, AlertCircle, Loader2, Download, Upload, Database, Search, Filter, Calendar, FileText, Grid3x3, List, User, Mail, Phone, MapPin, Palette, History, Folder } from 'lucide-react';
 import { api } from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import CategoryEditForm from '../CategoryEditForm';
@@ -46,6 +46,7 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
   const [mediaFilterType, setMediaFilterType] = useState('all'); // 'all', 'receipts', 'agreements'
   const [mediaViewMode, setMediaViewMode] = useState('grid'); // 'grid', 'list'
   const [loadingMedia, setLoadingMedia] = useState(false);
+  const [selectedMediaFiles, setSelectedMediaFiles] = useState(new Set());
   
   // Inline editing states for category rules
   const [editingRuleId, setEditingRuleId] = useState(null);
@@ -362,6 +363,23 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
     }
   };
 
+  const handleSelectFolder = async (type) => {
+    try {
+      const response = await api.selectFolder();
+      if (response.path) {
+        if (type === 'receipt') {
+          setReceiptPath(response.path);
+        } else if (type === 'agreement') {
+          setAgreementImagesPath(response.path);
+        }
+        showToast('Mapp vald!', { type: 'success' });
+      }
+    } catch (error) {
+      console.error('Kunde inte välja mapp:', error);
+      showToast(error.message || 'Kunde inte välja mapp. Ange sökväg manuellt.', { type: 'error' });
+    }
+  };
+
   const handleSave = async () => {
     try {
       await api.saveSettings({
@@ -450,6 +468,105 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
 
     return filtered;
   }, [mediaFiles, mediaSearchQuery, mediaSortBy, mediaSortOrder, mediaFilterType]);
+
+  // Handle media file selection
+  const handleToggleMediaFile = (filePath) => {
+    const newSelected = new Set(selectedMediaFiles);
+    if (newSelected.has(filePath)) {
+      newSelected.delete(filePath);
+    } else {
+      newSelected.add(filePath);
+    }
+    setSelectedMediaFiles(newSelected);
+  };
+
+  const handleSelectAllMedia = (checked) => {
+    if (checked) {
+      const allPaths = new Set(filteredAndSortedMedia.map(f => f.path));
+      setSelectedMediaFiles(allPaths);
+    } else {
+      setSelectedMediaFiles(new Set());
+    }
+  };
+
+  const handleDeleteSelectedMedia = async () => {
+    const filesToDelete = filteredAndSortedMedia.filter(f => selectedMediaFiles.has(f.path));
+    const deletedFiles = [];
+    
+    try {
+      for (const file of filesToDelete) {
+        if (file.transaction_id) {
+          // Delete receipt
+          try {
+            const result = await api.deleteTransactionReceipt(file.transaction_id, file.path);
+            deletedFiles.push({
+              type: 'receipt',
+              transactionId: file.transaction_id,
+              path: file.path,
+              deletedPath: result.deleted_path,
+              transactionTitle: file.transaction_title
+            });
+          } catch (error) {
+            console.error(`Kunde inte radera kvitto ${file.path}:`, error);
+          }
+        } else if (file.agreement_id) {
+          // Delete agreement image
+          try {
+            const result = await api.deleteAgreementImage(file.agreement_id, file.path);
+            deletedFiles.push({
+              type: 'agreement',
+              agreementId: file.agreement_id,
+              path: file.path,
+              deletedPath: result.deleted_path || result.moved_path,
+              agreementName: file.agreement_name
+            });
+          } catch (error) {
+            console.error(`Kunde inte radera avtalsbild ${file.path}:`, error);
+          }
+        }
+      }
+      
+      await loadMediaFiles();
+      if (reloadData) await reloadData();
+      setSelectedMediaFiles(new Set());
+      
+      showToast(`${filesToDelete.length} fil(er) raderade!`, { 
+        type: 'success',
+        undo: true,
+        undoAction: async () => {
+          try {
+            for (const deletedFile of deletedFiles) {
+              if (!deletedFile.deletedPath) continue;
+              
+              const deletedFileUrl = `http://192.168.1.232:5000/api/files/${encodeURIComponent(deletedFile.deletedPath.replace(/\\/g, '/'))}`;
+              const response = await fetch(deletedFileUrl);
+              if (!response.ok) continue;
+              
+              const blob = await response.blob();
+              const filename = deletedFile.deletedPath.split(/[/\\]/).pop();
+              const fileToUpload = new File([blob], filename, { type: blob.type });
+              
+              if (deletedFile.type === 'receipt') {
+                await api.uploadReceipt(fileToUpload, deletedFile.transactionId);
+              } else if (deletedFile.type === 'agreement') {
+                await api.uploadAgreementImage(deletedFile.agreementId, fileToUpload);
+              }
+            }
+            
+            await loadMediaFiles();
+            if (reloadData) await reloadData();
+            showToast('Filer återställda!', { type: 'success' });
+          } catch (err) {
+            console.error('Kunde inte ångra radering:', err);
+            showToast('Kunde inte ångra: ' + (err.message || 'Okänt fel'), { type: 'error' });
+          }
+        }
+      });
+    } catch (error) {
+      console.error('Kunde inte radera filer:', error);
+      showToast('Kunde inte radera filer: ' + (error.message || 'Okänt fel'), { type: 'error' });
+    }
+  };
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -1280,6 +1397,14 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
                   className="flex-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
                 />
                 <button 
+                  onClick={() => handleSelectFolder('receipt')}
+                  disabled={loading}
+                  className="px-6 py-3 rounded-xl font-medium transition-all flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Folder size={18} />
+                  Välj plats
+                </button>
+                <button 
                   onClick={handleSave}
                   disabled={loading}
                   className={`px-6 py-3 rounded-xl font-medium transition-all flex items-center gap-2 ${
@@ -1304,22 +1429,6 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
                 Kvitton kommer automatiskt att sparas i denna mapp när de laddas upp.
               </p>
-            </div>
-
-            <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700">
-              <div className="flex items-start gap-3">
-                <div className="mt-0.5">
-                  <div className="w-2 h-2 bg-indigo-500 rounded-full"></div>
-                </div>
-                <div className="text-sm text-zinc-600 dark:text-zinc-400">
-                  <p className="font-medium mb-1">Tips:</p>
-                  <ul className="space-y-1 text-xs">
-                    <li>• Använd en molnsynkad mapp för automatisk backup</li>
-                    <li>• Skapa undermappar per år/månad för bättre organisation</li>
-                    <li>• Se till att mappen har skrivrättigheter</li>
-                  </ul>
-                </div>
-              </div>
             </div>
           </div>
         </div>
@@ -1350,6 +1459,14 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
                   disabled={loading}
                   className="flex-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
                 />
+                <button 
+                  onClick={() => handleSelectFolder('agreement')}
+                  disabled={loading}
+                  className="px-6 py-3 rounded-xl font-medium transition-all flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Folder size={18} />
+                  Välj plats
+                </button>
                 <button 
                   onClick={handleSave}
                   disabled={loading}
@@ -1616,19 +1733,43 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
               ))}
             </div>
           ) : (
-            <div className="space-y-2">
-              {filteredAndSortedMedia.map((file, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center gap-4 p-4 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer group"
-                  onClick={(e) => {
-                    // Only open in new tab if not double-clicking on image
-                    if (e.detail === 1 && !e.target.closest('img')) {
-                      window.open(`http://192.168.1.232:5000/api/files/${encodeURIComponent(file.path)}`, '_blank');
-                    }
-                  }}
-                >
-                  <div className="w-16 h-16 bg-white dark:bg-zinc-900 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden relative">
+            <>
+              {filteredAndSortedMedia.length > 0 && (
+                <div className="mb-4 flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    checked={filteredAndSortedMedia.length > 0 && filteredAndSortedMedia.every(f => selectedMediaFiles.has(f.path))}
+                    onChange={(e) => handleSelectAllMedia(e.target.checked)}
+                    className="w-4 h-4 text-indigo-600 border-zinc-300 rounded focus:ring-indigo-500"
+                  />
+                  <span className="text-sm text-zinc-600 dark:text-zinc-400">
+                    Markera alla ({selectedMediaFiles.size} markerade)
+                  </span>
+                </div>
+              )}
+              <div className="space-y-2">
+                {filteredAndSortedMedia.map((file, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center gap-4 p-4 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer group"
+                    onClick={(e) => {
+                      // Only open in new tab if not clicking on checkbox or double-clicking on image
+                      if (e.detail === 1 && !e.target.closest('input[type="checkbox"]') && !e.target.closest('img')) {
+                        window.open(`http://192.168.1.232:5000/api/files/${encodeURIComponent(file.path)}`, '_blank');
+                      }
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedMediaFiles.has(file.path)}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        handleToggleMediaFile(file.path);
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-5 h-5 text-indigo-600 border-zinc-300 rounded focus:ring-indigo-500 flex-shrink-0"
+                    />
+                    <div className="w-16 h-16 bg-white dark:bg-zinc-900 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden relative">
                     {file.filename.match(/\.(jpg|jpeg|png|gif)$/i) ? (
                       <>
                         <img
@@ -1768,10 +1909,11 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
                   </div>
                 </div>
               ))}
-            </div>
+              </div>
+            </>
           )}
         </div>
-          </>
+      </>
         )}
 
         {/* History Tab */}

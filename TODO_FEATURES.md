@@ -1,7 +1,7 @@
 # TODO: Nya Funktioner för WestBudget
 
 ## 1. Avancerad sökning & filter
-**Status:** ✅ Implementerad (delvis)
+**Status:** ✅ Implementerad
 
 ### Funktioner:
 - ✅ Avancerad sökning med flera kriterier samtidigt
@@ -11,69 +11,49 @@
 - ✅ Datumintervall-sökning
 - ✅ Beloppsintervall-sökning
 - ✅ Multi-select för kategorier
-- ⏳ Multi-select för status (endast en status kan väljas för nu)
+- ✅ Multi-select för status ✅ (nyss implementerad)
 
 ### Implementation:
 - [x] Skapa `AdvancedSearchModal` komponent
 - [x] Lägg till filter-logik i `TransactionsTab`
-- [ ] Lägg till filter-logik i `AgreementsTab` (nästa steg)
+- [x] Lägg till filter-logik i `AgreementsTab` ✅ (nyss implementerad)
 - [x] Implementera sparade sökningar
 - [x] Uppdatera API för avancerad sökning (backend)
 
 ---
 
 ## 2. Anpassade rapporter
-**Status:** ⏳ Pending
+**Status:** ✅ Implementerad
 
 ### Funktioner:
-- Skapa egna rapportmallar
-- Välj kategorier att inkludera
-- Välj datumintervall
-- Välj visualiseringar (diagram, tabeller, KPI-kort)
-- Spara och återanvänd mallar
-- Exportera anpassade rapporter till PDF/CSV
+- ✅ Skapa egna rapportmallar
+- ✅ Välj kategorier att inkludera
+- ✅ Välj datumintervall
+- ✅ Välj visualiseringar (diagram, tabeller, KPI-kort)
+- ✅ Spara och återanvänd mallar
+- ✅ Exportera anpassade rapporter till PDF/CSV ✅ (nyss implementerad)
 
 ### Implementation:
-- [ ] Skapa `CustomReportBuilder` komponent
-- [ ] Implementera rapportmall-system i databasen
-- [ ] Bygg rapport-generator med valbara komponenter
-- [ ] Lägg till spara/ladda rapportmallar
-- [ ] Integrera med befintlig rapport-funktionalitet
-
----
-
-## 3. E-postrapporter
-**Status:** ⏳ Pending
-
-### Funktioner:
-- Månadsvisa sammanfattningar via e-post
-- Automatisk schemaläggning (varje månad)
-- Anpassningsbar innehåll (välj vad som ska inkluderas)
-- PDF-bilaga med detaljerad rapport
-- Konfigurerbar e-postadress i inställningar
-
-### Implementation:
-- [ ] Implementera e-postfunktionalitet i backend (SMTP)
-- [ ] Skapa e-postmallar (HTML)
-- [ ] Lägg till schemaläggning (cron job eller scheduler)
-- [ ] Skapa inställningar för e-postkonfiguration
-- [ ] Implementera e-postvalidering
-- [ ] Lägg till testfunktion för att skicka test-e-post
+- [x] Skapa `CustomReportBuilder` komponent ✅
+- [x] Implementera rapportmall-system i databasen ✅
+- [x] Bygg rapport-generator med valbara komponenter ✅
+- [x] Lägg till spara/ladda rapportmallar ✅
+- [x] Integrera med befintlig rapport-funktionalitet ✅
 
 ---
 
 ## 4. Dashboard widgets
-**Status:** ✅ Implementerad (delvis)
+**Status:** ✅ Implementerad
 
 ### Funktioner:
 - ✅ Anpassningsbar dashboard med dra-och-släpp (enkel implementation)
 - ✅ Olika widget-typer:
   - ✅ KPI-kort (Inkomst, Utgifter, Netto)
-  - ⏳ Diagram (linje, stapel, cirkel) - placeholder implementerad
+  - ✅ Diagram (linje, stapel, cirkel) - recharts implementerad ✅
   - ✅ Transaktionslista
   - ✅ Kategorifördelning
-  - ⏳ Sparande-progress (kommer snart)
-  - ⏳ Lån-översikt (kommer snart)
+  - ✅ Sparande-progress ✅ (nyss implementerad)
+  - ✅ Lån-översikt ✅ (nyss implementerad)
 - ✅ Spara dashboard-layout
 - ✅ Återställ till standardlayout (via edit mode)
 
@@ -84,56 +64,53 @@
 - [x] Spara widget-layout i databasen
 - [x] Uppdatera `OverviewTab` med widget-system
 - [x] Lägg till widget-inställningar (färger, titel, konfiguration)
-- [ ] Integrera riktiga diagram-bibliotek (recharts eller chart.js)
+- [x] Integrera riktiga diagram-bibliotek (recharts) ✅ (nyss implementerad)
 
 ---
 
 ## 5. Tema-anpassning
-**Status:** ⏳ Pending
+**Status:** ✅ Implementerad
 
 ### Funktioner:
-- Fler fördefinierade färgteman:
-  - Indigo (nuvarande)
-  - Blå
-  - Grön
-  - Lila
-  - Röd
-  - Amber
-- Anpassa primärfärg
-- Anpassa sekundärfärg
-- Anpassa accentfärg
-- Förhandsgranska tema
-- Spara anpassade teman
+- ✅ Fler fördefinierade färgteman:
+  - ✅ Indigo (nuvarande)
+  - ✅ Blå
+  - ✅ Grön
+  - ✅ Lila
+  - ✅ Röd
+  - ✅ Amber
+- ✅ Anpassa primärfärg
+- ✅ Anpassa sekundärfärg
+- ✅ Anpassa accentfärg
+- ✅ Förhandsgranska tema
+- ✅ Spara anpassade teman
 
 ### Implementation:
-- [ ] Skapa tema-system i CSS/Tailwind
-- [ ] Implementera färgväljare (color picker)
-- [ ] Lägg till tema-inställningar i `SettingsTab`
-- [ ] Spara teman i databasen
-- [ ] Uppdatera alla komponenter för att använda tema-färger
-- [ ] Lägg till förhandsgranskning av tema
+- [x] Skapa tema-system i CSS/Tailwind ✅
+- [x] Implementera färgväljare (color picker) ✅
+- [x] Lägg till tema-inställningar i `SettingsTab` ✅
+- [x] Spara teman i databasen ✅
+- [x] Uppdatera alla komponenter för att använda tema-färger ✅
+- [x] Lägg till förhandsgranskning av tema ✅
 
 ---
 
 ## Prioritering
 
-1. **Avancerad sökning & filter** - Hög prioritet (används ofta)
-2. **Dashboard widgets** - Hög prioritet (förbättrar UX)
-3. **Tema-anpassning** - Medel prioritet (estetiskt)
-4. **Anpassade rapporter** - Medel prioritet (användbart)
-5. **E-postrapporter** - Låg prioritet (kräver backend-arbete)
+1. **Avancerad sökning & filter** - Hög prioritet (används ofta) ✅
+2. **Dashboard widgets** - Hög prioritet (förbättrar UX) ✅
+3. **Tema-anpassning** - Medel prioritet (estetiskt) ✅
+4. **Anpassade rapporter** - Medel prioritet (användbart) ✅
 
 ---
 
 ## Tekniska Anteckningar
 
 ### Backend-ändringar som behövs:
-- Ny tabell för `saved_searches`
-- Ny tabell för `report_templates`
-- Ny tabell för `dashboard_layouts`
-- Ny tabell för `custom_themes`
-- E-postkonfiguration i `settings`
-- SMTP-integration för e-post
+- ✅ Ny tabell för `saved_searches` - Implementerad
+- ✅ Ny tabell för `report_templates` - Implementerad
+- ✅ Ny tabell för `dashboard_layouts` - Implementerad
+- ✅ Ny tabell för `custom_themes` - Implementerad
 
 ### Frontend-ändringar:
 - Nya komponenter för varje funktion

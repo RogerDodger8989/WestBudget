@@ -1098,6 +1098,7 @@ const DashboardLayout = ({
                 customEndDate={customEndDate}
                 setIsCustomDateModalOpen={setIsCustomDateModalOpen}
                 loading={loading}
+                loans={loans}
               />
             )}
 

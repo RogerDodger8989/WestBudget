@@ -5,6 +5,8 @@ import KPIWidget from './KPIWidget';
 import ChartWidget from './ChartWidget';
 import TransactionListWidget from './TransactionListWidget';
 import CategoryDistributionWidget from './CategoryDistributionWidget';
+import SavingsProgressWidget from './SavingsProgressWidget';
+import LoansOverviewWidget from './LoansOverviewWidget';
 
 const WidgetGrid = ({ 
   widgets = [], 
@@ -39,6 +41,10 @@ const WidgetGrid = ({
         );
       case 'category-distribution':
         return <CategoryDistributionWidget widget={widget} data={data} />;
+      case 'savings-progress':
+        return <SavingsProgressWidget widget={widget} data={data} />;
+      case 'loans-overview':
+        return <LoansOverviewWidget widget={widget} data={data} />;
       default:
         return <div className="text-zinc-500 dark:text-zinc-400 text-sm">Okänd widget-typ</div>;
     }

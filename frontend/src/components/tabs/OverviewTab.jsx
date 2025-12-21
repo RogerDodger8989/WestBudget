@@ -30,13 +30,40 @@ const OverviewTab = ({
   const [isWidgetConfigOpen, setIsWidgetConfigOpen] = useState(false);
   const [editingWidget, setEditingWidget] = useState(null);
   const [loadingWidgets, setLoadingWidgets] = useState(true);
+  const [savingsGoals, setSavingsGoals] = useState([]);
+  const [savingsAccounts, setSavingsAccounts] = useState([]);
+  const [loans, setLoans] = useState([]);
   const { showToast } = useToast();
   const { colorTheme } = useTheme();
   
-  // Load widgets on mount
+  // Load widgets, savings data, and loans on mount
   useEffect(() => {
     loadWidgets();
+    loadSavingsData();
+    loadLoans();
   }, []);
+
+  const loadLoans = async () => {
+    try {
+      const loansData = await api.getLoans();
+      setLoans(loansData);
+    } catch (error) {
+      console.error('Kunde inte ladda lån:', error);
+    }
+  };
+
+  const loadSavingsData = async () => {
+    try {
+      const [goals, accounts] = await Promise.all([
+        api.getSavingsGoals(),
+        api.getSavingsAccounts()
+      ]);
+      setSavingsGoals(goals);
+      setSavingsAccounts(accounts);
+    } catch (error) {
+      console.error('Kunde inte ladda sparande-data:', error);
+    }
+  };
 
   const loadWidgets = async () => {
     try {
@@ -246,12 +273,24 @@ const OverviewTab = ({
         case 'category-distribution':
           data[widget.id] = { categories: categoryDistribution };
           break;
+        case 'chart':
+          // Pass transactions to chart widget
+          data[widget.id] = { transactions: dateFilteredTransactions };
+          break;
+        case 'savings-progress':
+          // Pass savings data to savings progress widget
+          data[widget.id] = { goals: savingsGoals, accounts: savingsAccounts };
+          break;
+        case 'loans-overview':
+          // Pass loans data to loans overview widget
+          data[widget.id] = { loans: loans };
+          break;
         default:
           data[widget.id] = {};
       }
     });
     return data;
-  }, [widgets, stats, filteredTransactions, categoryDistribution]);
+  }, [widgets, stats, filteredTransactions, categoryDistribution, savingsGoals, savingsAccounts, loans]);
 
   if (loading || loadingWidgets) {
     return <div className="text-center py-12">Laddar data...</div>;

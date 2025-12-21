@@ -111,6 +111,13 @@ export const api = {
     return handleResponse(res);
   },
 
+  deleteAgreementImage: async (agreementId, imagePath) => {
+    const res = await fetch(`${API_BASE_URL}/agreements/${agreementId}/images/${encodeURIComponent(imagePath)}`, {
+      method: 'DELETE',
+    });
+    return handleResponse(res);
+  },
+
   // --- Kategorier ---
   getCategories: async () => {
     const res = await fetch(`${API_BASE_URL}/categories`);
@@ -173,6 +180,14 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(settings),
+    });
+    return handleResponse(res);
+  },
+
+  selectFolder: async () => {
+    const res = await fetch(`${API_BASE_URL}/select-folder`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
     });
     return handleResponse(res);
   },
@@ -528,6 +543,13 @@ export const api = {
     return handleResponse(res);
   },
 
+  deleteSavedSearch: async (id) => {
+    const res = await fetch(`${API_BASE_URL}/saved-searches/${id}`, {
+      method: 'DELETE',
+    });
+    return handleResponse(res);
+  },
+
   deleteSearch: async (id) => {
     const res = await fetch(`${API_BASE_URL}/saved-searches/${id}`, {
       method: 'DELETE',
@@ -572,6 +594,68 @@ export const api = {
     const res = await fetch(`${API_BASE_URL}/history/clear`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+    });
+    return handleResponse(res);
+  },
+
+  // --- Custom Themes ---
+  getCustomThemes: async () => {
+    const res = await fetch(`${API_BASE_URL}/custom-themes`);
+    return handleResponse(res);
+  },
+
+  createCustomTheme: async (themeData) => {
+    const res = await fetch(`${API_BASE_URL}/custom-themes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(themeData),
+    });
+    return handleResponse(res);
+  },
+
+  updateCustomTheme: async (id, themeData) => {
+    const res = await fetch(`${API_BASE_URL}/custom-themes/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(themeData),
+    });
+    return handleResponse(res);
+  },
+
+  deleteCustomTheme: async (id) => {
+    const res = await fetch(`${API_BASE_URL}/custom-themes/${id}`, {
+      method: 'DELETE',
+    });
+    return handleResponse(res);
+  },
+
+  // --- Report Templates ---
+  getReportTemplates: async () => {
+    const res = await fetch(`${API_BASE_URL}/report-templates`);
+    return handleResponse(res);
+  },
+
+  saveReportTemplate: async (templateData) => {
+    const res = await fetch(`${API_BASE_URL}/report-templates`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(templateData),
+    });
+    return handleResponse(res);
+  },
+
+  updateReportTemplate: async (id, templateData) => {
+    const res = await fetch(`${API_BASE_URL}/report-templates/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(templateData),
+    });
+    return handleResponse(res);
+  },
+
+  deleteReportTemplate: async (id) => {
+    const res = await fetch(`${API_BASE_URL}/report-templates/${id}`, {
+      method: 'DELETE',
     });
     return handleResponse(res);
   },

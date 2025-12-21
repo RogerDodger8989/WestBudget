@@ -2,13 +2,22 @@ import React, { useState, useEffect } from 'react';
 import { X, Palette, Check } from 'lucide-react';
 import { themes, applyTheme, getCurrentTheme } from '../utils/themes';
 import { useTheme } from '../contexts/ThemeContext';
+import { api } from '../api';
+import { useToast } from '../contexts/ToastContext';
 
 const ThemeCustomizer = ({ isOpen, onClose, currentTheme, onThemeChange, isDarkMode, toggleTheme, defaultTheme, onSave }) => {
   const { colorTheme, changeTheme } = useTheme();
+  const { showToast } = useToast();
   const [selectedTheme, setSelectedTheme] = useState(currentTheme || colorTheme || 'indigo');
   const [localDarkMode, setLocalDarkMode] = useState(isDarkMode);
   const [originalTheme, setOriginalTheme] = useState(null);
   const [originalDarkMode, setOriginalDarkMode] = useState(null);
+  const [customThemes, setCustomThemes] = useState([]);
+  const [customPrimaryColor, setCustomPrimaryColor] = useState('#6366f1');
+  const [customSecondaryColor, setCustomSecondaryColor] = useState('#818cf8');
+  const [customAccentColor, setCustomAccentColor] = useState('#a5b4fc');
+  const [customThemeName, setCustomThemeName] = useState('');
+  const [isCustomMode, setIsCustomMode] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -18,8 +27,44 @@ const ThemeCustomizer = ({ isOpen, onClose, currentTheme, onThemeChange, isDarkM
       // Save original values for cancel functionality
       setOriginalTheme(initialTheme);
       setOriginalDarkMode(isDarkMode);
+      loadCustomThemes();
     }
   }, [isOpen, currentTheme, colorTheme, isDarkMode]);
+
+  const loadCustomThemes = async () => {
+    try {
+      const themes = await api.getCustomThemes();
+      setCustomThemes(themes);
+    } catch (error) {
+      console.error('Kunde inte ladda anpassade teman:', error);
+    }
+  };
+
+  const handleSaveCustomTheme = async () => {
+    if (!customThemeName || !customPrimaryColor) {
+      showToast('Fyll i namn och primärfärg', { type: 'error' });
+      return;
+    }
+
+    try {
+      await api.createCustomTheme({
+        name: customThemeName,
+        primary_color: customPrimaryColor,
+        secondary_color: customSecondaryColor,
+        accent_color: customAccentColor,
+        is_default: false
+      });
+      showToast('Anpassat tema sparat!', { type: 'success' });
+      setCustomThemeName('');
+      setCustomPrimaryColor('#6366f1');
+      setCustomSecondaryColor('#818cf8');
+      setCustomAccentColor('#a5b4fc');
+      await loadCustomThemes();
+    } catch (error) {
+      console.error('Kunde inte spara anpassat tema:', error);
+      showToast('Kunde inte spara anpassat tema', { type: 'error' });
+    }
+  };
 
   const handleThemeSelect = (themeName) => {
     setSelectedTheme(themeName);
@@ -223,6 +268,94 @@ const ThemeCustomizer = ({ isOpen, onClose, currentTheme, onThemeChange, isDarkM
                   </div>
                 </button>
               ))}
+            </div>
+          </div>
+
+          {/* Custom Theme Section */}
+          <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800">
+            <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-3">
+              Anpassat Tema
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 block">
+                  Primärfärg
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={customPrimaryColor || '#6366f1'}
+                    onChange={(e) => setCustomPrimaryColor(e.target.value)}
+                    className="w-16 h-10 rounded-lg border border-zinc-300 dark:border-zinc-600 cursor-pointer"
+                  />
+                  <input
+                    type="text"
+                    value={customPrimaryColor || '#6366f1'}
+                    onChange={(e) => setCustomPrimaryColor(e.target.value)}
+                    placeholder="#6366f1"
+                    className="flex-1 px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 block">
+                  Sekundärfärg (valfritt)
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={customSecondaryColor || '#818cf8'}
+                    onChange={(e) => setCustomSecondaryColor(e.target.value)}
+                    className="w-16 h-10 rounded-lg border border-zinc-300 dark:border-zinc-600 cursor-pointer"
+                  />
+                  <input
+                    type="text"
+                    value={customSecondaryColor || '#818cf8'}
+                    onChange={(e) => setCustomSecondaryColor(e.target.value)}
+                    placeholder="#818cf8"
+                    className="flex-1 px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 block">
+                  Accentfärg (valfritt)
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={customAccentColor || '#a5b4fc'}
+                    onChange={(e) => setCustomAccentColor(e.target.value)}
+                    className="w-16 h-10 rounded-lg border border-zinc-300 dark:border-zinc-600 cursor-pointer"
+                  />
+                  <input
+                    type="text"
+                    value={customAccentColor || '#a5b4fc'}
+                    onChange={(e) => setCustomAccentColor(e.target.value)}
+                    placeholder="#a5b4fc"
+                    className="flex-1 px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 block">
+                  Tema-namn
+                </label>
+                <input
+                  type="text"
+                  value={customThemeName || ''}
+                  onChange={(e) => setCustomThemeName(e.target.value)}
+                  placeholder="Mitt anpassade tema"
+                  className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                />
+              </div>
+              <button
+                onClick={handleSaveCustomTheme}
+                disabled={!customThemeName || !customPrimaryColor}
+                className="w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-zinc-400 text-white rounded-lg text-sm font-medium transition-colors disabled:cursor-not-allowed"
+              >
+                Spara Anpassat Tema
+              </button>
             </div>
           </div>
 
