@@ -1,290 +1,330 @@
-# WestBudget - Professionell Bokföring & Licenshantering
-
-En fullständig ekonomiapplikation med React/Electron frontend och Flask backend med SQLite databas.
-
-## Features
-
-### Backend (Flask)
-- RESTful API med Flask
-- SQLite databas med SQLAlchemy ORM
-- Transaktionshantering (CRUD)
-- Avtal & Abonnemangshantering
-- Kategorihantering
-- Statistik & rapporter
-- CORS-stöd för frontend-integration
-- Felhantering och validering
-
-### Frontend (React)
-- Modern React-app med Vite
-- Tailwind CSS för styling
-- Dark mode support
-- Interaktiv dashboard med flera vyer
-- Transaktionsimport
-- Noterings- och kategorisystem
-- Responsiv design
-
-## Project Structure
-
-```
-WestDoc/
-├── backend/
-│   ├── app.py                  # Flask huvudapplikation
-│   ├── models.py               # Databasmodeller
-│   ├── backend_routes.py       # API routes
-│   ├── routes.py               # (Legacy routes)
-│   ├── config.py               # Konfiguration
-│   ├── requirements.txt        # Python dependencies
-│   └── instance/               # SQLite databas (auto-skapad)
-│
-├── frontend/
-│   ├── src/
-│   │   ├── components/         # React komponenter
-│   │   │   ├── tabs/          # Tab-komponenter
-│   │   │   ├── DashboardLayout.jsx
-│   │   │   ├── Sidebar.jsx
-│   │   │   ├── Topbar.jsx
-│   │   │   └── ...
-│   │   ├── services/
-│   │   │   └── api.js         # API service layer
-│   │   ├── App.jsx            # Huvudkomponent
-│   │   ├── main.jsx           # Entry point
-│   │   └── index.css          # Global styles
-│   ├── index.html
-│   ├── package.json
-│   ├── vite.config.js
-│   └── tailwind.config.js
-│
-├── README.md
-└── .gitignore
-```
-
-## Prerequisites
-
-- Python 3.8 or higher
-- pip (Python package manager)
-
-## Installation
-
-1. Clone the repository (or navigate to the project directory)
-
-2. Create a virtual environment:
-```bash
-python -m venv venv
-```
-
-3. Activate the virtual environment:
-   - Windows:
-     ```bash
-     venv\Scripts\activate
-     ```
-   - macOS/Linux:
-     ```bash
-     source venv/bin/activate
-     ```
-
-4. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-## Running the Application
-
-### Backend (Flask)
-
-1. Navigera till backend-mappen:
-```bash
-cd WestDoc
-```
-
-2. Skapa och aktivera virtual environment:
-```bash
-python -m venv venv
-
-# Windows
-venv\Scripts\activate
-
-# macOS/Linux
-source venv/bin/activate
-```
-
-3. Installera dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-4. Starta Flask-servern:
-```bash
-python app.py
-```
-
-Backend körs nu på `http://localhost:5000`
-
-### Frontend (React)
-
-1. Öppna en ny terminal och navigera till frontend:
-```bash
-cd frontend
-```
-
-2. Installera dependencies:
-```bash
-npm install
-```
-
-3. Starta development server:
-```bash
-npm run dev
-```
-
-Frontend körs nu på `http://localhost:3000`
-
-### Öppna applikationen
-
-Gå till `http://localhost:3000` i din webbläsare för att använda applikationen.
-
-## API Endpoints
-
-### Transactions (Transaktioner)
-
-- `GET /api/transactions` - Hämta alla transaktioner
-- `GET /api/transactions/<id>` - Hämta specifik transaktion
-- `POST /api/transactions` - Skapa ny transaktion
-  ```json
-  {
-    "title": "Spotify Premium",
-    "date": "2024-12-17",
-    "amount": -119,
-    "amount_display": "-119 kr",
-    "type": "expense",
-    "category": "Nöje & Kultur",
-    "status": "Bokförd",
-    "receipt": false,
-    "note": ""
-  }
-  ```
-- `POST /api/transactions/bulk` - Importera flera transaktioner
-- `PUT /api/transactions/<id>` - Uppdatera transaktion
-- `DELETE /api/transactions/<id>` - Ta bort transaktion
-- `GET /api/transactions/category/<category>` - Hämta efter kategori
+# 💰 WestBudget - Personlig Ekonomi & Budget App
+
+<div align="center">
+
+![WestBudget Logo](https://via.placeholder.com/200x200/6366f1/ffffff?text=WB)
+
+**Modern, kraftfull och användarvänlig ekonomi-app för att hantera dina transaktioner, avtal, lån och mer.**
+
+[![License](https://img.shields.io/badge/license-Proprietary-red.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](package.json)
+[![React](https://img.shields.io/badge/React-18+-61dafb.svg)](https://reactjs.org/)
+[![Electron](https://img.shields.io/badge/Electron-Latest-47848f.svg)](https://www.electronjs.org/)
+
+[Features](#-funktioner) • [Installation](#-installation) • [Screenshots](#-screenshots) • [Teknisk Stack](#-teknisk-stack)
+
+</div>
+
+---
+
+## 📖 Om WestBudget
+
+WestBudget är en modern desktop-applikation designad för att hjälpa dig att få full kontroll över din ekonomi. Med en snygg, intuitiv gränssnitt och kraftfulla funktioner gör WestBudget det enkelt att spåra transaktioner, hantera avtal, övervaka lån och skapa detaljerade rapporter.
+
+### ✨ Varför WestBudget?
+
+- 🎨 **Modernt gränssnitt** - Designad med fokus på användarupplevelse och visuell estetik
+- 📊 **Kraftfulla rapporter** - Skapa anpassade rapporter med diagram, tabeller och KPI-kort
+- 🔍 **Avancerad sökning** - Hitta exakt vad du letar efter med kraftfulla filter och sökfunktioner
+- 📱 **Desktop-app** - Fungerar som en native applikation med Electron
+- 🎨 **Anpassningsbart** - Välj mellan flera teman eller skapa ditt eget
+- 📈 **Dashboard** - Översiktlig vy över din ekonomi med anpassningsbara widgets
+
+---
+
+## 🚀 Funktioner
 
-### Agreements (Avtal)
-
-- `GET /api/agreements` - Hämta alla avtal
-- `GET /api/agreements/<id>` - Hämta specifikt avtal
-- `POST /api/agreements` - Skapa nytt avtal
-  ```json
-  {
-    "name": "Spotify Premium",
-    "provider": "Spotify",
-    "cost": 119,
-    "frequency": "Månadsvis",
-    "next_payment": "2024-12-20",
-    "category": "Nöje",
-    "status": "Aktiv",
-    "icon": "🎵",
-    "notice": ""
-  }
-  ```
-- `PUT /api/agreements/<id>` - Uppdatera avtal
-- `DELETE /api/agreements/<id>` - Ta bort avtal
-
-### Categories (Kategorier)
+### 💳 Transaktionshantering
+- **Komplett transaktionshistorik** - Spåra alla inkomster och utgifter
+- **Kategorisering** - Organisera transaktioner med anpassningsbara kategorier
+- **Kvittohantering** - Ladda upp och hantera kvitton för varje transaktion
+- **Noteringar** - Lägg till noteringar och referenser till transaktioner
+- **Import** - Importera transaktioner från CSV-filer (Swedbank, SEB, Nordea, m.fl.)
+- **Regler** - Automatisk kategorisering baserat på regler
 
-- `GET /api/categories` - Hämta alla kategorier
-- `POST /api/categories` - Skapa ny kategori
-- `DELETE /api/categories/<id>` - Ta bort kategori
+### 📋 Avtalshantering
+- **Prenumerationer & Avtal** - Håll koll på alla dina månadsvisa/årliga avtal
+- **Betalningspåminnelser** - Se när nästa betalning ska göras
+- **Bildhantering** - Ladda upp bilder relaterade till avtal
+- **Kostnadsöversikt** - Se total månads- och årskostnad för alla avtal
 
-### Statistics (Statistik)
+### 🚗 Fordonshantering
+- **Fordonskostnader** - Spåra alla kostnader relaterade till dina fordon
+- **Kategorisering** - Organisera kostnader per fordon och kategori
+- **Statistik** - Se totala kostnader och genomsnitt per fordon
 
-- `GET /api/stats/overview` - Översiktsstatistik
-- `GET /api/stats/categories` - Kategorifördelning
+### 💰 Sparande
+- **Sparmål** - Sätt upp och spåra progress mot dina sparande
+- **Sparkonton** - Hantera flera sparande och se totalt sparande
+- **Progress-visualisering** - Se hur nära du är dina mål
 
-## Testing the API
+### 🏦 Lån
+- **Lånhantering** - Spåra alla dina lån och deras status
+- **Amortering** - Registrera amorteringar och extra betalningar
+- **Översikt** - Se total skuld och månadsbetalningar
 
-### Using cURL
+### 📊 Rapporter & Analys
+- **Anpassade rapporter** - Skapa egna rapporter med valbara komponenter
+  - KPI-kort (Inkomst, Utgifter, Netto)
+  - Diagram (Stapel, Linje, Cirkel)
+  - Tabeller med transaktionsdata
+  - Kategorifördelning
+- **Rapportmallar** - Spara och återanvänd rapportkonfigurationer
+- **Export** - Exportera rapporter till PDF eller CSV
+- **Periodjämförelse** - Jämför olika tidsperioder
+- **Fördefinierade rapporter** - Månads-, kvartals- och årsrapporter
 
-```bash
-# Skapa en transaktion
-curl -X POST http://localhost:5000/api/transactions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "Spotify Premium",
-    "date": "2024-12-17",
-    "amount": -119,
-    "amount_display": "-119 kr",
-    "type": "expense",
-    "category": "Nöje & Kultur",
-    "status": "Bokförd",
-    "receipt": false
-  }'
+### 🔍 Avancerad Sökning
+- **Multi-kriterie sökning** - Sök på flera fält samtidigt
+- **Sparade sökningar** - Spara ofta använda sökningar som favoriter
+- **Filter** - Filtrera på datum, belopp, kategori, status och mer
+- **Sortering** - Sortera på alla kolumner
 
-# Hämta alla transaktioner
-curl http://localhost:5000/api/transactions
+### 🎨 Anpassningsbar Dashboard
+- **Widgets** - Anpassningsbara widgets för olika typer av data
+  - KPI-kort
+  - Diagram (inkomst/utgift, kategorifördelning)
+  - Transaktionslista
+  - Sparande-progress
+  - Lån-översikt
+- **Drag & Drop** - Arrangera widgets som du vill
+- **Sparade layouter** - Spara din dashboard-konfiguration
+
+### 🎨 Tema & Anpassning
+- **Fördefinierade teman** - Välj mellan Indigo, Blå, Grön, Lila, Röd, Amber
+- **Anpassade teman** - Skapa dina egna teman med valfria färger
+- **Ljust & Mörkt läge** - Växla mellan ljust och mörkt tema
+- **Förhandsgranskning** - Se hur ditt tema ser ut innan du sparar
+
+### 📁 Media Bibliotek
+- **Kvittohantering** - Sök, sortera och hantera alla kvitton
+- **Avtalsbilder** - Hantera bilder kopplade till avtal
+- **Sök & Filtrera** - Hitta filer snabbt med sökfunktion
+- **Bildvisning** - Öppna bilder i fullskärm med zoom och pan
 
-# Hämta statistik
-curl http://localhost:5000/api/stats/overview
-```
+### ⚙️ Inställningar
+- **Användarprofil** - Hantera din profil och kontaktinformation
+- **Kategorihantering** - Skapa, redigera och radera kategorier
+- **Regler** - Skapa regler för automatisk kategorisering
+- **Filhantering** - Konfigurera var kvitton och bilder ska sparas
+- **Backup & Återställning** - Säkerhetskopiera och återställa din data
 
-### Using Postman or Thunder Client
+### 📜 Historik
+- **Åtgärdshistorik** - Se alla ändringar du gjort
+- **Ångra-funktion** - Ångra senaste åtgärder med ett klick
+- **Filtrering** - Filtrera historik efter typ av åtgärd
 
-Importera följande bas-URL:
-```
-http://localhost:5000/api
-```
+---
+
+## 📸 Screenshots
 
-## Database
+### Dashboard Översikt
+![Dashboard](https://via.placeholder.com/1200x600/1e1e2e/ffffff?text=Dashboard+Overview)
 
-SQLite-databasen skapas automatiskt i `instance/`-mappen när du startar applikationen första gången. Databasen innehåller följande tabeller:
+*Översiktlig dashboard med anpassningsbara widgets och KPI-kort*
 
-- **transactions**: Lagrar alla transaktioner (inkomster och utgifter)
-- **agreements**: Lagrar avtal och abonnemang
-- **categories**: Lagrar kategorier för organisering
+### Transaktionshantering
+![Transactions](https://via.placeholder.com/1200x600/1e1e2e/ffffff?text=Transaction+Management)
 
-Standardkategorier skapas automatiskt vid första körningen.
+*Komplett transaktionshistorik med avancerad sökning och filter*
 
-## Configuration
+### Rapporter
+![Reports](https://via.placeholder.com/1200x600/1e1e2e/ffffff?text=Custom+Reports)
 
-Configuration settings are in `config.py`. You can set the following environment variables:
+*Skapa anpassade rapporter med diagram, tabeller och KPI-kort*
 
-- `FLASK_ENV`: Set to `development`, `production`, or `testing`
-- `SECRET_KEY`: Secret key for Flask sessions
-- `DATABASE_URL`: Custom database URL (optional)
+### Avtalshantering
+![Agreements](https://via.placeholder.com/1200x600/1e1e2e/ffffff?text=Agreement+Management)
 
-## Development
+*Hantera prenumerationer och avtal med betalningspåminnelser*
 
-To run in development mode with debug enabled:
+---
 
-```bash
-python app.py
-```
+## 🛠️ Teknisk Stack
 
-The application will automatically reload when you make changes to the code.
+### Frontend
+- **React 18+** - Modern UI-bibliotek
+- **Vite** - Snabb build tool och dev server
+- **Tailwind CSS** - Utility-first CSS framework
+- **Lucide React** - Ikonbibliotek
+- **Recharts** - Diagram och visualiseringar
+- **Electron** - Desktop applikationsframework
 
-## Production Deployment
+### Backend
+- **Python 3** - Backend-språk
+- **Flask** - Web framework
+- **SQLite** - Databas
+- **Flask-CORS** - CORS-hantering
 
-For production deployment:
+### Funktioner
+- **JWT Authentication** - Säker autentisering
+- **File Upload** - Hantering av kvitton och bilder
+- **PDF Export** - Generera PDF-rapporter
+- **CSV Import/Export** - Importera och exportera data
 
-1. Set environment variables:
-```bash
-export FLASK_ENV=production
-export SECRET_KEY=your-secret-key-here
-```
+---
+
+## 📦 Installation
 
-2. Use a production WSGI server like Gunicorn:
-```bash
-pip install gunicorn
-gunicorn app:app
-```
+### För utvecklare
+
+1. **Klona repository**
+   ```bash
+   git clone https://github.com/yourusername/westbudget.git
+   cd westbudget
+   ```
 
-## Error Handling
+2. **Installera backend dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-The API includes error handling for common scenarios:
-- 404: Resource not found
-- 400: Bad request (missing required fields)
-- 409: Conflict (duplicate username/email)
-- 500: Internal server error
+3. **Installera frontend dependencies**
+   ```bash
+   cd frontend
+   npm install
+   ```
 
-## License
+4. **Starta backend server**
+   ```bash
+   python app.py
+   ```
+   Backend körs på `http://localhost:5000`
 
-This project is open source and available for use.
+5. **Starta frontend dev server**
+   ```bash
+   cd frontend
+   npm run dev
+   ```
+   Frontend körs på `http://localhost:5100`
 
+### För användare
+
+**Windows:**
+1. Ladda ner `WestBudget-Setup.exe`
+2. Kör installer
+3. Följ installationsguiden
+4. Starta WestBudget från Start-menyn
+
+**macOS:**
+1. Ladda ner `WestBudget.dmg`
+2. Öppna DMG-filen
+3. Dra WestBudget till Applications-mappen
+4. Öppna WestBudget från Applications
+
+**Linux:**
+1. Ladda ner `WestBudget.AppImage`
+2. Gör filen körbar: `chmod +x WestBudget.AppImage`
+3. Kör: `./WestBudget.AppImage`
+
+---
+
+## 🚀 Komma igång
+
+### Första gången du startar appen
+
+1. **Skapa konto**
+   - Klicka på "Registrera" i inloggningsskärmen
+   - Ange din e-postadress och välj ett lösenord
+   - Du får automatiskt 30 dagars provperiod
+
+2. **Importera transaktioner** (valfritt)
+   - Gå till Transaktioner-fliken
+   - Klicka på "Importera"
+   - Välj din CSV-fil från banken
+   - Följ importguiden
+
+3. **Lägg till avtal**
+   - Gå till Avtal-fliken
+   - Klicka på "Lägg till avtal"
+   - Fyll i information om ditt avtal
+
+4. **Anpassa dashboard**
+   - Gå till Översikt-fliken
+   - Klicka på "Redigera widgets"
+   - Lägg till och arrangera widgets som du vill
+
+---
+
+## 📚 Användarhandbok
+
+### Grundläggande funktioner
+
+#### Lägga till transaktion
+1. Gå till Transaktioner-fliken
+2. Klicka på "Ny transaktion"
+3. Fyll i information (titel, belopp, datum, kategori)
+4. Ladda upp kvitto (valfritt)
+5. Klicka på "Spara"
+
+#### Skapa rapport
+1. Gå till Rapporter-fliken
+2. Klicka på "Skapa Anpassad Rapport"
+3. Välj kategorier och datumintervall
+4. Lägg till komponenter (KPI, diagram, tabeller)
+5. Spara som mall eller exportera direkt
+
+#### Hantera kategorier
+1. Gå till Inställningar → Kategorier & Regler
+2. Klicka på "Lägg till kategori"
+3. Ange namn och färg
+4. Skapa regler för automatisk kategorisering
+
+---
+
+## 🔒 Säkerhet
+
+- **Lokalt lagrad data** - All data lagras lokalt på din dator
+- **Krypterade lösenord** - Lösenord hashas med bcrypt
+- **JWT tokens** - Säker autentisering
+- **HTTPS** - Säker kommunikation (i produktionsmiljö)
+
+---
+
+## 🤝 Bidra
+
+WestBudget är för närvarande ett privat projekt. Om du är intresserad av att bidra, kontakta projektägaren.
+
+---
+
+## 📄 Licens
+
+Detta projekt är proprietärt och ägs av WestBudget. Alla rättigheter förbehållna.
+
+---
+
+## 📞 Support
+
+För support och frågor:
+- **E-post:** support@westbudget.se
+- **Dokumentation:** [docs.westbudget.se](https://docs.westbudget.se)
+- **Issues:** [GitHub Issues](https://github.com/yourusername/westbudget/issues)
+
+---
+
+## 🗺️ Roadmap
+
+### Kommande funktioner
+- [ ] Multi-användare support
+- [ ] Cloud sync
+- [ ] Mobilapp (iOS/Android)
+- [ ] Bankintegration (Open Banking)
+- [ ] Budgetplanering med prognoser
+- [ ] Fakturahantering
+- [ ] Skatteberäkningar
+
+---
+
+## 🙏 Tack
+
+Tack för att du använder WestBudget! Vi hoppas att appen hjälper dig att få bättre kontroll över din ekonomi.
+
+---
+
+<div align="center">
+
+**Byggt med ❤️ för bättre ekonomihantering**
+
+[⬆ Tillbaka till toppen](#-westbudget---personlig-ekonomi--budget-app)
+
+</div>
