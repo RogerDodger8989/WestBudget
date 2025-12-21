@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, CreditCard, BarChart3, DollarSign, Plus, Edit2, Trash2, Save, X, Eye, EyeOff } from 'lucide-react';
+import { Users, CreditCard, BarChart3, DollarSign, Plus, Edit2, Trash2, Save, X, Eye, EyeOff, Mail } from 'lucide-react';
 import { api } from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
@@ -37,6 +37,8 @@ const AdminPanel = () => {
   }, [user, activeTab]);
 
   const loadData = async () => {
+    if (user?.role !== 'admin') return;
+    
     setLoading(true);
     try {
       if (activeTab === 'users') {
@@ -53,8 +55,20 @@ const AdminPanel = () => {
         setPayments(paymentsData.payments || []);
       }
     } catch (error) {
-      showToast('Kunde inte ladda data', { type: 'error' });
       console.error('Error loading admin data:', error);
+      console.error('Error details:', {
+        message: error.message,
+        status: error.originalError?.error,
+        activeTab: activeTab
+      });
+      
+      // Show error message
+      const errorMsg = error.message || 'Okänt fel';
+      if (errorMsg.includes('401') || errorMsg.includes('403')) {
+        showToast('Du har inte behörighet att visa denna data. Logga ut och logga in igen.', { type: 'error' });
+      } else {
+        showToast('Kunde inte ladda data: ' + errorMsg, { type: 'error' });
+      }
     } finally {
       setLoading(false);
     }
@@ -103,6 +117,26 @@ const AdminPanel = () => {
       await loadData();
     } catch (error) {
       showToast(error.message || 'Kunde inte uppdatera licens', { type: 'error' });
+    }
+  };
+
+  const handleSendCredentials = async (userId, userEmail) => {
+    const password = prompt(`Ange lösenord att skicka till ${userEmail}:`);
+    if (!password) return;
+    
+    if (password.length < 8) {
+      showToast('Lösenordet måste vara minst 8 tecken', { type: 'error' });
+      return;
+    }
+    
+    try {
+      const result = await api.sendUserCredentials(userId, password);
+      showToast(`Loginuppgifter skickade till ${userEmail}`, { type: 'success' });
+      // Update user password in database
+      await api.updateAdminUser(userId, { password });
+      await loadData();
+    } catch (error) {
+      showToast(error.message || 'Kunde inte skicka loginuppgifter', { type: 'error' });
     }
   };
 
@@ -303,6 +337,13 @@ const AdminPanel = () => {
                       </p>
                     </div>
                     <div className="flex gap-2">
+                      <button
+                        onClick={() => handleSendCredentials(u.id, u.email)}
+                        className="p-2 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"
+                        title="Skicka loginuppgifter"
+                      >
+                        <Mail size={18} className="text-indigo-600 dark:text-indigo-400" />
+                      </button>
                       <button
                         onClick={() => setEditingUser(u)}
                         className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors"

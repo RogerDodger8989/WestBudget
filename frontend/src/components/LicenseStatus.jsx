@@ -5,6 +5,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { getThemeButtonClass, getThemeTextClass } from '../utils/getThemeClasses';
 import { api } from '../api';
 import { useToast } from '../contexts/ToastContext';
+import UpgradeToPremium from './UpgradeToPremium';
 
 const LicenseStatus = () => {
   const { license, licenseStatus, loading, loadLicenseStatus, validateLicense, isOnline } = useLicense();

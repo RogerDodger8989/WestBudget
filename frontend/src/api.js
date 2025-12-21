@@ -1,4 +1,15 @@
-const API_BASE_URL = 'http://192.168.1.232:5000/api';
+// Determine API base URL based on environment
+const getApiBaseUrl = () => {
+  // Check if we're in Electron
+  if (window.electronAPI) {
+    // In Electron, use localhost (backend runs locally)
+    return 'http://localhost:5000/api';
+  }
+  // In browser, use the configured IP or localhost
+  return import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 // Helper för felhantering
 async function handleResponse(res) {
@@ -822,6 +833,19 @@ export const api = {
     return handleResponse(res);
   },
 
+  sendUserCredentials: async (userId, password) => {
+    const token = localStorage.getItem('token');
+    const res = await fetch(`${API_BASE_URL}/admin/users/${userId}/send-credentials`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ password }),
+    });
+    return handleResponse(res);
+  },
+
   getAdminLicenses: async () => {
     const token = localStorage.getItem('token');
     const res = await fetch(`${API_BASE_URL}/admin/licenses`, {
@@ -863,6 +887,55 @@ export const api = {
     const token = localStorage.getItem('token');
     const res = await fetch(`${API_BASE_URL}/admin/payments`, {
       method: 'GET',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+    });
+    return handleResponse(res);
+  },
+
+  // --- Payments (Stripe) ---
+  createCheckoutSession: async () => {
+    const token = localStorage.getItem('token');
+    const res = await fetch(`${API_BASE_URL}/payments/create-checkout`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+    });
+    return handleResponse(res);
+  },
+
+  getPaymentHistory: async () => {
+    const token = localStorage.getItem('token');
+    const res = await fetch(`${API_BASE_URL}/payments/history`, {
+      method: 'GET',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+    });
+    return handleResponse(res);
+  },
+
+  cancelSubscription: async () => {
+    const token = localStorage.getItem('token');
+    const res = await fetch(`${API_BASE_URL}/payments/cancel`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+    });
+    return handleResponse(res);
+  },
+
+  resumeSubscription: async () => {
+    const token = localStorage.getItem('token');
+    const res = await fetch(`${API_BASE_URL}/payments/resume`, {
+      method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`

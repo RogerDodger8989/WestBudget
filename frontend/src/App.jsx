@@ -10,7 +10,9 @@ import { useLicense } from './contexts/LicenseContext';
 import LoginModal from './components/LoginModal';
 import RegisterModal from './components/RegisterModal';
 import ForgotPasswordModal from './components/ForgotPasswordModal';
+import ResetPasswordModal from './components/ResetPasswordModal';
 import ToastContainer from './components/ToastContainer';
+import AutoUpdateNotification from './components/AutoUpdateNotification';
 import { useToast } from './contexts/ToastContext';
 import './App.css';
 
@@ -19,6 +21,7 @@ function AppContent() {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [isForgotPasswordModalOpen, setIsForgotPasswordModalOpen] = useState(false);
+  const [resetPasswordToken, setResetPasswordToken] = useState(null);
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [transactions, setTransactions] = useState([]);
   const [agreements, setAgreements] = useState([]);
@@ -29,6 +32,18 @@ function AppContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [userName, setUserName] = useState('');
+
+  // Check for reset password token in URL (only once on mount)
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token');
+    if (token) {
+      setResetPasswordToken(token);
+      // Clean URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty dependency array - only run once on mount
 
   // Load default theme and user name from settings on mount
   useEffect(() => {
@@ -152,6 +167,11 @@ function AppContent() {
             setIsForgotPasswordModalOpen(false);
             setIsLoginModalOpen(true);
           }}
+        />
+        <ResetPasswordModal
+          isOpen={!!resetPasswordToken}
+          onClose={() => setResetPasswordToken(null)}
+          token={resetPasswordToken}
         />
 
         {isAuthenticated ? (

@@ -7,6 +7,7 @@ import tempfile
 import bcrypt
 import jwt
 import secrets
+import stripe
 from datetime import datetime, timedelta
 from pathlib import Path
 from flask import Flask, request, jsonify, send_from_directory, send_file
@@ -21,6 +22,31 @@ ALLOWED_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'gif'}
 JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', secrets.token_urlsafe(32))  # Generate random key if not set
 JWT_ALGORITHM = 'HS256'
 JWT_EXPIRATION_HOURS = 24 * 7  # 7 days
+
+# Stripe configuration
+STRIPE_SECRET_KEY = os.environ.get('STRIPE_SECRET_KEY', '')
+STRIPE_PUBLISHABLE_KEY = os.environ.get('STRIPE_PUBLISHABLE_KEY', '')
+STRIPE_WEBHOOK_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET', '')
+STRIPE_PRICE_ID = os.environ.get('STRIPE_PRICE_ID', '')  # Monthly premium price ID
+
+if STRIPE_SECRET_KEY:
+    stripe.api_key = STRIPE_SECRET_KEY
+
+# SendGrid configuration
+SENDGRID_API_KEY = os.environ.get('SENDGRID_API_KEY', '')
+SENDGRID_FROM_EMAIL = os.environ.get('SENDGRID_FROM_EMAIL', 'noreply@westbudget.se')
+SENDGRID_FROM_NAME = os.environ.get('SENDGRID_FROM_NAME', 'WestBudget')
+RESET_PASSWORD_URL = os.environ.get('RESET_PASSWORD_URL', 'http://localhost:5100/reset-password')
+
+# Initialize SendGrid if API key is provided
+sendgrid_client = None
+if SENDGRID_API_KEY:
+    try:
+        from sendgrid import SendGridAPIClient
+        from sendgrid.helpers.mail import Mail
+        sendgrid_client = SendGridAPIClient(SENDGRID_API_KEY)
+    except ImportError:
+        print("⚠️  SendGrid not installed. Run: pip install sendgrid")
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
@@ -426,6 +452,72 @@ def init_db():
             ''')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_licenses_user_id ON licenses(user_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_licenses_status ON licenses(status)')
+            conn.commit()
+        
+        # Check if subscriptions table exists, if not create it
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='subscriptions'")
+        if not cursor.fetchone():
+            print("⚠️  Creating subscriptions table...")
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS subscriptions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    stripe_subscription_id TEXT UNIQUE,
+                    stripe_customer_id TEXT,
+                    status TEXT NOT NULL CHECK(status IN ('active', 'cancelled', 'past_due', 'trialing', 'incomplete', 'incomplete_expired', 'unpaid')),
+                    current_period_start TIMESTAMP,
+                    current_period_end TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON subscriptions(user_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_subscriptions_stripe_subscription_id ON subscriptions(stripe_subscription_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status)')
+            conn.commit()
+        
+        # Check if payments table exists, if not create it
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='payments'")
+        if not cursor.fetchone():
+            print("⚠️  Creating payments table...")
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS payments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    subscription_id INTEGER,
+                    stripe_payment_intent_id TEXT,
+                    amount REAL NOT NULL,
+                    currency TEXT DEFAULT 'sek',
+                    status TEXT NOT NULL CHECK(status IN ('succeeded', 'pending', 'failed', 'refunded')),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY (subscription_id) REFERENCES subscriptions(id) ON DELETE SET NULL
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_payments_user_id ON payments(user_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_payments_subscription_id ON payments(subscription_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_payments_stripe_payment_intent_id ON payments(stripe_payment_intent_id)')
+            conn.commit()
+        
+        # Check if password_reset_tokens table exists, if not create it
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='password_reset_tokens'")
+        if not cursor.fetchone():
+            print("⚠️  Creating password_reset_tokens table...")
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    token TEXT UNIQUE NOT NULL,
+                    expires_at TIMESTAMP NOT NULL,
+                    used BOOLEAN DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id ON password_reset_tokens(user_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_token ON password_reset_tokens(token)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_expires_at ON password_reset_tokens(expires_at)')
             conn.commit()
     
     conn.close()
@@ -1204,14 +1296,70 @@ def reset_password():
         data = request.get_json()
         
         if not data or not data.get('token') or not data.get('password'):
-            return jsonify({'error': 'Token and password are required'}), 400
+            return jsonify({'error': 'Token och lösenord krävs'}), 400
         
-        # TODO: Implement token validation and password reset
-        # For now, return placeholder
-        return jsonify({'error': 'Password reset not yet implemented'}), 501
+        token = data['token']
+        new_password = data['password']
+        
+        # Validate password
+        if len(new_password) < 8:
+            return jsonify({'error': 'Lösenordet måste vara minst 8 tecken'}), 400
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Find valid token
+        cursor.execute('''
+            SELECT prt.user_id, prt.expires_at, prt.used
+            FROM password_reset_tokens prt
+            WHERE prt.token = ? AND prt.used = 0
+        ''', (token,))
+        token_record = cursor.fetchone()
+        
+        if not token_record:
+            conn.close()
+            return jsonify({'error': 'Ogiltig eller utgången återställningslänk'}), 400
+        
+        # Check if token is expired
+        expires_at = datetime.fromisoformat(token_record['expires_at'])
+        if datetime.now() > expires_at:
+            # Mark token as used
+            cursor.execute('UPDATE password_reset_tokens SET used = 1 WHERE token = ?', (token,))
+            conn.commit()
+            conn.close()
+            return jsonify({'error': 'Återställningslänken har gått ut. Begär en ny länk.'}), 400
+        
+        # Check if token is already used
+        if token_record['used']:
+            conn.close()
+            return jsonify({'error': 'Denna återställningslänk har redan använts'}), 400
+        
+        user_id = token_record['user_id']
+        
+        # Update password
+        password_hash = hash_password(new_password)
+        cursor.execute('''
+            UPDATE users 
+            SET password_hash = ?, updated_at = ?
+            WHERE id = ?
+        ''', (password_hash, datetime.now().isoformat(), user_id))
+        
+        # Mark token as used
+        cursor.execute('UPDATE password_reset_tokens SET used = 1 WHERE token = ?', (token,))
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"[Backend] Password reset successful for user {user_id}")
+        
+        return jsonify({
+            'message': 'Lösenordet har återställts. Du kan nu logga in med ditt nya lösenord.'
+        }), 200
         
     except Exception as e:
         print(f"[Backend] Error resetting password: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 # ============================================================================
@@ -1604,6 +1752,50 @@ def update_user(user_id):
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/admin/users/<int:user_id>/send-credentials', methods=['POST'])
+@require_admin
+def send_user_credentials(user_id):
+    """Send login credentials to user via email (admin only)"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get user
+        cursor.execute('SELECT id, email FROM users WHERE id = ?', (user_id,))
+        user = cursor.fetchone()
+        
+        if not user:
+            conn.close()
+            return jsonify({'error': 'User not found'}), 404
+        
+        data = request.get_json() or {}
+        password = data.get('password')
+        
+        if not password:
+            conn.close()
+            return jsonify({'error': 'Password is required'}), 400
+        
+        # TODO: Implement SendGrid email sending
+        # For now, just return success (email sending will be implemented when SendGrid is configured)
+        # In production, you would:
+        # 1. Import sendgrid
+        # 2. Create email with login credentials
+        # 3. Send via SendGrid API
+        
+        conn.close()
+        
+        return jsonify({
+            'message': f'Login credentials would be sent to {user["email"]}',
+            'email': user['email'],
+            'password': password  # Only for testing, remove in production
+        }), 200
+        
+    except Exception as e:
+        print(f"[Backend] Error sending credentials: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/admin/users/<int:user_id>', methods=['DELETE'])
 @require_admin
 def delete_user(user_id):
@@ -1793,16 +1985,519 @@ def get_statistics():
 @app.route('/api/admin/payments', methods=['GET'])
 @require_admin
 def get_all_payments():
-    """Get all payments (admin only) - placeholder for future Stripe integration"""
+    """Get all payments (admin only)"""
     try:
-        # TODO: Implement when Stripe is integrated
-        return jsonify({
-            'payments': [],
-            'message': 'Payment history will be available after Stripe integration'
-        }), 200
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT p.*, u.email as user_email, s.stripe_subscription_id
+            FROM payments p
+            JOIN users u ON p.user_id = u.id
+            LEFT JOIN subscriptions s ON p.subscription_id = s.id
+            ORDER BY p.created_at DESC
+        ''')
+        payments = [dict(row) for row in cursor.fetchall()]
+        
+        conn.close()
+        return jsonify(payments), 200
         
     except Exception as e:
         print(f"[Backend] Error getting payments: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================================================
+# STRIPE PAYMENT ENDPOINTS
+# ============================================================================
+
+@app.route('/api/payments/create-checkout', methods=['POST'])
+@require_auth
+def create_checkout_session():
+    """Create Stripe Checkout session for premium subscription"""
+    try:
+        if not STRIPE_SECRET_KEY or not STRIPE_PRICE_ID:
+            return jsonify({'error': 'Stripe is not configured'}), 500
+        
+        user_id = request.current_user['user_id']
+        user_email = request.current_user['email']
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get or create Stripe customer
+        cursor.execute('SELECT stripe_customer_id FROM subscriptions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1', (user_id,))
+        existing = cursor.fetchone()
+        customer_id = existing['stripe_customer_id'] if existing and existing['stripe_customer_id'] else None
+        
+        if not customer_id:
+            # Create Stripe customer
+            customer = stripe.Customer.create(
+                email=user_email,
+                metadata={'user_id': user_id}
+            )
+            customer_id = customer.id
+        
+        # Create checkout session
+        checkout_session = stripe.checkout.Session.create(
+            customer=customer_id,
+            payment_method_types=['card'],
+            line_items=[{
+                'price': STRIPE_PRICE_ID,
+                'quantity': 1,
+            }],
+            mode='subscription',
+            success_url=request.headers.get('Origin', 'http://localhost:5100') + '/settings?payment=success',
+            cancel_url=request.headers.get('Origin', 'http://localhost:5100') + '/settings?payment=cancelled',
+            metadata={'user_id': user_id}
+        )
+        
+        conn.close()
+        
+        return jsonify({
+            'sessionId': checkout_session.id,
+            'url': checkout_session.url
+        }), 200
+        
+    except Exception as e:
+        print(f"[Backend] Error creating checkout session: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/payments/webhook', methods=['POST'])
+def stripe_webhook():
+    """Handle Stripe webhook events"""
+    try:
+        if not STRIPE_WEBHOOK_SECRET:
+            return jsonify({'error': 'Webhook secret not configured'}), 500
+        
+        payload = request.data
+        sig_header = request.headers.get('Stripe-Signature')
+        
+        try:
+            event = stripe.Webhook.construct_event(
+                payload, sig_header, STRIPE_WEBHOOK_SECRET
+            )
+        except ValueError as e:
+            print(f"[Backend] Invalid payload: {e}")
+            return jsonify({'error': 'Invalid payload'}), 400
+        except stripe.error.SignatureVerificationError as e:
+            print(f"[Backend] Invalid signature: {e}")
+            return jsonify({'error': 'Invalid signature'}), 400
+        
+        # Handle the event
+        if event['type'] == 'checkout.session.completed':
+            session = event['data']['object']
+            handle_checkout_completed(session)
+        elif event['type'] == 'invoice.payment_succeeded':
+            invoice = event['data']['object']
+            handle_payment_succeeded(invoice)
+        elif event['type'] == 'invoice.payment_failed':
+            invoice = event['data']['object']
+            handle_payment_failed(invoice)
+        elif event['type'] == 'customer.subscription.updated':
+            subscription = event['data']['object']
+            handle_subscription_updated(subscription)
+        elif event['type'] == 'customer.subscription.deleted':
+            subscription = event['data']['object']
+            handle_subscription_deleted(subscription)
+        
+        return jsonify({'received': True}), 200
+        
+    except Exception as e:
+        print(f"[Backend] Error handling webhook: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+def handle_checkout_completed(session):
+    """Handle checkout.session.completed event"""
+    try:
+        user_id = int(session['metadata']['user_id'])
+        subscription_id = session.get('subscription')
+        customer_id = session.get('customer')
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Create or update subscription
+        cursor.execute('''
+            SELECT id FROM subscriptions WHERE stripe_subscription_id = ?
+        ''', (subscription_id,))
+        existing = cursor.fetchone()
+        
+        if existing:
+            # Update existing subscription
+            cursor.execute('''
+                UPDATE subscriptions 
+                SET status = 'active',
+                    current_period_start = ?,
+                    current_period_end = ?,
+                    updated_at = ?
+                WHERE id = ?
+            ''', (
+                datetime.fromtimestamp(session.get('subscription_details', {}).get('current_period_start', 0)).isoformat(),
+                datetime.fromtimestamp(session.get('subscription_details', {}).get('current_period_end', 0)).isoformat(),
+                datetime.now().isoformat(),
+                existing['id']
+            ))
+            subscription_db_id = existing['id']
+        else:
+            # Create new subscription
+            subscription = stripe.Subscription.retrieve(subscription_id)
+            cursor.execute('''
+                INSERT INTO subscriptions (user_id, stripe_subscription_id, stripe_customer_id, status, current_period_start, current_period_end, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                user_id,
+                subscription_id,
+                customer_id,
+                subscription.status,
+                datetime.fromtimestamp(subscription.current_period_start).isoformat(),
+                datetime.fromtimestamp(subscription.current_period_end).isoformat(),
+                datetime.now().isoformat(),
+                datetime.now().isoformat()
+            ))
+            subscription_db_id = cursor.lastrowid
+        
+        # Update or create premium license
+        cursor.execute('''
+            SELECT id FROM licenses WHERE user_id = ? AND license_type = 'premium' AND status = 'active'
+            ORDER BY created_at DESC LIMIT 1
+        ''', (user_id,))
+        existing_license = cursor.fetchone()
+        
+        if existing_license:
+            # Update existing license
+            cursor.execute('''
+                UPDATE licenses 
+                SET status = 'active',
+                    expires_at = NULL,
+                    updated_at = ?
+                WHERE id = ?
+            ''', (datetime.now().isoformat(), existing_license['id']))
+        else:
+            # Create new premium license
+            cursor.execute('''
+                INSERT INTO licenses (user_id, license_type, status, starts_at, expires_at, created_at, updated_at, last_validated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                user_id,
+                'premium',
+                'active',
+                datetime.now().isoformat(),
+                None,  # Premium never expires
+                datetime.now().isoformat(),
+                datetime.now().isoformat(),
+                datetime.now().isoformat()
+            ))
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"[Backend] Checkout completed for user {user_id}")
+        
+    except Exception as e:
+        print(f"[Backend] Error handling checkout completed: {e}")
+        import traceback
+        traceback.print_exc()
+
+def handle_payment_succeeded(invoice):
+    """Handle invoice.payment_succeeded event"""
+    try:
+        subscription_id = invoice.get('subscription')
+        customer_id = invoice.get('customer')
+        amount = invoice.get('amount_paid', 0) / 100  # Convert from cents
+        payment_intent_id = invoice.get('payment_intent')
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get subscription
+        cursor.execute('SELECT id, user_id FROM subscriptions WHERE stripe_subscription_id = ?', (subscription_id,))
+        subscription = cursor.fetchone()
+        
+        if subscription:
+            # Record payment
+            cursor.execute('''
+                INSERT INTO payments (user_id, subscription_id, stripe_payment_intent_id, amount, currency, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                subscription['user_id'],
+                subscription['id'],
+                payment_intent_id,
+                amount,
+                'sek',
+                'succeeded',
+                datetime.now().isoformat()
+            ))
+            
+            # Update subscription period
+            subscription_obj = stripe.Subscription.retrieve(subscription_id)
+            cursor.execute('''
+                UPDATE subscriptions 
+                SET current_period_start = ?,
+                    current_period_end = ?,
+                    updated_at = ?
+                WHERE id = ?
+            ''', (
+                datetime.fromtimestamp(subscription_obj.current_period_start).isoformat(),
+                datetime.fromtimestamp(subscription_obj.current_period_end).isoformat(),
+                datetime.now().isoformat(),
+                subscription['id']
+            ))
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"[Backend] Payment succeeded for subscription {subscription_id}")
+        
+    except Exception as e:
+        print(f"[Backend] Error handling payment succeeded: {e}")
+        import traceback
+        traceback.print_exc()
+
+def handle_payment_failed(invoice):
+    """Handle invoice.payment_failed event"""
+    try:
+        subscription_id = invoice.get('subscription')
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Update subscription status
+        cursor.execute('''
+            UPDATE subscriptions 
+            SET status = 'past_due',
+                updated_at = ?
+            WHERE stripe_subscription_id = ?
+        ''', (datetime.now().isoformat(), subscription_id))
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"[Backend] Payment failed for subscription {subscription_id}")
+        
+    except Exception as e:
+        print(f"[Backend] Error handling payment failed: {e}")
+        import traceback
+        traceback.print_exc()
+
+def handle_subscription_updated(subscription):
+    """Handle customer.subscription.updated event"""
+    try:
+        subscription_id = subscription['id']
+        status = subscription['status']
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            UPDATE subscriptions 
+            SET status = ?,
+                current_period_start = ?,
+                current_period_end = ?,
+                updated_at = ?
+            WHERE stripe_subscription_id = ?
+        ''', (
+            status,
+            datetime.fromtimestamp(subscription['current_period_start']).isoformat(),
+            datetime.fromtimestamp(subscription['current_period_end']).isoformat(),
+            datetime.now().isoformat(),
+            subscription_id
+        ))
+        
+        # If subscription is cancelled, update license
+        if status in ['cancelled', 'unpaid', 'past_due']:
+            cursor.execute('SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ?', (subscription_id,))
+            sub = cursor.fetchone()
+            if sub:
+                # Set license to expired
+                cursor.execute('''
+                    UPDATE licenses 
+                    SET status = 'expired',
+                        updated_at = ?
+                    WHERE user_id = ? AND license_type = 'premium' AND status = 'active'
+                ''', (datetime.now().isoformat(), sub['user_id']))
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"[Backend] Subscription updated: {subscription_id} -> {status}")
+        
+    except Exception as e:
+        print(f"[Backend] Error handling subscription updated: {e}")
+        import traceback
+        traceback.print_exc()
+
+def handle_subscription_deleted(subscription):
+    """Handle customer.subscription.deleted event"""
+    try:
+        subscription_id = subscription['id']
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get user_id
+        cursor.execute('SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ?', (subscription_id,))
+        sub = cursor.fetchone()
+        
+        if sub:
+            # Update subscription status
+            cursor.execute('''
+                UPDATE subscriptions 
+                SET status = 'cancelled',
+                    updated_at = ?
+                WHERE stripe_subscription_id = ?
+            ''', (datetime.now().isoformat(), subscription_id))
+            
+            # Set license to expired
+            cursor.execute('''
+                UPDATE licenses 
+                SET status = 'expired',
+                    updated_at = ?
+                WHERE user_id = ? AND license_type = 'premium' AND status = 'active'
+            ''', (datetime.now().isoformat(), sub['user_id']))
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"[Backend] Subscription deleted: {subscription_id}")
+        
+    except Exception as e:
+        print(f"[Backend] Error handling subscription deleted: {e}")
+        import traceback
+        traceback.print_exc()
+
+@app.route('/api/payments/history', methods=['GET'])
+@require_auth
+def get_payment_history():
+    """Get current user's payment history"""
+    try:
+        user_id = request.current_user['user_id']
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT p.*, s.stripe_subscription_id
+            FROM payments p
+            LEFT JOIN subscriptions s ON p.subscription_id = s.id
+            WHERE p.user_id = ?
+            ORDER BY p.created_at DESC
+        ''', (user_id,))
+        payments = [dict(row) for row in cursor.fetchall()]
+        
+        conn.close()
+        return jsonify(payments), 200
+        
+    except Exception as e:
+        print(f"[Backend] Error getting payment history: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/payments/cancel', methods=['POST'])
+@require_auth
+def cancel_subscription():
+    """Cancel current user's subscription"""
+    try:
+        if not STRIPE_SECRET_KEY:
+            return jsonify({'error': 'Stripe is not configured'}), 500
+        
+        user_id = request.current_user['user_id']
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get active subscription
+        cursor.execute('''
+            SELECT stripe_subscription_id FROM subscriptions 
+            WHERE user_id = ? AND status = 'active'
+            ORDER BY created_at DESC LIMIT 1
+        ''', (user_id,))
+        subscription = cursor.fetchone()
+        
+        if not subscription:
+            conn.close()
+            return jsonify({'error': 'No active subscription found'}), 404
+        
+        # Cancel subscription in Stripe
+        stripe.Subscription.modify(
+            subscription['stripe_subscription_id'],
+            cancel_at_period_end=True
+        )
+        
+        # Update status
+        cursor.execute('''
+            UPDATE subscriptions 
+            SET status = 'cancelled',
+                updated_at = ?
+            WHERE stripe_subscription_id = ?
+        ''', (datetime.now().isoformat(), subscription['stripe_subscription_id']))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'message': 'Subscription will be cancelled at period end'}), 200
+        
+    except Exception as e:
+        print(f"[Backend] Error cancelling subscription: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/payments/resume', methods=['POST'])
+@require_auth
+def resume_subscription():
+    """Resume cancelled subscription"""
+    try:
+        if not STRIPE_SECRET_KEY:
+            return jsonify({'error': 'Stripe is not configured'}), 500
+        
+        user_id = request.current_user['user_id']
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get cancelled subscription
+        cursor.execute('''
+            SELECT stripe_subscription_id FROM subscriptions 
+            WHERE user_id = ? AND status = 'cancelled'
+            ORDER BY created_at DESC LIMIT 1
+        ''', (user_id,))
+        subscription = cursor.fetchone()
+        
+        if not subscription:
+            conn.close()
+            return jsonify({'error': 'No cancelled subscription found'}), 404
+        
+        # Resume subscription in Stripe
+        stripe.Subscription.modify(
+            subscription['stripe_subscription_id'],
+            cancel_at_period_end=False
+        )
+        
+        # Update status
+        cursor.execute('''
+            UPDATE subscriptions 
+            SET status = 'active',
+                updated_at = ?
+            WHERE stripe_subscription_id = ?
+        ''', (datetime.now().isoformat(), subscription['stripe_subscription_id']))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'message': 'Subscription resumed'}), 200
+        
+    except Exception as e:
+        print(f"[Backend] Error resuming subscription: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 

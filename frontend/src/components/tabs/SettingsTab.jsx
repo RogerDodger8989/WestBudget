@@ -7,6 +7,7 @@ import MergeCategoryModal from '../MergeCategoryModal';
 import ThemeCustomizer from '../ThemeCustomizer';
 import HistoryTab from './HistoryTab';
 import LicenseStatus from '../LicenseStatus';
+import SubscriptionManagement from '../SubscriptionManagement';
 import AdminPanel from './AdminPanel';
 import { useAuth } from '../../contexts/AuthContext';
 import { applyTheme, getCurrentTheme } from '../../utils/themes';
@@ -656,6 +657,9 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
         
         {/* License Status */}
         <LicenseStatus />
+        
+        {/* Subscription Management */}
+        <SubscriptionManagement />
         
         {/* User Information */}
         <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
