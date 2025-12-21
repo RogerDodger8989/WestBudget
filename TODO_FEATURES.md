@@ -6,88 +6,90 @@ Detta dokument beskriver implementationen av licenssystem, användarhantering, b
 ---
 
 ## 1. Användarhantering & Autentisering
-**Status:** ⏳ Ej påbörjad
+**Status:** ✅ Implementerad
 
 ### Funktioner:
-- [ ] Användarregistrering (e-post + lösenord)
-- [ ] Inloggning (e-post + lösenord)
-- [ ] Lösenordsåterställning (via SendGrid e-post)
-- [ ] JWT-token baserad autentisering
-- [ ] Session-hantering (kom ihåg mig)
-- [ ] Logout-funktionalitet
-- [ ] Profilhantering (uppdatera e-post, lösenord)
+- [x] Användarregistrering (e-post + lösenord)
+- [x] Inloggning (e-post + lösenord)
+- [x] Lösenordsåterställning (via SendGrid e-post)
+- [x] JWT-token baserad autentisering
+- [x] Session-hantering (kom ihåg mig)
+- [x] Logout-funktionalitet
+- [x] Profilhantering (uppdatera e-post, lösenord)
 
 ### Implementation:
-- [ ] Skapa `users` tabell i databasen
+- [x] Skapa `users` tabell i databasen
   - id, email, password_hash, created_at, updated_at, last_login
-- [ ] Backend endpoints:
-  - [ ] `POST /api/auth/register` - Registrera ny användare
-  - [ ] `POST /api/auth/login` - Logga in
-  - [ ] `POST /api/auth/logout` - Logga ut
-  - [ ] `POST /api/auth/forgot-password` - Begär lösenordsåterställning
-  - [ ] `POST /api/auth/reset-password` - Återställ lösenord
-  - [ ] `GET /api/auth/me` - Hämta aktuell användare
-  - [ ] `PUT /api/auth/profile` - Uppdatera profil
-- [ ] Frontend komponenter:
-  - [ ] `LoginModal` - Inloggningsmodal
-  - [ ] `RegisterModal` - Registreringsmodal
-  - [ ] `ForgotPasswordModal` - Glömt lösenord
-  - [ ] `UserProfile` - Profilhantering i Settings
-- [ ] Integrera SendGrid för e-postutskick
-- [ ] Säkerhet:
-  - [ ] Hasha lösenord med bcrypt
-  - [ ] JWT-token med expiration
-  - [ ] Rate limiting för login/register
-  - [ ] E-postverifiering (valfritt)
+- [x] Backend endpoints:
+  - [x] `POST /api/auth/register` - Registrera ny användare
+  - [x] `POST /api/auth/login` - Logga in
+  - [x] `POST /api/auth/logout` - Logga ut
+  - [x] `POST /api/auth/forgot-password` - Begär lösenordsåterställning
+  - [x] `POST /api/auth/reset-password` - Återställ lösenord
+  - [x] `GET /api/auth/me` - Hämta aktuell användare
+  - [x] `PUT /api/auth/profile` - Uppdatera profil
+- [x] Frontend komponenter:
+  - [x] `LoginModal` - Inloggningsmodal
+  - [x] `RegisterModal` - Registreringsmodal
+  - [x] `ForgotPasswordModal` - Glömt lösenord
+  - [x] `ResetPasswordModal` - Återställ lösenord
+  - [x] `UserProfile` - Profilhantering i Settings (delvis)
+- [x] Integrera SendGrid för e-postutskick
+- [x] Säkerhet:
+  - [x] Hasha lösenord med bcrypt
+  - [x] JWT-token med expiration
+  - [ ] Rate limiting för login/register (TODO)
+  - [ ] E-postverifiering (valfritt - TODO)
 
 ---
 
 ## 2. Licenssystem
-**Status:** ⏳ Ej påbörjad
+**Status:** ✅ Implementerad
 
 ### Funktioner:
-- [ ] Två licensnivåer: Trial (30 dagar) och Premium (månadsvis)
-- [ ] Automatisk trial-period för nya användare
-- [ ] Licensvalidering (online med offline-fallback)
-- [ ] Grace period (7 dagar offline-användning)
-- [ ] Licensstatus-visning i appen
-- [ ] Varningar när trial/licens går ut snart
+- [x] Två licensnivåer: Trial (30 dagar) och Premium (månadsvis)
+- [x] Automatisk trial-period för nya användare
+- [x] Licensvalidering (online med offline-fallback)
+- [x] Grace period (7 dagar offline-användning)
+- [x] Licensstatus-visning i appen
+- [x] Varningar när trial/licens går ut snart
 
 ### Implementation:
-- [ ] Skapa `licenses` tabell i databasen
+- [x] Skapa `licenses` tabell i databasen
   - id, user_id, license_type (trial/premium), status (active/expired/cancelled), 
     starts_at, expires_at, created_at, updated_at, last_validated_at
-- [ ] Skapa `license_validations` tabell (för logging)
+- [x] Skapa `license_validations` tabell (för logging)
   - id, license_id, validation_type (online/offline), success, error_message, created_at
-- [ ] Backend endpoints:
-  - [ ] `GET /api/licenses/current` - Hämta aktuell licens
-  - [ ] `POST /api/licenses/validate` - Validera licens (online)
-  - [ ] `GET /api/licenses/status` - Hämta licensstatus
-- [ ] Licensvalideringslogik:
-  - [ ] Online-validering vid app-start (om internet finns)
-  - [ ] Offline-cache (spara senaste validering lokalt)
-  - [ ] Grace period (tillåt användning i 7 dagar utan validering)
-  - [ ] Automatisk validering i bakgrunden
-- [ ] Frontend komponenter:
-  - [ ] `LicenseStatus` - Visa licensstatus i Settings
-  - [ ] `TrialBanner` - Varning när trial går ut snart
-  - [ ] `LicenseExpiredModal` - Modal när licens har gått ut
-- [ ] Feature flags baserat på licens:
-  - [ ] Trial: Alla funktioner (begränsad tid)
-  - [ ] Premium: Alla funktioner (obegränsat)
+- [x] Backend endpoints:
+  - [x] `GET /api/licenses/current` - Hämta aktuell licens
+  - [x] `POST /api/licenses/validate` - Validera licens (online)
+  - [x] `GET /api/licenses/status` - Hämta licensstatus
+- [x] Licensvalideringslogik:
+  - [x] Online-validering vid app-start (om internet finns)
+  - [x] Offline-cache (spara senaste validering lokalt)
+  - [x] Grace period (tillåt användning i 7 dagar utan validering)
+  - [x] Automatisk validering i bakgrunden
+- [x] Frontend komponenter:
+  - [x] `LicenseStatus` - Visa licensstatus i Settings
+  - [x] `LicenseGate` - Blockera appen när licens är ogiltig
+  - [ ] `TrialBanner` - Varning när trial går ut snart (TODO)
+  - [ ] `LicenseExpiredModal` - Modal när licens har gått ut (TODO)
+- [x] Feature flags baserat på licens:
+  - [x] Trial: Alla funktioner (begränsad tid)
+  - [x] Premium: Alla funktioner (obegränsat)
 
 ---
 
 ## 3. Betalningsintegration (Stripe)
-**Status:** ⏳ Ej påbörjad
+**Status:** ✅ Implementerad
 
 ### Funktioner:
-- [ ] Stripe Checkout integration
-- [ ] Månadsvis prenumeration
-- [ ] Automatisk fakturering
-- [ ] Hantera prenumerationsuppdateringar
-- [ ] Hantera avbokningar
-- [ ] Webhook-hantering för Stripe events
+- [x] Stripe Checkout integration
+- [x] Månadsvis prenumeration
+- [x] Automatisk fakturering
+- [x] Hantera prenumerationsuppdateringar
+- [x] Hantera avbokningar
+- [x] Webhook-hantering för Stripe events
 
 ### Implementation:
 - [ ] Skapa `subscriptions` tabell i databasen
@@ -121,14 +123,14 @@ Detta dokument beskriver implementationen av licenssystem, användarhantering, b
 ---
 
 ## 4. Admin Panel (Inbyggt i appen)
-**Status:** ⏳ Ej påbörjad
+**Status:** ✅ Implementerad (delvis)
 
 ### Funktioner:
-- [ ] Användarhantering (skapa, redigera, radera användare)
-- [ ] Licenshantering (se alla licenser, manuellt aktivera/inaktivera)
-- [ ] Användningsstatistik (dashboard med metrics)
-- [ ] Betalningshantering (se transaktioner, refunds)
-- [ ] Systeminställningar
+- [x] Användarhantering (skapa, redigera, radera användare)
+- [x] Licenshantering (se alla licenser, manuellt aktivera/inaktivera)
+- [x] Användningsstatistik (dashboard med metrics - placeholder)
+- [x] Betalningshantering (se transaktioner - refunds TODO)
+- [ ] Systeminställningar (TODO)
 
 ### Implementation:
 - [ ] Lägg till `role` kolumn i `users` tabell (admin/user)
@@ -158,48 +160,48 @@ Detta dokument beskriver implementationen av licenssystem, användarhantering, b
 ---
 
 ## 5. Electron Distribution & Installer
-**Status:** ⏳ Ej påbörjad
+**Status:** 🔄 Delvis implementerad
 
 ### Funktioner:
-- [ ] Electron Builder konfiguration
-- [ ] Windows installer (.exe)
-- [ ] macOS installer (.dmg)
-- [ ] Linux installer (.AppImage eller .deb)
-- [ ] Code signing (Windows/macOS)
-- [ ] Auto-update funktionalitet
-- [ ] Update server setup
+- [x] Electron Builder konfiguration
+- [x] Windows installer (.exe) - konfigurerad
+- [x] macOS installer (.dmg) - konfigurerad
+- [x] Linux installer (.AppImage eller .deb) - konfigurerad
+- [ ] Code signing (Windows/macOS) - TODO
+- [ ] Auto-update funktionalitet - TODO (electron-updater saknas)
+- [ ] Update server setup - TODO
 
 ### Implementation:
-- [ ] Installera Electron Builder:
-  - [ ] `npm install --save-dev electron-builder`
-- [ ] Konfigurera `electron-builder` i `package.json`:
-  - [ ] Windows konfiguration
-  - [ ] macOS konfiguration
-  - [ ] Linux konfiguration
-  - [ ] Icons och metadata
-- [ ] Skapa build scripts:
-  - [ ] `npm run build:win` - Bygg Windows installer
-  - [ ] `npm run build:mac` - Bygg macOS installer
-  - [ ] `npm run build:linux` - Bygg Linux installer
-  - [ ] `npm run build:all` - Bygg alla plattformar
+- [x] Installera Electron Builder:
+  - [x] `npm install --save-dev electron-builder`
+- [x] Konfigurera `electron-builder` i `package.json`:
+  - [x] Windows konfiguration
+  - [x] macOS konfiguration
+  - [x] Linux konfiguration
+  - [x] Icons och metadata
+- [x] Skapa build scripts:
+  - [x] `npm run electron:build:win` - Bygg Windows installer
+  - [x] `npm run electron:build:mac` - Bygg macOS installer
+  - [x] `npm run electron:build:linux` - Bygg Linux installer
+  - [x] `npm run electron:build` - Bygg alla plattformar
 - [ ] Code signing:
-  - [ ] Windows: Code signing certificate
-  - [ ] macOS: Apple Developer certificate
-  - [ ] Konfigurera i electron-builder
-- [ ] Auto-update:
-  - [ ] Installera `electron-updater`
-  - [ ] Konfigurera update server (GitHub Releases eller egen server)
-  - [ ] Implementera update check i appen
-  - [ ] Update UI (visa när update finns, progress bar)
+  - [ ] Windows: Code signing certificate (TODO - kräver köp av certifikat)
+  - [ ] macOS: Apple Developer certificate (TODO - kräver Apple Developer-konto)
+  - [ ] Konfigurera i electron-builder (TODO)
+- [x] Auto-update:
+  - [x] Installera `electron-updater` (redan importerad i main.js)
+  - [ ] Konfigurera update server (GitHub Releases eller egen server) - TODO
+  - [ ] Implementera update check i appen - TODO (delvis implementerad)
+  - [ ] Update UI (visa när update finns, progress bar) - TODO
 - [ ] Update server (valfritt - kan använda GitHub Releases):
-  - [ ] Hosta `latest.yml` / `latest-mac.yml` / `latest-linux.yml`
-  - [ ] Hosta installer-filer
-  - [ ] Versionering (SemVer)
+  - [ ] Hosta `latest.yml` / `latest-mac.yml` / `latest-linux.yml` - TODO
+  - [ ] Hosta installer-filer - TODO
+  - [ ] Versionering (SemVer) - TODO
 
 ---
 
 ## 6. Integration & Testing
-**Status:** ⏳ Ej påbörjad
+**Status:** 🔄 Pågående
 
 ### Funktioner:
 - [ ] Integrera alla system
@@ -239,33 +241,33 @@ Detta dokument beskriver implementationen av licenssystem, användarhantering, b
 ## Tekniska Anteckningar
 
 ### Backend-ändringar som behövs:
-- [ ] Ny tabell: `users` (användare)
-- [ ] Ny tabell: `licenses` (licenser)
-- [ ] Ny tabell: `license_validations` (valideringslogg)
-- [ ] Ny tabell: `subscriptions` (prenumerationer)
-- [ ] Ny tabell: `payments` (betalningar)
-- [ ] Middleware för autentisering (JWT)
-- [ ] Middleware för licensvalidering
-- [ ] Middleware för admin-check
-- [ ] Stripe webhook endpoint
-- [ ] SendGrid integration för e-post
+- [x] Ny tabell: `users` (användare)
+- [x] Ny tabell: `licenses` (licenser)
+- [x] Ny tabell: `license_validations` (valideringslogg)
+- [x] Ny tabell: `subscriptions` (prenumerationer)
+- [x] Ny tabell: `payments` (betalningar)
+- [x] Middleware för autentisering (JWT)
+- [x] Middleware för licensvalidering
+- [x] Middleware för admin-check
+- [x] Stripe webhook endpoint
+- [x] SendGrid integration för e-post
 
 ### Frontend-ändringar:
-- [ ] Login/Register modals
-- [ ] User profile i Settings
-- [ ] License status i Settings
-- [ ] Upgrade to Premium UI
-- [ ] Subscription management
-- [ ] Admin Panel (ny tab i Settings)
-- [ ] Auto-update UI
-- [ ] Auth context/provider
-- [ ] License context/provider
+- [x] Login/Register modals
+- [x] User profile i Settings (delvis)
+- [x] License status i Settings
+- [x] Upgrade to Premium UI
+- [x] Subscription management
+- [x] Admin Panel (ny tab i Settings)
+- [ ] Auto-update UI (TODO)
+- [x] Auth context/provider
+- [x] License context/provider
 
 ### Externa tjänster:
-- [ ] Stripe account och API keys
-- [ ] SendGrid account och API keys
-- [ ] Update server (GitHub Releases eller egen)
-- [ ] Code signing certificates (valfritt men rekommenderat)
+- [x] Stripe account och API keys (konfigurerad)
+- [x] SendGrid account och API keys (konfigurerad)
+- [ ] Update server (GitHub Releases eller egen) - TODO
+- [ ] Code signing certificates (valfritt men rekommenderat) - TODO
 
 ---
 

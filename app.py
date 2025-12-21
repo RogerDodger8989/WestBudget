@@ -12,6 +12,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from flask import Flask, request, jsonify, send_from_directory, send_file
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from werkzeug.utils import secure_filename
 from functools import wraps
 
@@ -51,6 +53,14 @@ if SENDGRID_API_KEY:
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+
+# Initialize rate limiter
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri="memory://"  # In-memory storage (use Redis in production)
+)
 
 # Enable CORS for Electron/React frontend
 CORS(app, resources={
@@ -1094,6 +1104,7 @@ def delete_agreement(agreement_id):
 # ============================================================================
 
 @app.route('/api/auth/register', methods=['POST'])
+@limiter.limit("5 per minute")  # Max 5 registreringar per minut per IP
 def register():
     """Register a new user"""
     try:
@@ -1175,6 +1186,7 @@ def register():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/auth/login', methods=['POST'])
+@limiter.limit("10 per minute")  # Max 10 login-försök per minut per IP
 def login():
     """Login user"""
     try:
@@ -1261,6 +1273,7 @@ def logout():
     return jsonify({'message': 'Logout successful'}), 200
 
 @app.route('/api/auth/forgot-password', methods=['POST'])
+@limiter.limit("3 per hour")  # Max 3 lösenordsåterställningar per timme per IP
 def forgot_password():
     """Request password reset"""
     try:
@@ -1290,6 +1303,7 @@ def forgot_password():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/auth/reset-password', methods=['POST'])
+@limiter.limit("5 per hour")  # Max 5 lösenordsåterställningar per timme per IP
 def reset_password():
     """Reset password with token"""
     try:
@@ -1775,19 +1789,260 @@ def send_user_credentials(user_id):
             conn.close()
             return jsonify({'error': 'Password is required'}), 400
         
-        # TODO: Implement SendGrid email sending
-        # For now, just return success (email sending will be implemented when SendGrid is configured)
-        # In production, you would:
-        # 1. Import sendgrid
-        # 2. Create email with login credentials
-        # 3. Send via SendGrid API
+        user_email = user['email']
+        
+        # Send email with login credentials
+        if sendgrid_client:
+            try:
+                email_html = f"""
+                <!DOCTYPE html>
+                <html lang="sv">
+                <head>
+                    <meta charset="utf-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+                    <title>Dina inloggningsuppgifter för WestBudget</title>
+                    <style>
+                        body {{ 
+                            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; 
+                            line-height: 1.6; 
+                            color: #333333; 
+                            margin: 0; 
+                            padding: 0; 
+                            background-color: #f4f4f4;
+                        }}
+                        .email-wrapper {{
+                            max-width: 600px; 
+                            margin: 20px auto; 
+                            background-color: #ffffff;
+                            border-radius: 8px;
+                            overflow: hidden;
+                            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                        }}
+                        .header {{ 
+                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                            color: #ffffff; 
+                            padding: 40px 30px; 
+                            text-align: center; 
+                        }}
+                        .header h1 {{
+                            margin: 0;
+                            font-size: 28px;
+                            font-weight: 600;
+                        }}
+                        .header p {{
+                            margin: 10px 0 0 0;
+                            font-size: 16px;
+                            opacity: 0.95;
+                        }}
+                        .content {{ 
+                            padding: 30px; 
+                        }}
+                        .greeting {{
+                            font-size: 16px;
+                            margin-bottom: 20px;
+                        }}
+                        .credentials {{ 
+                            background: #f8f9fa; 
+                            border: 1px solid #e0e0e0; 
+                            border-radius: 6px; 
+                            padding: 20px; 
+                            margin: 25px 0; 
+                        }}
+                        .credential-item {{ 
+                            margin: 15px 0; 
+                        }}
+                        .label {{ 
+                            font-weight: 600; 
+                            color: #667eea; 
+                            display: block;
+                            margin-bottom: 5px;
+                            font-size: 14px;
+                        }}
+                        .value {{ 
+                            font-family: 'Courier New', monospace; 
+                            font-size: 15px; 
+                            color: #212529; 
+                            background: #ffffff; 
+                            padding: 10px 12px; 
+                            border-radius: 4px; 
+                            border: 1px solid #dee2e6;
+                            word-break: break-all;
+                        }}
+                        .warning {{ 
+                            background: #fff3cd; 
+                            border-left: 4px solid #ffc107; 
+                            padding: 15px; 
+                            margin: 25px 0; 
+                            border-radius: 4px;
+                        }}
+                        .warning strong {{
+                            display: block;
+                            margin-bottom: 5px;
+                        }}
+                        .footer {{ 
+                            text-align: center; 
+                            padding: 20px 30px;
+                            background-color: #f8f9fa;
+                            color: #6c757d; 
+                            font-size: 12px; 
+                            border-top: 1px solid #e0e0e0;
+                        }}
+                        .button {{
+                            display: inline-block;
+                            margin: 20px 0;
+                            padding: 12px 24px;
+                            background-color: #667eea;
+                            color: #ffffff !important;
+                            text-decoration: none;
+                            border-radius: 6px;
+                            font-weight: 600;
+                        }}
+                    </style>
+                </head>
+                <body>
+                    <div class="email-wrapper">
+                        <div class="header">
+                            <h1>WestBudget</h1>
+                            <p>Dina inloggningsuppgifter</p>
+                        </div>
+                        <div class="content">
+                            <p class="greeting">Hej!</p>
+                            <p>Din administratör har skapat ett konto åt dig i WestBudget. Här är dina inloggningsuppgifter:</p>
+                            
+                            <div class="credentials">
+                                <div class="credential-item">
+                                    <span class="label">E-postadress:</span>
+                                    <div class="value">{user_email}</div>
+                                </div>
+                                <div class="credential-item">
+                                    <span class="label">Lösenord:</span>
+                                    <div class="value">{password}</div>
+                                </div>
+                            </div>
+                            
+                            <div class="warning">
+                                <strong>Viktigt:</strong> För din säkerhet, ändra lösenordet efter första inloggningen.
+                            </div>
+                            
+                            <p>Du kan nu logga in på WestBudget med dessa uppgifter.</p>
+                            <p>Om du har frågor, kontakta din administratör.</p>
+                        </div>
+                        <div class="footer">
+                            <p>Detta är ett automatiskt meddelande från WestBudget. Svara inte på detta e-post.</p>
+                            <p>&copy; {datetime.now().year} WestBudget. Alla rättigheter reserverade.</p>
+                        </div>
+                    </div>
+                </body>
+                </html>
+                """
+                
+                email_text = f"""
+                Hej!
+                
+                Din administratör har skapat ett konto åt dig i WestBudget. Här är dina inloggningsuppgifter:
+                
+                E-postadress: {user_email}
+                Lösenord: {password}
+                
+                ⚠️ Viktigt: För din säkerhet, ändra lösenordet efter första inloggningen.
+                
+                Du kan nu logga in på WestBudget med dessa uppgifter.
+                
+                Om du har frågor, kontakta din administratör.
+                
+                Detta är ett automatiskt meddelande, svara inte på detta e-post.
+                """
+                
+                message = Mail(
+                    from_email=(SENDGRID_FROM_EMAIL, SENDGRID_FROM_NAME),
+                    to_emails=user_email,
+                    subject='Dina inloggningsuppgifter för WestBudget',
+                    html_content=email_html,
+                    plain_text_content=email_text
+                )
+                
+                # Set email headers to improve deliverability
+                message.add_header("X-Mailer", "WestBudget")
+                message.add_header("X-Priority", "1")
+                message.reply_to = SENDGRID_FROM_EMAIL
+                
+                try:
+                    response = sendgrid_client.send(message)
+                    
+                    # Check response status
+                    if response.status_code >= 200 and response.status_code < 300:
+                        print(f"[Backend] ✅ Login credentials email sent to {user_email}, status: {response.status_code}")
+                    else:
+                        error_body = response.body.decode('utf-8') if response.body else 'Unknown error'
+                        print(f"[Backend] ❌ SendGrid error: Status {response.status_code}, Body: {error_body}")
+                        conn.close()
+                        return jsonify({
+                            'error': f'SendGrid fel (Status {response.status_code}): {error_body}',
+                            'email': user_email,
+                            'password': password  # Return password so admin can send manually if needed
+                        }), 500
+                        
+                except Exception as send_error:
+                    # Try to get more details from the error
+                    error_msg = str(send_error)
+                    error_details = ''
+                    
+                    # Check if it's a ForbiddenError and try to get response body
+                    if hasattr(send_error, 'body'):
+                        try:
+                            error_details = send_error.body.decode('utf-8') if send_error.body else ''
+                        except:
+                            pass
+                    
+                    print(f"[Backend] ❌ Error sending login credentials email: {error_msg}")
+                    if error_details:
+                        print(f"[Backend] ❌ SendGrid error details: {error_details}")
+                    import traceback
+                    traceback.print_exc()
+                    
+                    # Provide helpful error messages
+                    if '403' in error_msg or 'Forbidden' in error_msg:
+                        helpful_msg = f'SendGrid 403 Forbidden: Avsändaradressen "{SENDGRID_FROM_EMAIL}" är inte verifierad i SendGrid Dashboard. Gå till Settings → Sender Authentication och verifiera adressen.'
+                        if error_details:
+                            helpful_msg += f'\n\nDetaljer: {error_details}'
+                    elif '401' in error_msg or 'Unauthorized' in error_msg:
+                        helpful_msg = 'SendGrid API key är ogiltig. Kontrollera att API key är korrekt i miljövariabeln SENDGRID_API_KEY.'
+                    else:
+                        helpful_msg = f'E-postfel: {error_msg}'
+                        if error_details:
+                            helpful_msg += f'\n\nDetaljer: {error_details}'
+                    
+                    conn.close()
+                    return jsonify({
+                        'error': helpful_msg,
+                        'email': user_email,
+                        'password': password  # Return password so admin can send manually if needed
+                    }), 500
+                
+            except Exception as email_error:
+                error_msg = str(email_error)
+                print(f"[Backend] ❌ Unexpected error in email sending: {error_msg}")
+                import traceback
+                traceback.print_exc()
+                
+                conn.close()
+                return jsonify({
+                    'error': f'Oväntat fel vid e-postutskick: {error_msg}',
+                    'email': user_email,
+                    'password': password  # Return password so admin can send manually if needed
+                }), 500
+        else:
+            print(f"[Backend] SendGrid not configured. Login credentials for {user_email}:")
+            print(f"[Backend] Email: {user_email}")
+            print(f"[Backend] Password: {password}")
+            print(f"[Backend] ⚠️  Configure SENDGRID_API_KEY to enable email sending")
         
         conn.close()
         
         return jsonify({
-            'message': f'Login credentials would be sent to {user["email"]}',
-            'email': user['email'],
-            'password': password  # Only for testing, remove in production
+            'message': f'Login credentials sent to {user_email}' if sendgrid_client else f'Login credentials (SendGrid not configured - check console)',
+            'email': user_email
         }), 200
         
     except Exception as e:
@@ -1804,19 +2059,41 @@ def delete_user(user_id):
         conn = get_db()
         cursor = conn.cursor()
         
-        # Check if user exists
-        cursor.execute('SELECT id FROM users WHERE id = ?', (user_id,))
-        if not cursor.fetchone():
+        # Get user data before deleting (for undo)
+        cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))
+        user = cursor.fetchone()
+        
+        if not user:
             conn.close()
             return jsonify({'error': 'User not found'}), 404
+        
+        user_data = dict(user)  # Save for undo
+        
+        # Get user's licenses before deleting
+        cursor.execute('SELECT * FROM licenses WHERE user_id = ?', (user_id,))
+        licenses = [dict(row) for row in cursor.fetchall()]
+        user_data['licenses'] = licenses
         
         # Delete user (cascade will delete licenses)
         cursor.execute('DELETE FROM users WHERE id = ?', (user_id,))
         conn.commit()
         
+        # Add to history
+        add_history_entry(
+            action_type='delete',
+            action=f'Raderade användare: {user_data.get("email", "Okänt")}',
+            entity_type='user',
+            entity_id=user_id,
+            entity_data=None,
+            undo_data=user_data
+        )
+        
         conn.close()
         
-        return jsonify({'message': 'User deleted successfully'}), 200
+        return jsonify({
+            'message': 'User deleted successfully',
+            'user_data': user_data  # Return user data for undo
+        }), 200
         
     except Exception as e:
         print(f"[Backend] Error deleting user: {e}")
@@ -1957,17 +2234,123 @@ def get_statistics():
         cursor.execute('SELECT COUNT(*) as total FROM loans')
         total_loans = cursor.fetchone()['total']
         
+        # Active subscriptions
+        cursor.execute('SELECT COUNT(*) as total FROM subscriptions WHERE status = "active"')
+        active_subscriptions = cursor.fetchone()['total']
+        
+        # MRR (Monthly Recurring Revenue) - sum of all active subscription amounts
+        cursor.execute('''
+            SELECT SUM(amount) as mrr FROM payments 
+            WHERE status = 'succeeded' 
+            AND created_at >= date('now', 'start of month')
+            AND subscription_id IN (SELECT id FROM subscriptions WHERE status = 'active')
+        ''')
+        mrr_result = cursor.fetchone()
+        mrr = mrr_result['mrr'] if mrr_result['mrr'] else 0
+        
+        # Total revenue this month
+        cursor.execute('''
+            SELECT SUM(amount) as total FROM payments 
+            WHERE status = 'succeeded' 
+            AND created_at >= date('now', 'start of month')
+        ''')
+        revenue_this_month_result = cursor.fetchone()
+        revenue_this_month = revenue_this_month_result['total'] if revenue_this_month_result['total'] else 0
+        
+        # Total revenue all time
+        cursor.execute('''
+            SELECT SUM(amount) as total FROM payments 
+            WHERE status = 'succeeded'
+        ''')
+        total_revenue_result = cursor.fetchone()
+        total_revenue = total_revenue_result['total'] if total_revenue_result['total'] else 0
+        
+        # Users with active subscriptions
+        cursor.execute('''
+            SELECT COUNT(DISTINCT user_id) as count FROM subscriptions 
+            WHERE status = 'active'
+        ''')
+        users_with_subscriptions = cursor.fetchone()['count']
+        
+        # Churn rate calculation (cancelled subscriptions this month / active at start of month)
+        cursor.execute('''
+            SELECT COUNT(*) as count FROM subscriptions 
+            WHERE status = 'cancelled' 
+            AND updated_at >= date('now', 'start of month')
+        ''')
+        cancelled_this_month = cursor.fetchone()['count']
+        
+        # Active subscriptions at start of month (approximation)
+        cursor.execute('''
+            SELECT COUNT(*) as count FROM subscriptions 
+            WHERE status = 'active' 
+            AND created_at < date('now', 'start of month')
+        ''')
+        active_at_start = cursor.fetchone()['count']
+        
+        # Calculate churn rate (if we have data)
+        churn_rate = 0
+        if active_at_start > 0:
+            churn_rate = (cancelled_this_month / active_at_start) * 100
+        
+        # New users per month (last 6 months)
+        cursor.execute('''
+            SELECT 
+                strftime('%Y-%m', created_at) as month,
+                COUNT(*) as count
+            FROM users
+            WHERE created_at >= date('now', '-6 months')
+            GROUP BY month
+            ORDER BY month
+        ''')
+        new_users_by_month = [dict(row) for row in cursor.fetchall()]
+        
+        # License status breakdown
+        cursor.execute('SELECT status, COUNT(*) as count FROM licenses GROUP BY status')
+        licenses_by_status = {row['status']: row['count'] for row in cursor.fetchall()}
+        
+        # Expired licenses
+        cursor.execute('SELECT COUNT(*) as total FROM licenses WHERE status = "expired"')
+        expired_licenses = cursor.fetchone()['total']
+        
+        # Trial licenses expiring soon (within 7 days)
+        cursor.execute('''
+            SELECT COUNT(*) as total FROM licenses 
+            WHERE license_type = 'trial' 
+            AND status = 'active'
+            AND expires_at <= date('now', '+7 days')
+            AND expires_at > date('now')
+        ''')
+        trials_expiring_soon = cursor.fetchone()['total']
+        
         conn.close()
         
         return jsonify({
             'users': {
                 'total': total_users,
                 'by_role': users_by_role,
-                'new_this_month': new_users_this_month
+                'new_this_month': new_users_this_month,
+                'new_by_month': new_users_by_month
             },
             'licenses': {
                 'active': active_licenses,
-                'by_type': licenses_by_type
+                'expired': expired_licenses,
+                'by_type': licenses_by_type,
+                'by_status': licenses_by_status,
+                'trials_expiring_soon': trials_expiring_soon
+            },
+            'subscriptions': {
+                'active': active_subscriptions,
+                'users_with_subscriptions': users_with_subscriptions
+            },
+            'revenue': {
+                'mrr': mrr / 100 if mrr else 0,  # Convert from cents to currency
+                'this_month': revenue_this_month / 100 if revenue_this_month else 0,
+                'total': total_revenue / 100 if total_revenue else 0
+            },
+            'churn': {
+                'rate': round(churn_rate, 2),
+                'cancelled_this_month': cancelled_this_month
             },
             'usage': {
                 'transactions': total_transactions,
@@ -2008,6 +2391,194 @@ def get_all_payments():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/admin/refunds', methods=['POST'])
+@require_admin
+def create_refund():
+    """Create a refund for a payment (admin only)"""
+    try:
+        data = request.get_json()
+        payment_id = data.get('payment_id')
+        amount = data.get('amount')  # Optional, för delvis återbetalning
+        reason = data.get('reason', 'requested_by_customer')
+        
+        if not payment_id:
+            return jsonify({'error': 'Payment ID is required'}), 400
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get payment details
+        cursor.execute('''
+            SELECT p.*, u.email as user_email
+            FROM payments p
+            JOIN users u ON p.user_id = u.id
+            WHERE p.id = ?
+        ''', (payment_id,))
+        payment = cursor.fetchone()
+        
+        if not payment:
+            conn.close()
+            return jsonify({'error': 'Payment not found'}), 404
+        
+        payment_dict = dict(payment)
+        
+        # Check if already refunded
+        if payment_dict['status'] == 'refunded':
+            conn.close()
+            return jsonify({'error': 'Payment already refunded'}), 400
+        
+        # Check if payment succeeded
+        if payment_dict['status'] != 'succeeded':
+            conn.close()
+            return jsonify({'error': 'Can only refund succeeded payments'}), 400
+        
+        # Get Stripe payment intent ID
+        stripe_payment_intent_id = payment_dict.get('stripe_payment_intent_id')
+        if not stripe_payment_intent_id:
+            conn.close()
+            return jsonify({'error': 'Stripe payment intent ID not found'}), 400
+        
+        # Create refund in Stripe
+        if not STRIPE_SECRET_KEY:
+            conn.close()
+            return jsonify({'error': 'Stripe not configured'}), 500
+        
+        try:
+            refund_amount = None
+            if amount:
+                # Convert to cents for Stripe
+                refund_amount = int(float(amount) * 100)
+            
+            if refund_amount:
+                # Delvis återbetalning
+                refund = stripe.Refund.create(
+                    payment_intent=stripe_payment_intent_id,
+                    amount=refund_amount,
+                    reason=reason
+                )
+            else:
+                # Hela beloppet
+                refund = stripe.Refund.create(
+                    payment_intent=stripe_payment_intent_id,
+                    reason=reason
+                )
+            
+            # Update payment status in database
+            cursor.execute('''
+                UPDATE payments 
+                SET status = 'refunded', updated_at = ?
+                WHERE id = ?
+            ''', (datetime.now().isoformat(), payment_id))
+            
+            # If subscription exists, cancel it
+            if payment_dict.get('subscription_id'):
+                cursor.execute('''
+                    UPDATE subscriptions 
+                    SET status = 'cancelled', updated_at = ?
+                    WHERE id = ?
+                ''', (datetime.now().isoformat(), payment_dict['subscription_id']))
+                
+                # Update license to expired
+                cursor.execute('''
+                    UPDATE licenses 
+                    SET status = 'expired', updated_at = ?
+                    WHERE user_id = ? AND status = 'active'
+                ''', (datetime.now().isoformat(), payment_dict['user_id']))
+            
+            conn.commit()
+            conn.close()
+            
+            # Send email notification (if SendGrid is configured)
+            if sendgrid_client:
+                try:
+                    from sendgrid.helpers.mail import Mail
+                    email = Mail(
+                        from_email=(SENDGRID_FROM_EMAIL, SENDGRID_FROM_NAME),
+                        to_emails=payment_dict['user_email'],
+                        subject='Återbetalning bekräftad - WestBudget',
+                        html_content=f'''
+                        <html>
+                        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                            <h2>Återbetalning bekräftad</h2>
+                            <p>Hej,</p>
+                            <p>Vi har behandlat din återbetalning för din WestBudget-prenumeration.</p>
+                            <p><strong>Återbetalningsdetaljer:</strong></p>
+                            <ul>
+                                <li>Belopp: {refund.amount / 100:.2f} {refund.currency.upper()}</li>
+                                <li>Status: {refund.status}</li>
+                                <li>Refund ID: {refund.id}</li>
+                            </ul>
+                            <p>Återbetalningen kommer att visas på ditt kort inom 5-10 bankdagar.</p>
+                            <p>Din prenumeration har avbrutits och du kommer inte att debiteras framöver.</p>
+                            <p>Om du har frågor, kontakta oss gärna.</p>
+                            <p>Med vänliga hälsningar,<br>WestBudget Team</p>
+                        </body>
+                        </html>
+                        '''
+                    )
+                    sendgrid_client.send(email)
+                except Exception as e:
+                    print(f"[Backend] Error sending refund email: {e}")
+            
+            return jsonify({
+                'success': True,
+                'refund_id': refund.id,
+                'amount': refund.amount / 100,  # Convert from cents
+                'currency': refund.currency,
+                'status': refund.status,
+                'payment_id': payment_id
+            }), 200
+            
+        except stripe.error.StripeError as e:
+            conn.close()
+            print(f"[Backend] Stripe error creating refund: {e}")
+            return jsonify({'error': f'Stripe error: {str(e)}'}), 400
+        
+    except Exception as e:
+        print(f"[Backend] Error creating refund: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/system-settings', methods=['GET'])
+@require_admin
+def get_system_settings():
+    """Get system settings and configuration status (admin only)"""
+    try:
+        # Check Stripe configuration
+        stripe_config = {
+            'secret_key_configured': bool(STRIPE_SECRET_KEY),
+            'publishable_key_configured': bool(STRIPE_PUBLISHABLE_KEY),
+            'webhook_secret_configured': bool(STRIPE_WEBHOOK_SECRET),
+            'price_id_configured': bool(STRIPE_PRICE_ID),
+            'price_id': STRIPE_PRICE_ID if STRIPE_PRICE_ID else None
+        }
+        
+        # Check SendGrid configuration
+        sendgrid_config = {
+            'api_key_configured': bool(SENDGRID_API_KEY),
+            'from_email': SENDGRID_FROM_EMAIL if SENDGRID_FROM_EMAIL else None,
+            'from_name': SENDGRID_FROM_NAME if SENDGRID_FROM_NAME else None
+        }
+        
+        # Database info
+        database_info = {
+            'type': 'SQLite',
+            'upload_folder': app.config['UPLOAD_FOLDER']
+        }
+        
+        return jsonify({
+            'stripe': stripe_config,
+            'sendgrid': sendgrid_config,
+            'database': database_info
+        }), 200
+        
+    except Exception as e:
+        print(f"[Backend] Error getting system settings: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
 
 # ============================================================================
 # STRIPE PAYMENT ENDPOINTS
@@ -2039,6 +2610,12 @@ def create_checkout_session():
                 metadata={'user_id': user_id}
             )
             customer_id = customer.id
+        
+        # Validate that STRIPE_PRICE_ID is actually a price ID (starts with 'price_')
+        if not STRIPE_PRICE_ID.startswith('price_'):
+            return jsonify({
+                'error': f'Invalid STRIPE_PRICE_ID. Expected a price ID (starts with "price_"), but got: {STRIPE_PRICE_ID}. Please check your .env file and use the Price ID from Stripe Dashboard, not the Product ID.'
+            }), 400
         
         # Create checkout session
         checkout_session = stripe.checkout.Session.create(
@@ -2496,6 +3073,40 @@ def resume_subscription():
         
     except Exception as e:
         print(f"[Backend] Error resuming subscription: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/payments/subscription', methods=['GET'])
+@require_auth
+def get_current_subscription():
+    """Get current user's subscription details"""
+    try:
+        user_id = request.current_user['user_id']
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get active subscription
+        cursor.execute('''
+            SELECT id, stripe_subscription_id, stripe_customer_id, status, 
+                   current_period_start, current_period_end, created_at, updated_at
+            FROM subscriptions 
+            WHERE user_id = ? AND status IN ('active', 'trialing', 'past_due', 'cancelled')
+            ORDER BY created_at DESC LIMIT 1
+        ''', (user_id,))
+        subscription = cursor.fetchone()
+        
+        conn.close()
+        
+        if subscription:
+            return jsonify(dict(subscription)), 200
+        else:
+            # Return 200 with null instead of 404 to avoid frontend errors
+            return jsonify({'subscription': None, 'message': 'No subscription found'}), 200
+        
+    except Exception as e:
+        print(f"[Backend] Error getting subscription: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
@@ -5811,7 +6422,51 @@ def undo_history_action(history_id):
         # Perform undo based on action type
         if action_type == 'delete':
             # Restore deleted entity
-            if entity_type == 'transaction' and undo_data:
+            if entity_type == 'user' and undo_data:
+                conn = get_db()
+                cursor = conn.cursor()
+                
+                # Restore user
+                cursor.execute('''
+                    INSERT INTO users (id, email, password_hash, role, created_at, updated_at, last_login)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    undo_data.get('id'),
+                    undo_data.get('email'),
+                    undo_data.get('password_hash'),
+                    undo_data.get('role', 'user'),
+                    undo_data.get('created_at'),
+                    undo_data.get('updated_at'),
+                    undo_data.get('last_login')
+                ))
+                
+                # Restore licenses if they existed
+                if 'licenses' in undo_data and undo_data['licenses']:
+                    for license_data in undo_data['licenses']:
+                        cursor.execute('''
+                            INSERT INTO licenses (id, user_id, license_type, status, starts_at, expires_at, created_at, updated_at, last_validated_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (
+                            license_data.get('id'),
+                            license_data.get('user_id'),
+                            license_data.get('license_type'),
+                            license_data.get('status'),
+                            license_data.get('starts_at'),
+                            license_data.get('expires_at'),
+                            license_data.get('created_at'),
+                            license_data.get('updated_at'),
+                            license_data.get('last_validated_at')
+                        ))
+                
+                conn.commit()
+                conn.close()
+                
+                # Add undo entry to history
+                add_history_entry('restore', f'Återställde {entity_type}', entity_type, entity_id, undo_data)
+                
+                return jsonify({'message': 'User restored', 'restored_id': entity_id}), 200
+                
+            elif entity_type == 'transaction' and undo_data:
                 conn = get_db()
                 cursor = conn.cursor()
                 cursor.execute('''

@@ -27,13 +27,16 @@ const SubscriptionManagement = () => {
       const paymentHistory = await api.getPaymentHistory();
       setPayments(paymentHistory);
       
-      // Get subscription from license status
-      if (licenseStatus?.license?.license_type === 'premium') {
-        // TODO: Fetch subscription details from backend
-        setSubscription({
-          status: 'active',
-          current_period_end: licenseStatus.license.expires_at
-        });
+      // Get subscription details from backend
+      try {
+        const subscriptionData = await api.getCurrentSubscription();
+        setSubscription(subscriptionData);
+      } catch (error) {
+        // No subscription found is OK (user might be on trial)
+        if (error.message && !error.message.includes('404') && !error.message.includes('No subscription found')) {
+          console.error('Error loading subscription:', error);
+        }
+        setSubscription(null);
       }
     } catch (error) {
       console.error('Error loading subscription data:', error);
@@ -98,7 +101,7 @@ const SubscriptionManagement = () => {
   }
 
   const isPremium = licenseStatus?.license?.license_type === 'premium';
-  const isActive = subscription?.status === 'active';
+  const isActive = subscription?.status === 'active' || subscription?.status === 'trialing';
 
   return (
     <div className="space-y-6">

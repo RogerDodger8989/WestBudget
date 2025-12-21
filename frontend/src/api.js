@@ -16,9 +16,18 @@ async function handleResponse(res) {
   if (!res.ok) {
     const error = await res.json().catch(() => ({ error: 'Serverfel' }));
     // Use message if available, otherwise use error field
-    const errorMessage = error.message || error.error || `HTTP error! status: ${res.status}`;
+    let errorMessage = error.message || error.error || `HTTP error! status: ${res.status}`;
+    
+    // Provide more helpful error messages for common errors
+    if (res.status === 403 && errorMessage.includes('SendGrid')) {
+      errorMessage = 'SendGrid API key saknar behörighet eller avsändaradressen är inte verifierad. Kontrollera SendGrid Dashboard.';
+    } else if (res.status === 401 && errorMessage.includes('SendGrid')) {
+      errorMessage = 'SendGrid API key är ogiltig. Kontrollera att API key är korrekt.';
+    }
+    
     const errorObj = new Error(errorMessage);
     errorObj.originalError = error; // Store original error object for more details
+    errorObj.status = res.status; // Store status code
     throw errorObj;
   }
   return res.json();
@@ -895,6 +904,31 @@ export const api = {
     return handleResponse(res);
   },
 
+  createRefund: async (paymentId, amount, reason) => {
+    const token = localStorage.getItem('token');
+    const res = await fetch(`${API_BASE_URL}/admin/refunds`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ payment_id: paymentId, amount, reason })
+    });
+    return handleResponse(res);
+  },
+
+  getAdminSystemSettings: async () => {
+    const token = localStorage.getItem('token');
+    const res = await fetch(`${API_BASE_URL}/admin/system-settings`, {
+      method: 'GET',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+    });
+    return handleResponse(res);
+  },
+
   // --- Payments (Stripe) ---
   createCheckoutSession: async () => {
     const token = localStorage.getItem('token');
@@ -936,6 +970,18 @@ export const api = {
     const token = localStorage.getItem('token');
     const res = await fetch(`${API_BASE_URL}/payments/resume`, {
       method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+    });
+    return handleResponse(res);
+  },
+
+  getCurrentSubscription: async () => {
+    const token = localStorage.getItem('token');
+    const res = await fetch(`${API_BASE_URL}/payments/subscription`, {
+      method: 'GET',
       headers: { 
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`

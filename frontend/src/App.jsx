@@ -174,6 +174,8 @@ function AppContent() {
           token={resetPasswordToken}
         />
 
+        <AutoUpdateNotification />
+        
         {isAuthenticated ? (
           <LicenseGate>
             <>
