@@ -34,6 +34,10 @@ const AdminPanel = () => {
   // System settings tab
   const [systemSettings, setSystemSettings] = useState(null);
 
+  // Email logs tab
+  const [emailLogs, setEmailLogs] = useState([]);
+
+
   useEffect(() => {
     if (user?.role === 'admin') {
       loadData();
@@ -42,7 +46,7 @@ const AdminPanel = () => {
 
   const loadData = async () => {
     if (user?.role !== 'admin') return;
-    
+
     setLoading(true);
     try {
       if (activeTab === 'users') {
@@ -60,6 +64,9 @@ const AdminPanel = () => {
       } else if (activeTab === 'settings') {
         const settingsData = await api.getAdminSystemSettings();
         setSystemSettings(settingsData);
+      } else if (activeTab === 'email_logs') {
+        const logs = await api.getEmailLogs();
+        setEmailLogs(logs);
       }
     } catch (error) {
       console.error('Error loading admin data:', error);
@@ -68,7 +75,7 @@ const AdminPanel = () => {
         status: error.originalError?.error,
         activeTab: activeTab
       });
-      
+
       // Show error message
       const errorMsg = error.message || 'Okänt fel';
       if (errorMsg.includes('401') || errorMsg.includes('403')) {
@@ -106,7 +113,7 @@ const AdminPanel = () => {
 
   const handleDeleteUser = async (userId) => {
     if (!confirm('Är du säker på att du vill radera denna användare?')) return;
-    
+
     try {
       // Get user data before deletion for undo
       const userToDelete = users.find(u => u.id === userId);
@@ -114,26 +121,26 @@ const AdminPanel = () => {
         showToast('Användare hittades inte', { type: 'error' });
         return;
       }
-      
+
       const result = await api.deleteAdminUser(userId);
       const userData = result.user_data || userToDelete;
-      
+
       await loadData();
-      
+
       // Show toast with undo functionality
-      showToast('Användare raderad', { 
+      showToast('Användare raderad', {
         type: 'success',
         undo: true,
         undoAction: async () => {
           try {
             // Get history to find the delete entry
             const history = await api.getHistory();
-            const deleteEntry = history.find(h => 
-              h.entity_type === 'user' && 
-              h.entity_id === userId && 
+            const deleteEntry = history.find(h =>
+              h.entity_type === 'user' &&
+              h.entity_id === userId &&
               h.action_type === 'delete'
             );
-            
+
             if (deleteEntry) {
               await api.undoHistoryAction(deleteEntry.id);
               await loadData();
@@ -167,7 +174,7 @@ const AdminPanel = () => {
     if (!confirm(`Är du säker på att du vill återbetala ${amount?.toLocaleString('sv-SE', { maximumFractionDigits: 2 }) || 0} SEK?`)) {
       return;
     }
-    
+
     try {
       await api.createRefund(paymentId, null, 'requested_by_customer');
       showToast('Återbetalning genomförd', { type: 'success' });
@@ -180,12 +187,12 @@ const AdminPanel = () => {
   const handleSendCredentials = async (userId, userEmail) => {
     const password = prompt(`Ange lösenord att skicka till ${userEmail}:`);
     if (!password) return;
-    
+
     if (password.length < 8) {
       showToast('Lösenordet måste vara minst 8 tecken', { type: 'error' });
       return;
     }
-    
+
     try {
       const result = await api.sendUserCredentials(userId, password);
       showToast(`Loginuppgifter skickade till ${userEmail}`, { type: 'success' });
@@ -200,9 +207,9 @@ const AdminPanel = () => {
   const formatDate = (dateString) => {
     if (!dateString) return 'Aldrig';
     const date = new Date(dateString);
-    return date.toLocaleDateString('sv-SE', { 
-      year: 'numeric', 
-      month: 'short', 
+    return date.toLocaleDateString('sv-SE', {
+      year: 'numeric',
+      month: 'short',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
@@ -223,58 +230,63 @@ const AdminPanel = () => {
       <div className="flex items-center gap-1 bg-zinc-200 dark:bg-zinc-900/50 p-1 rounded-xl w-fit">
         <button
           onClick={() => setActiveTab('users')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
-            activeTab === 'users'
-              ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
-              : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
-          }`}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'users'
+            ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
+            : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+            }`}
         >
           <Users size={16} />
           Användare
         </button>
         <button
           onClick={() => setActiveTab('licenses')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
-            activeTab === 'licenses'
-              ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
-              : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
-          }`}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'licenses'
+            ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
+            : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+            }`}
         >
           <CreditCard size={16} />
           Licenser
         </button>
         <button
           onClick={() => setActiveTab('statistics')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
-            activeTab === 'statistics'
-              ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
-              : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
-          }`}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'statistics'
+            ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
+            : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+            }`}
         >
           <BarChart3 size={16} />
           Statistik
         </button>
         <button
           onClick={() => setActiveTab('payments')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
-            activeTab === 'payments'
-              ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
-              : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
-          }`}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'payments'
+            ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
+            : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+            }`}
         >
           <DollarSign size={16} />
           Betalningar
         </button>
         <button
           onClick={() => setActiveTab('settings')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
-            activeTab === 'settings'
-              ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
-              : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
-          }`}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'settings'
+            ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
+            : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+            }`}
         >
           <Settings size={16} />
           Systeminställningar
+        </button>
+        <button
+          onClick={() => setActiveTab('email_logs')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'email_logs'
+            ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
+            : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+            }`}
+        >
+          <Mail size={16} />
+          E-postloggar
         </button>
       </div>
 
@@ -391,11 +403,10 @@ const AdminPanel = () => {
                     <div className="flex-1">
                       <div className="flex items-center gap-3">
                         <p className="font-medium text-zinc-900 dark:text-white">{u.email}</p>
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${
-                          u.role === 'admin' 
-                            ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
-                            : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300'
-                        }`}>
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${u.role === 'admin'
+                          ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
+                          : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300'
+                          }`}>
                           {u.role === 'admin' ? 'Admin' : 'Användare'}
                         </span>
                       </div>
@@ -449,20 +460,18 @@ const AdminPanel = () => {
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
                           <p className="font-medium text-zinc-900 dark:text-white">{license.user_email}</p>
-                          <span className={`px-2 py-1 rounded text-xs font-medium ${
-                            license.license_type === 'premium'
-                              ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300'
-                              : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
-                          }`}>
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${license.license_type === 'premium'
+                            ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300'
+                            : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
+                            }`}>
                             {license.license_type === 'premium' ? 'Premium' : 'Trial'}
                           </span>
-                          <span className={`px-2 py-1 rounded text-xs font-medium ${
-                            license.status === 'active'
-                              ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300'
-                              : license.status === 'expired'
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${license.status === 'active'
+                            ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300'
+                            : license.status === 'expired'
                               ? 'bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300'
                               : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300'
-                          }`}>
+                            }`}>
                             {license.status === 'active' ? 'Aktiv' : license.status === 'expired' ? 'Utgången' : 'Avbruten'}
                           </span>
                         </div>
@@ -581,18 +590,18 @@ const AdminPanel = () => {
                     <ResponsiveContainer width="100%" height={256}>
                       <BarChart data={statistics.users.new_by_month}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
-                        <XAxis 
-                          dataKey="month" 
+                        <XAxis
+                          dataKey="month"
                           stroke="#71717a"
                           tick={{ fill: '#71717a' }}
                         />
-                        <YAxis 
+                        <YAxis
                           stroke="#71717a"
                           tick={{ fill: '#71717a' }}
                         />
-                        <Tooltip 
-                          contentStyle={{ 
-                            backgroundColor: '#18181b', 
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: '#18181b',
                             border: '1px solid #3f3f46',
                             borderRadius: '8px'
                           }}
@@ -637,16 +646,15 @@ const AdminPanel = () => {
                               </p>
                             </td>
                             <td className="py-3 px-4">
-                              <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                payment.status === 'succeeded' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
+                              <span className={`px-2 py-1 rounded text-xs font-medium ${payment.status === 'succeeded' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
                                 payment.status === 'refunded' ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400' :
-                                payment.status === 'failed' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
-                                'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400'
-                              }`}>
+                                  payment.status === 'failed' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                                    'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400'
+                                }`}>
                                 {payment.status === 'succeeded' ? 'Lyckades' :
-                                 payment.status === 'refunded' ? 'Återbetalad' :
-                                 payment.status === 'failed' ? 'Misslyckades' :
-                                 payment.status === 'pending' ? 'Väntar' : payment.status}
+                                  payment.status === 'refunded' ? 'Återbetalad' :
+                                    payment.status === 'failed' ? 'Misslyckades' :
+                                      payment.status === 'pending' ? 'Väntar' : payment.status}
                               </span>
                             </td>
                             <td className="py-3 px-4">
@@ -685,7 +693,7 @@ const AdminPanel = () => {
             <div className="space-y-6">
               <div className={`${getThemeBgClass(colorTheme)} ${getThemeBorderClass(colorTheme)} border rounded-xl p-6`}>
                 <h3 className={`text-xl font-semibold ${getThemeTextClass(colorTheme)} mb-6`}>Systeminställningar</h3>
-                
+
                 {loading ? (
                   <p className="text-zinc-600 dark:text-zinc-400">Laddar inställningar...</p>
                 ) : systemSettings ? (
@@ -837,28 +845,90 @@ const AdminPanel = () => {
                 )}
               </div>
             </div>
+
+          )}
+
+          {/* Email Logs Tab */}
+          {activeTab === 'email_logs' && (
+            <div className="space-y-4">
+              <div className={`${getThemeBgClass(colorTheme)} ${getThemeBorderClass(colorTheme)} border rounded-xl p-6`}>
+                <h3 className={`text-xl font-semibold ${getThemeTextClass(colorTheme)} mb-6`}>Loggade E-postutskick</h3>
+                {loading ? (
+                  <p className="text-zinc-600 dark:text-zinc-400">Laddar loggar...</p>
+                ) : emailLogs && emailLogs.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className={`border-b ${getThemeBorderClass(colorTheme)}`}>
+                          <th className={`text-left py-3 px-4 ${getThemeTextClass(colorTheme, 'zinc-500', 'zinc-400')} font-medium`}>Datum</th>
+                          <th className={`text-left py-3 px-4 ${getThemeTextClass(colorTheme, 'zinc-500', 'zinc-400')} font-medium`}>Mottagare</th>
+                          <th className={`text-left py-3 px-4 ${getThemeTextClass(colorTheme, 'zinc-500', 'zinc-400')} font-medium`}>Ämne</th>
+                          <th className={`text-left py-3 px-4 ${getThemeTextClass(colorTheme, 'zinc-500', 'zinc-400')} font-medium`}>Status</th>
+                          <th className={`text-left py-3 px-4 ${getThemeTextClass(colorTheme, 'zinc-500', 'zinc-400')} font-medium`}>Felmeddelande</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {emailLogs.map((log) => (
+                          <tr key={log.id} className={`border-b ${getThemeBorderClass(colorTheme)}`}>
+                            <td className="py-3 px-4">
+                              <p className={`text-sm ${getThemeTextClass(colorTheme, 'zinc-500', 'zinc-400')}`}>
+                                {formatDate(log.created_at)}
+                              </p>
+                            </td>
+                            <td className="py-3 px-4">
+                              <p className={`${getThemeTextClass(colorTheme)}`}>{log.recipient_email}</p>
+                              {log.user_email && <p className="text-xs text-zinc-500">Till: {log.user_email}</p>}
+                            </td>
+                            <td className="py-3 px-4">
+                              <p className={`${getThemeTextClass(colorTheme)}`}>{log.subject}</p>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className={`px-2 py-1 rounded text-xs font-medium ${log.status === 'sent'
+                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                : 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
+                                }`}>
+                                {log.status === 'sent' ? 'Skickat' : 'Misslyckades'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <p className="text-xs text-red-500 max-w-xs truncate" title={log.error_message}>
+                                {log.error_message || '-'}
+                              </p>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-zinc-600 dark:text-zinc-400">Inga e-postloggar hittades.</p>
+                )}
+              </div>
+            </div>
           )}
         </>
       )}
-
-      {/* Edit User Modal */}
-      {editingUser && (
-        <EditUserModal
-          user={editingUser}
-          onClose={() => setEditingUser(null)}
-          onSave={(userData) => handleUpdateUser(editingUser.id, userData)}
-        />
-      )}
+      {
+        editingUser && (
+          <EditUserModal
+            user={editingUser}
+            onClose={() => setEditingUser(null)}
+            onSave={(userData) => handleUpdateUser(editingUser.id, userData)}
+          />
+        )
+      }
 
       {/* Edit License Modal */}
-      {editingLicense && (
-        <EditLicenseModal
-          license={editingLicense}
-          onClose={() => setEditingLicense(null)}
-          onSave={(licenseData) => handleUpdateLicense(editingLicense.id, licenseData)}
-        />
-      )}
-    </div>
+      {
+        editingLicense && (
+          <EditLicenseModal
+            license={editingLicense}
+            onClose={() => setEditingLicense(null)}
+            onSave={(licenseData) => handleUpdateLicense(editingLicense.id, licenseData)}
+          />
+        )
+      }
+    </div >
   );
 };
 

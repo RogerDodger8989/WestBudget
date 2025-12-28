@@ -3,13 +3,22 @@ const getApiBaseUrl = () => {
   // Check if we're in Electron
   if (window.electronAPI) {
     // In Electron, use localhost (backend runs locally)
-    return 'http://localhost:5000/api';
+    return 'http://localhost:5000';
   }
   // In browser, use the configured IP or localhost
-  return import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+  // Note: Vite proxy handles /api -> localhost:5000 in dev
+  return import.meta.env.VITE_API_URL || 'http://localhost:5000';
 };
 
 const API_BASE_URL = getApiBaseUrl();
+
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('token');
+  return {
+    'Content-Type': 'application/json',
+    ...(token && { 'Authorization': `Bearer ${token}` })
+  };
+};
 
 // Helper för felhantering
 async function handleResponse(res) {
@@ -17,14 +26,14 @@ async function handleResponse(res) {
     const error = await res.json().catch(() => ({ error: 'Serverfel' }));
     // Use message if available, otherwise use error field
     let errorMessage = error.message || error.error || `HTTP error! status: ${res.status}`;
-    
+
     // Provide more helpful error messages for common errors
     if (res.status === 403 && errorMessage.includes('SendGrid')) {
       errorMessage = 'SendGrid API key saknar behörighet eller avsändaradressen är inte verifierad. Kontrollera SendGrid Dashboard.';
     } else if (res.status === 401 && errorMessage.includes('SendGrid')) {
       errorMessage = 'SendGrid API key är ogiltig. Kontrollera att API key är korrekt.';
     }
-    
+
     const errorObj = new Error(errorMessage);
     errorObj.originalError = error; // Store original error object for more details
     errorObj.status = res.status; // Store status code
@@ -36,14 +45,16 @@ async function handleResponse(res) {
 export const api = {
   // --- Transaktioner ---
   getTransactions: async () => {
-    const res = await fetch(`${API_BASE_URL}/transactions`);
+    const res = await fetch(`${API_BASE_URL}/transactions`, {
+      headers: getAuthHeaders()
+    });
     return handleResponse(res);
   },
-  
+
   createTransaction: async (data) => {
     const res = await fetch(`${API_BASE_URL}/transactions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
     return handleResponse(res);
@@ -52,7 +63,7 @@ export const api = {
   updateTransaction: async (id, data) => {
     const res = await fetch(`${API_BASE_URL}/transactions/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
     return handleResponse(res);
@@ -61,6 +72,7 @@ export const api = {
   deleteTransaction: async (id) => {
     const res = await fetch(`${API_BASE_URL}/transactions/${id}`, {
       method: 'DELETE',
+      headers: getAuthHeaders()
     });
     return handleResponse(res);
   },
@@ -68,6 +80,7 @@ export const api = {
   deleteTransactionReceipt: async (transactionId, receiptPathToDelete) => {
     const res = await fetch(`${API_BASE_URL}/transactions/${transactionId}/receipt?path=${encodeURIComponent(receiptPathToDelete)}`, {
       method: 'DELETE',
+      headers: getAuthHeaders()
     });
     return handleResponse(res);
   },
@@ -78,7 +91,7 @@ export const api = {
     formData.append('file', file);
 
     // Use new endpoint with transaction ID if provided, otherwise use legacy endpoint
-    const endpoint = transactionId 
+    const endpoint = transactionId
       ? `${API_BASE_URL}/transactions/${transactionId}/upload-receipt`
       : `${API_BASE_URL}/upload`;
 
@@ -91,14 +104,16 @@ export const api = {
 
   // --- Avtal ---
   getAgreements: async () => {
-    const res = await fetch(`${API_BASE_URL}/agreements`);
+    const res = await fetch(`${API_BASE_URL}/agreements`, {
+      headers: getAuthHeaders()
+    });
     return handleResponse(res);
   },
 
   createAgreement: async (data) => {
     const res = await fetch(`${API_BASE_URL}/agreements`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
     return handleResponse(res);
@@ -107,7 +122,7 @@ export const api = {
   updateAgreement: async (id, data) => {
     const res = await fetch(`${API_BASE_URL}/agreements/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
     return handleResponse(res);
@@ -116,6 +131,7 @@ export const api = {
   deleteAgreement: async (id) => {
     const res = await fetch(`${API_BASE_URL}/agreements/${id}`, {
       method: 'DELETE',
+      headers: getAuthHeaders()
     });
     return handleResponse(res);
   },
@@ -123,9 +139,13 @@ export const api = {
   uploadAgreementImage: async (agreementId, file) => {
     const formData = new FormData();
     formData.append('file', file);
+    const token = localStorage.getItem('token');
 
     const res = await fetch(`${API_BASE_URL}/agreements/${agreementId}/upload-image`, {
       method: 'POST',
+      headers: {
+        ...(token && { 'Authorization': `Bearer ${token}` })
+      },
       body: formData,
     });
     return handleResponse(res);
@@ -134,25 +154,30 @@ export const api = {
   deleteAgreementImage: async (agreementId, imagePath) => {
     const res = await fetch(`${API_BASE_URL}/agreements/${agreementId}/images/${encodeURIComponent(imagePath)}`, {
       method: 'DELETE',
+      headers: getAuthHeaders()
     });
     return handleResponse(res);
   },
 
   // --- Kategorier ---
   getCategories: async () => {
-    const res = await fetch(`${API_BASE_URL}/categories`);
+    const res = await fetch(`${API_BASE_URL}/categories`, {
+      headers: getAuthHeaders()
+    });
     return handleResponse(res);
   },
-  
+
   getCategoriesWithIds: async () => {
-    const res = await fetch(`${API_BASE_URL}/categories/with-ids`);
+    const res = await fetch(`${API_BASE_URL}/categories/with-ids`, {
+      headers: getAuthHeaders()
+    });
     return handleResponse(res);
   },
-  
+
   createCategory: async (name) => {
     const res = await fetch(`${API_BASE_URL}/categories`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ name }),
     });
     return handleResponse(res);
@@ -160,30 +185,33 @@ export const api = {
 
   // --- Media Files ---
   getMediaFiles: async () => {
-    const res = await fetch(`${API_BASE_URL}/media-files`);
+    const res = await fetch(`${API_BASE_URL}/media-files`, {
+      headers: getAuthHeaders()
+    });
     return handleResponse(res);
   },
-  
+
   updateCategory: async (id, name) => {
     const res = await fetch(`${API_BASE_URL}/categories/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ name }),
     });
     return handleResponse(res);
   },
-  
+
   deleteCategory: async (id) => {
     const res = await fetch(`${API_BASE_URL}/categories/${id}`, {
       method: 'DELETE',
+      headers: getAuthHeaders()
     });
     return handleResponse(res);
   },
-  
+
   mergeCategories: async (sourceId, targetId, newName) => {
     const res = await fetch(`${API_BASE_URL}/categories/merge`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ source_id: sourceId, target_id: targetId, new_name: newName }),
     });
     return handleResponse(res);
@@ -191,14 +219,16 @@ export const api = {
 
   // --- Inställningar ---
   getSettings: async () => {
-    const res = await fetch(`${API_BASE_URL}/settings`);
+    const res = await fetch(`${API_BASE_URL}/settings`, {
+      headers: getAuthHeaders()
+    });
     return handleResponse(res);
   },
-  
+
   saveSettings: async (settings) => {
     const res = await fetch(`${API_BASE_URL}/settings`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(settings),
     });
     return handleResponse(res);
@@ -207,21 +237,23 @@ export const api = {
   selectFolder: async () => {
     const res = await fetch(`${API_BASE_URL}/select-folder`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
     });
     return handleResponse(res);
   },
 
   // --- Category Rules ---
   getCategoryRules: async () => {
-    const res = await fetch(`${API_BASE_URL}/category-rules`);
+    const res = await fetch(`${API_BASE_URL}/category-rules`, {
+      headers: getAuthHeaders()
+    });
     return handleResponse(res);
   },
 
   createCategoryRule: async (data) => {
     const res = await fetch(`${API_BASE_URL}/category-rules`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
     return handleResponse(res);
@@ -230,7 +262,7 @@ export const api = {
   updateCategoryRule: async (id, data) => {
     const res = await fetch(`${API_BASE_URL}/category-rules/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
     return handleResponse(res);
@@ -239,25 +271,30 @@ export const api = {
   deleteCategoryRule: async (id) => {
     const res = await fetch(`${API_BASE_URL}/category-rules/${id}`, {
       method: 'DELETE',
+      headers: getAuthHeaders()
     });
     return handleResponse(res);
   },
 
   // --- Vehicles ---
   getVehicles: async () => {
-    const res = await fetch(`${API_BASE_URL}/vehicles`);
+    const res = await fetch(`${API_BASE_URL}/vehicles`, {
+      headers: getAuthHeaders()
+    });
     return handleResponse(res);
   },
 
   getVehicle: async (id) => {
-    const res = await fetch(`${API_BASE_URL}/vehicles/${id}`);
+    const res = await fetch(`${API_BASE_URL}/vehicles/${id}`, {
+      headers: getAuthHeaders()
+    });
     return handleResponse(res);
   },
 
   createVehicle: async (data) => {
     const res = await fetch(`${API_BASE_URL}/vehicles`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
     return handleResponse(res);
@@ -266,7 +303,7 @@ export const api = {
   updateVehicle: async (id, data) => {
     const res = await fetch(`${API_BASE_URL}/vehicles/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
     return handleResponse(res);
@@ -275,6 +312,7 @@ export const api = {
   deleteVehicle: async (id) => {
     const res = await fetch(`${API_BASE_URL}/vehicles/${id}`, {
       method: 'DELETE',
+      headers: getAuthHeaders()
     });
     return handleResponse(res);
   },
@@ -282,9 +320,13 @@ export const api = {
   uploadVehicleImage: async (vehicleId, file) => {
     const formData = new FormData();
     formData.append('file', file);
+    const token = localStorage.getItem('token');
 
     const res = await fetch(`${API_BASE_URL}/vehicles/${vehicleId}/upload-image`, {
       method: 'POST',
+      headers: {
+        ...(token && { 'Authorization': `Bearer ${token}` })
+      },
       body: formData,
     });
     return handleResponse(res);
@@ -292,22 +334,26 @@ export const api = {
 
   // --- Vehicle Expenses ---
   getVehicleExpenses: async (vehicleId = null) => {
-    const url = vehicleId 
+    const url = vehicleId
       ? `${API_BASE_URL}/vehicle-expenses?vehicle_id=${vehicleId}`
       : `${API_BASE_URL}/vehicle-expenses`;
-    const res = await fetch(url);
+    const res = await fetch(url, {
+      headers: getAuthHeaders()
+    });
     return handleResponse(res);
   },
 
   getVehicleExpense: async (id) => {
-    const res = await fetch(`${API_BASE_URL}/vehicle-expenses/${id}`);
+    const res = await fetch(`${API_BASE_URL}/vehicle-expenses/${id}`, {
+      headers: getAuthHeaders()
+    });
     return handleResponse(res);
   },
 
   createVehicleExpense: async (data) => {
     const res = await fetch(`${API_BASE_URL}/vehicle-expenses`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
     return handleResponse(res);
@@ -316,7 +362,7 @@ export const api = {
   updateVehicleExpense: async (id, data) => {
     const res = await fetch(`${API_BASE_URL}/vehicle-expenses/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
     return handleResponse(res);
@@ -325,6 +371,7 @@ export const api = {
   deleteVehicleExpense: async (id) => {
     const res = await fetch(`${API_BASE_URL}/vehicle-expenses/${id}`, {
       method: 'DELETE',
+      headers: getAuthHeaders()
     });
     return handleResponse(res);
   },
@@ -377,14 +424,16 @@ export const api = {
 
   // --- Savings Goals ---
   getSavingsGoals: async () => {
-    const res = await fetch(`${API_BASE_URL}/savings/goals`);
+    const res = await fetch(`${API_BASE_URL}/savings/goals`, {
+      headers: getAuthHeaders()
+    });
     return handleResponse(res);
   },
 
   createSavingsGoal: async (data) => {
     const res = await fetch(`${API_BASE_URL}/savings/goals`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
     return handleResponse(res);
@@ -393,7 +442,7 @@ export const api = {
   updateSavingsGoal: async (id, data) => {
     const res = await fetch(`${API_BASE_URL}/savings/goals/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
     return handleResponse(res);
@@ -402,20 +451,23 @@ export const api = {
   deleteSavingsGoal: async (id) => {
     const res = await fetch(`${API_BASE_URL}/savings/goals/${id}`, {
       method: 'DELETE',
+      headers: getAuthHeaders()
     });
     return handleResponse(res);
   },
 
   // --- Savings Accounts ---
   getSavingsAccounts: async () => {
-    const res = await fetch(`${API_BASE_URL}/savings/accounts`);
+    const res = await fetch(`${API_BASE_URL}/savings/accounts`, {
+      headers: getAuthHeaders()
+    });
     return handleResponse(res);
   },
 
   createSavingsAccount: async (data) => {
     const res = await fetch(`${API_BASE_URL}/savings/accounts`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
     return handleResponse(res);
@@ -424,7 +476,7 @@ export const api = {
   updateSavingsAccount: async (id, data) => {
     const res = await fetch(`${API_BASE_URL}/savings/accounts/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
     return handleResponse(res);
@@ -433,6 +485,7 @@ export const api = {
   deleteSavingsAccount: async (id) => {
     const res = await fetch(`${API_BASE_URL}/savings/accounts/${id}`, {
       method: 'DELETE',
+      headers: getAuthHeaders()
     });
     return handleResponse(res);
   },
@@ -441,7 +494,7 @@ export const api = {
   transferSavings: async (data) => {
     const res = await fetch(`${API_BASE_URL}/savings/transfer`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
     return handleResponse(res);
@@ -450,7 +503,7 @@ export const api = {
   linkTransactionToSavings: async (data) => {
     const res = await fetch(`${API_BASE_URL}/savings/link-transaction`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
     return handleResponse(res);
@@ -461,7 +514,9 @@ export const api = {
     if (accountId) params.append('account_id', accountId);
     if (goalId) params.append('goal_id', goalId);
     const query = params.toString();
-    const res = await fetch(`${API_BASE_URL}/savings/transactions${query ? `?${query}` : ''}`);
+    const res = await fetch(`${API_BASE_URL}/savings/transactions${query ? `?${query}` : ''}`, {
+      headers: getAuthHeaders()
+    });
     return handleResponse(res);
   },
 
@@ -477,14 +532,16 @@ export const api = {
 
   // --- Loans ---
   getLoans: async () => {
-    const res = await fetch(`${API_BASE_URL}/loans`);
+    const res = await fetch(`${API_BASE_URL}/loans`, {
+      headers: getAuthHeaders()
+    });
     return handleResponse(res);
   },
 
   createLoan: async (data) => {
     const res = await fetch(`${API_BASE_URL}/loans`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
     return handleResponse(res);
@@ -493,7 +550,7 @@ export const api = {
   updateLoan: async (id, data) => {
     const res = await fetch(`${API_BASE_URL}/loans/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
     return handleResponse(res);
@@ -502,47 +559,54 @@ export const api = {
   deleteLoan: async (id) => {
     const res = await fetch(`${API_BASE_URL}/loans/${id}`, {
       method: 'DELETE',
+      headers: getAuthHeaders()
     });
     return handleResponse(res);
   },
 
   getLoanPayments: async (loanId) => {
-    const res = await fetch(`${API_BASE_URL}/loans/${loanId}/payments`);
+    const res = await fetch(`${API_BASE_URL}/loans/${loanId}/payments`, {
+      headers: getAuthHeaders()
+    });
     return handleResponse(res);
   },
 
   createLoanPayment: async (loanId, data) => {
     const res = await fetch(`${API_BASE_URL}/loans/${loanId}/payments`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
     return handleResponse(res);
   },
 
   getLoanInterestPeriods: async (loanId) => {
-    const res = await fetch(`${API_BASE_URL}/loans/${loanId}/interest-periods`);
+    const res = await fetch(`${API_BASE_URL}/loans/${loanId}/interest-periods`, {
+      headers: getAuthHeaders()
+    });
     return handleResponse(res);
   },
 
   createLoanInterestPeriod: async (loanId, data) => {
     const res = await fetch(`${API_BASE_URL}/loans/${loanId}/interest-periods`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
     return handleResponse(res);
   },
 
   getAmortizationPlan: async (loanId) => {
-    const res = await fetch(`${API_BASE_URL}/loans/${loanId}/amortization-plan`);
+    const res = await fetch(`${API_BASE_URL}/loans/${loanId}/amortization-plan`, {
+      headers: getAuthHeaders()
+    });
     return handleResponse(res);
   },
 
   linkTransactionToLoan: async (data) => {
     const res = await fetch(`${API_BASE_URL}/loans/link-transaction`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
     return handleResponse(res);
@@ -579,14 +643,16 @@ export const api = {
 
   // --- Dashboard Layout ---
   getDashboardLayout: async () => {
-    const res = await fetch(`${API_BASE_URL}/dashboard-layout`);
+    const res = await fetch(`${API_BASE_URL}/dashboard-layout`, {
+      headers: getAuthHeaders()
+    });
     return handleResponse(res);
   },
 
   saveDashboardLayout: async (widgets) => {
     const res = await fetch(`${API_BASE_URL}/dashboard-layout`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ widgets }),
     });
     return handleResponse(res);
@@ -597,15 +663,17 @@ export const api = {
     const params = new URLSearchParams();
     if (limit) params.append('limit', limit);
     if (entityType) params.append('entity_type', entityType);
-    
-    const res = await fetch(`${API_BASE_URL}/history?${params.toString()}`);
+
+    const res = await fetch(`${API_BASE_URL}/history?${params.toString()}`, {
+      headers: getAuthHeaders()
+    });
     return handleResponse(res);
   },
 
   undoHistoryAction: async (historyId) => {
     const res = await fetch(`${API_BASE_URL}/history/${historyId}/undo`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
     });
     return handleResponse(res);
   },
@@ -613,21 +681,23 @@ export const api = {
   clearHistory: async () => {
     const res = await fetch(`${API_BASE_URL}/history/clear`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
     });
     return handleResponse(res);
   },
 
   // --- Custom Themes ---
   getCustomThemes: async () => {
-    const res = await fetch(`${API_BASE_URL}/custom-themes`);
+    const res = await fetch(`${API_BASE_URL}/custom-themes`, {
+      headers: getAuthHeaders()
+    });
     return handleResponse(res);
   },
 
   createCustomTheme: async (themeData) => {
     const res = await fetch(`${API_BASE_URL}/custom-themes`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(themeData),
     });
     return handleResponse(res);
@@ -636,7 +706,7 @@ export const api = {
   updateCustomTheme: async (id, themeData) => {
     const res = await fetch(`${API_BASE_URL}/custom-themes/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(themeData),
     });
     return handleResponse(res);
@@ -645,20 +715,23 @@ export const api = {
   deleteCustomTheme: async (id) => {
     const res = await fetch(`${API_BASE_URL}/custom-themes/${id}`, {
       method: 'DELETE',
+      headers: getAuthHeaders()
     });
     return handleResponse(res);
   },
 
   // --- Report Templates ---
   getReportTemplates: async () => {
-    const res = await fetch(`${API_BASE_URL}/report-templates`);
+    const res = await fetch(`${API_BASE_URL}/report-templates`, {
+      headers: getAuthHeaders()
+    });
     return handleResponse(res);
   },
 
   saveReportTemplate: async (templateData) => {
     const res = await fetch(`${API_BASE_URL}/report-templates`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(templateData),
     });
     return handleResponse(res);
@@ -667,7 +740,7 @@ export const api = {
   updateReportTemplate: async (id, templateData) => {
     const res = await fetch(`${API_BASE_URL}/report-templates/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(templateData),
     });
     return handleResponse(res);
@@ -676,6 +749,7 @@ export const api = {
   deleteReportTemplate: async (id) => {
     const res = await fetch(`${API_BASE_URL}/report-templates/${id}`, {
       method: 'DELETE',
+      headers: getAuthHeaders()
     });
     return handleResponse(res);
   },
@@ -703,7 +777,7 @@ export const api = {
     const token = localStorage.getItem('token');
     const res = await fetch(`${API_BASE_URL}/auth/logout`, {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
@@ -715,7 +789,7 @@ export const api = {
     const token = localStorage.getItem('token');
     const res = await fetch(`${API_BASE_URL}/auth/me`, {
       method: 'GET',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
@@ -745,7 +819,7 @@ export const api = {
     const token = localStorage.getItem('token');
     const res = await fetch(`${API_BASE_URL}/auth/profile`, {
       method: 'PUT',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
@@ -759,7 +833,7 @@ export const api = {
     const token = localStorage.getItem('token');
     const res = await fetch(`${API_BASE_URL}/licenses/current`, {
       method: 'GET',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
@@ -771,7 +845,7 @@ export const api = {
     const token = localStorage.getItem('token');
     const res = await fetch(`${API_BASE_URL}/licenses/status`, {
       method: 'GET',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
@@ -783,7 +857,7 @@ export const api = {
     const token = localStorage.getItem('token');
     const res = await fetch(`${API_BASE_URL}/licenses/validate`, {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
@@ -796,7 +870,7 @@ export const api = {
     const token = localStorage.getItem('token');
     const res = await fetch(`${API_BASE_URL}/admin/users`, {
       method: 'GET',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
@@ -808,7 +882,7 @@ export const api = {
     const token = localStorage.getItem('token');
     const res = await fetch(`${API_BASE_URL}/admin/users`, {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
@@ -821,7 +895,7 @@ export const api = {
     const token = localStorage.getItem('token');
     const res = await fetch(`${API_BASE_URL}/admin/users/${userId}`, {
       method: 'PUT',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
@@ -830,11 +904,18 @@ export const api = {
     return handleResponse(res);
   },
 
+  getEmailLogs: async () => {
+    const res = await fetch(`${API_BASE_URL}/admin/email-logs`, {
+      headers: getAuthHeaders()
+    });
+    return handleResponse(res);
+  },
+
   deleteAdminUser: async (userId) => {
     const token = localStorage.getItem('token');
     const res = await fetch(`${API_BASE_URL}/admin/users/${userId}`, {
       method: 'DELETE',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
@@ -846,7 +927,7 @@ export const api = {
     const token = localStorage.getItem('token');
     const res = await fetch(`${API_BASE_URL}/admin/users/${userId}/send-credentials`, {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
@@ -859,7 +940,7 @@ export const api = {
     const token = localStorage.getItem('token');
     const res = await fetch(`${API_BASE_URL}/admin/licenses`, {
       method: 'GET',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
@@ -871,7 +952,7 @@ export const api = {
     const token = localStorage.getItem('token');
     const res = await fetch(`${API_BASE_URL}/admin/licenses/${licenseId}`, {
       method: 'PUT',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
@@ -884,7 +965,7 @@ export const api = {
     const token = localStorage.getItem('token');
     const res = await fetch(`${API_BASE_URL}/admin/statistics`, {
       method: 'GET',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
@@ -896,7 +977,7 @@ export const api = {
     const token = localStorage.getItem('token');
     const res = await fetch(`${API_BASE_URL}/admin/payments`, {
       method: 'GET',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
@@ -908,7 +989,7 @@ export const api = {
     const token = localStorage.getItem('token');
     const res = await fetch(`${API_BASE_URL}/admin/refunds`, {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
@@ -921,7 +1002,7 @@ export const api = {
     const token = localStorage.getItem('token');
     const res = await fetch(`${API_BASE_URL}/admin/system-settings`, {
       method: 'GET',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
@@ -934,7 +1015,7 @@ export const api = {
     const token = localStorage.getItem('token');
     const res = await fetch(`${API_BASE_URL}/payments/create-checkout`, {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
@@ -946,7 +1027,7 @@ export const api = {
     const token = localStorage.getItem('token');
     const res = await fetch(`${API_BASE_URL}/payments/history`, {
       method: 'GET',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
@@ -958,7 +1039,7 @@ export const api = {
     const token = localStorage.getItem('token');
     const res = await fetch(`${API_BASE_URL}/payments/cancel`, {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
@@ -970,7 +1051,7 @@ export const api = {
     const token = localStorage.getItem('token');
     const res = await fetch(`${API_BASE_URL}/payments/resume`, {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
@@ -982,7 +1063,7 @@ export const api = {
     const token = localStorage.getItem('token');
     const res = await fetch(`${API_BASE_URL}/payments/subscription`, {
       method: 'GET',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },

@@ -1,7 +1,10 @@
 import React, { useMemo } from 'react';
 import NotificationBell from './NotificationBell';
+import { useLicense } from '../contexts/LicenseContext';
 
 const Topbar = ({ agreements = [], vehicles = [], userName = '' }) => {
+  const { licenseStatus } = useLicense();
+
   // Generate initials from user name
   const initials = useMemo(() => {
     if (!userName || userName.trim() === '') {
@@ -30,6 +33,11 @@ const Topbar = ({ agreements = [], vehicles = [], userName = '' }) => {
           </div>
           <div className="hidden md:block">
             <p className="text-sm font-medium text-zinc-900 dark:text-white">{displayName}</p>
+            {licenseStatus && licenseStatus.days_remaining != null && (
+              <p className={`text-xs ${licenseStatus.days_remaining <= 7 ? 'text-amber-500 font-medium' : 'text-zinc-500 dark:text-zinc-400'}`}>
+                {licenseStatus.days_remaining} {licenseStatus.days_remaining === 1 ? 'dag' : 'dagar'} kvar
+              </p>
+            )}
           </div>
         </div>
       </div>

@@ -37,7 +37,7 @@ const LicenseStatus = () => {
     );
   }
 
-  if (!licenseStatus || !licenseStatus.has_license) {
+  if (!licenseStatus || (!licenseStatus.has_license && licenseStatus.days_remaining === null)) {
     return (
       <div className="p-6 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl">
         <div className="flex items-center gap-3 mb-4">
@@ -54,7 +54,7 @@ const LicenseStatus = () => {
   }
 
   const { status, license_type, days_remaining, is_expired, grace_period_expired, can_use } = licenseStatus;
-  const licenseData = licenseStatus.license || license;
+  const licenseData = licenseStatus.license || license || {};
 
   const getStatusIcon = () => {
     if (is_expired || !can_use) return <XCircle className="text-rose-500" size={24} />;
@@ -80,10 +80,10 @@ const LicenseStatus = () => {
   const formatDate = (dateString) => {
     if (!dateString) return 'Aldrig';
     const date = new Date(dateString);
-    return date.toLocaleDateString('sv-SE', { 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
+    return date.toLocaleDateString('sv-SE', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
     });
   };
 
@@ -129,7 +129,7 @@ const LicenseStatus = () => {
             <span className="text-zinc-900 dark:text-white">{formatDate(licenseData.starts_at)}</span>
           </div>
         )}
-        
+
         {licenseData.expires_at && (
           <div className="flex items-center gap-2 text-sm">
             <Calendar className="text-zinc-400" size={16} />

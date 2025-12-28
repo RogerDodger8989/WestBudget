@@ -1,9 +1,65 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
+const { spawn } = require('child_process');
+const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
 let mainWindow;
+let backendProcess = null;
+
+function getBackendPath() {
+  if (isDev) {
+    return null; // In dev we run backend manually
+  }
+  // In production, backend is in resources folder
+  const backendName = process.platform === 'win32' ? 'westbudget-backend.exe' : 'westbudget-backend';
+  return path.join(process.resourcesPath, backendName);
+}
+
+function startBackend() {
+  const backendPath = getBackendPath();
+  if (!backendPath) {
+    console.log('Running in dev mode, skipping backend spawn');
+    return;
+  }
+
+  const logPath = path.join(app.getPath('userData'), 'backend.log');
+  const logStream = fs.createWriteStream(logPath, { flags: 'a' });
+
+  const log = (msg) => {
+    const time = new Date().toISOString();
+    logStream.write(`[${time}] ${msg}\n`);
+    console.log(msg);
+  };
+
+  log(`Starting backend from: ${backendPath}`);
+
+  try {
+    backendProcess = spawn(backendPath, [], {
+      cwd: path.dirname(backendPath)
+    });
+
+    backendProcess.stdout.on('data', (data) => {
+      log(`[STDOUT] ${data}`);
+    });
+
+    backendProcess.stderr.on('data', (data) => {
+      log(`[STDERR] ${data}`);
+    });
+
+    backendProcess.on('close', (code) => {
+      log(`Backend process exited with code ${code}`);
+    });
+
+    backendProcess.on('error', (err) => {
+      log(`Failed to spawn backend: ${err.message}`);
+    });
+
+  } catch (err) {
+    log(`CRITICAL ERROR starting backend: ${err.message}`);
+  }
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -12,7 +68,7 @@ function createWindow() {
     minWidth: 1200,
     minHeight: 700,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
       enableRemoteModule: false,
@@ -37,7 +93,7 @@ function createWindow() {
   // Show window when ready
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
-    
+
     // Focus on window
     if (isDev) {
       mainWindow.focus();
@@ -58,6 +114,7 @@ function createWindow() {
 
 // App event handlers
 app.whenReady().then(() => {
+  startBackend();
   createWindow();
 
   app.on('activate', () => {
@@ -73,6 +130,10 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  if (backendProcess) {
+    backendProcess.kill();
+    backendProcess = null;
+  }
   if (process.platform !== 'darwin') {
     app.quit();
   }
@@ -84,7 +145,7 @@ ipcMain.handle('select-folder', async () => {
     properties: ['openDirectory'],
     title: 'Välj mapp'
   });
-  
+
   if (!result.canceled && result.filePaths.length > 0) {
     return result.filePaths[0];
   }

@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  westbudget:
+    # Byt ut 'ditt_anvandrnamn' mot ditt Docker Hub-användarnamn
+    image: ditt_anvandarnamn/westbudget:latest
+    container_name: westbudget
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      # Ändra sökvägen till vänster om kolon till där du vill spara kvitton på din NAS
+      - /mnt/pool/data/westbudget_uploads:/app/WestBudget/uploads
+    environment:
+      - DATABASE_URL=postgresql://user:pass@host:5432/db  # Din Supabase/Postgres URL
+      - SUPABASE_URL=din_url
+      - SUPABASE_KEY=din_nyckel
+      - STRIPE_SECRET_KEY=din_stripe_nyckel
+      - SENDGRID_API_KEY=din_sendgrid_nyckel
+      - JWT_SECRET_KEY=slumpmässig_hemlig_text
+      # Lägg till andra variabler från din .env här

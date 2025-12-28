@@ -1,6 +1,5 @@
-import os
+﻿import os
 import json
-import sqlite3
 import zipfile
 import shutil
 import tempfile
@@ -8,6908 +7,1606 @@ import bcrypt
 import jwt
 import secrets
 import stripe
+import sys
+import io
+import psycopg
+from psycopg.rows import dict_row
+from supabase import create_client, Client
 from datetime import datetime, timedelta
 from pathlib import Path
 from flask import Flask, request, jsonify, send_from_directory, send_file
-from flask_cors import CORS
+from flask_cors import CORS, cross_origin
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.utils import secure_filename
 from functools import wraps
+from dotenv import load_dotenv
+import threading
+import time
+from datetime import datetime, timedelta
+from email_service import send_email, send_welcome_email, send_credentials_email, send_trial_expiring_email
 
-# Configuration
-DATABASE = 'westbudget.db'
-UPLOAD_FOLDER = 'uploads'
-ALLOWED_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'gif'}
-JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', secrets.token_urlsafe(32))  # Generate random key if not set
-JWT_ALGORITHM = 'HS256'
-JWT_EXPIRATION_HOURS = 24 * 7  # 7 days
+# Load environment variables
+# Load environment variables
+if getattr(sys, 'frozen', False):
+    # If we are running as a bundle (frozen)
+    base_dir = os.path.dirname(sys.executable)
+    env_path = os.path.join(base_dir, '.env')
+    print(f"DEBUG: Frozen execution. Base dir: {base_dir}")
+    print(f"DEBUG: Looking for .env at: {env_path}")
+    if os.path.exists(env_path):
+        print("DEBUG: .env file FOUND.")
+    else:
+        print("DEBUG: .env file NOT FOUND!")
+        # Try one level up just in case (e.g. if we are in resources and .env is in app root, unlikely but possible)
+        parent_env = os.path.join(os.path.dirname(base_dir), '.env')
+        if os.path.exists(parent_env):
+             print(f"DEBUG: Found .env in parent: {parent_env}")
+             env_path = parent_env
+        
+    load_dotenv(env_path)
+else:
+    # If we are running in a normal Python environment
+    print(f"DEBUG: Normal execution. CWD: {os.getcwd()}")
+    try: 
+        load_dotenv() 
+    except: pass
 
-# Stripe configuration
-STRIPE_SECRET_KEY = os.environ.get('STRIPE_SECRET_KEY', '')
-STRIPE_PUBLISHABLE_KEY = os.environ.get('STRIPE_PUBLISHABLE_KEY', '')
-STRIPE_WEBHOOK_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET', '')
-STRIPE_PRICE_ID = os.environ.get('STRIPE_PRICE_ID', '')  # Monthly premium price ID
-
-if STRIPE_SECRET_KEY:
-    stripe.api_key = STRIPE_SECRET_KEY
-
-# SendGrid configuration
-SENDGRID_API_KEY = os.environ.get('SENDGRID_API_KEY', '')
-SENDGRID_FROM_EMAIL = os.environ.get('SENDGRID_FROM_EMAIL', 'noreply@westbudget.se')
-SENDGRID_FROM_NAME = os.environ.get('SENDGRID_FROM_NAME', 'WestBudget')
-RESET_PASSWORD_URL = os.environ.get('RESET_PASSWORD_URL', 'http://localhost:5100/reset-password')
-
-# Initialize SendGrid if API key is provided
-sendgrid_client = None
-if SENDGRID_API_KEY:
-    try:
-        from sendgrid import SendGridAPIClient
-        from sendgrid.helpers.mail import Mail
-        sendgrid_client = SendGridAPIClient(SENDGRID_API_KEY)
-    except ImportError:
-        print("⚠️  SendGrid not installed. Run: pip install sendgrid")
+print(f"DEBUG: JWT_SECRET_KEY loaded: {'Yes' if os.environ.get('JWT_SECRET_KEY') else 'No'}")
+print(f"DEBUG: DATABASE_URL is: {os.environ.get('DATABASE_URL')}")
+print(f"DEBUG: STRIPE_SECRET_KEY present: {'Yes' if os.environ.get('STRIPE_SECRET_KEY') else 'No'}")
+print(f"DEBUG: SENDGRID_API_KEY present: {'Yes' if os.environ.get('SENDGRID_API_KEY') else 'No'}")
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
-
-# Initialize rate limiter
-limiter = Limiter(
-    app=app,
-    key_func=get_remote_address,
-    default_limits=["200 per day", "50 per hour"],
-    storage_uri="memory://"  # In-memory storage (use Redis in production)
-)
-
-# Enable CORS for Electron/React frontend
+# Enable CORS for frontend with credentials support
 CORS(app, resources={
-    r"/api/*": {
-        "origins": ["http://localhost:5100", "http://192.168.1.232:5100", "http://localhost:3000"],
+    r"/*": {
+        "origins": ["http://localhost:5100", "http://localhost:3000", "https://westbudget.netlify.app"],
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
         "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
         "supports_credentials": True,
         "expose_headers": ["Content-Type", "Content-Disposition"]
-    },
-    r"/uploads/*": {
-        "origins": ["http://localhost:5100", "http://192.168.1.232:5100", "http://localhost:3000"],
-        "methods": ["GET", "OPTIONS"],
-        "supports_credentials": True
     }
 }, supports_credentials=True)
 
-# Add CORS headers manually for all routes as fallback (only if not already set by Flask-CORS)
-@app.after_request
-def after_request(response):
-    origin = request.headers.get('Origin')
-    allowed_origins = ["http://localhost:5100", "http://192.168.1.232:5100", "http://localhost:3000"]
-    
-    # Only add headers if they don't already exist (to avoid duplicates)
-    if 'Access-Control-Allow-Origin' not in response.headers:
-        if origin in allowed_origins:
-            response.headers['Access-Control-Allow-Origin'] = origin
-    
-    if 'Access-Control-Allow-Headers' not in response.headers:
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,X-Requested-With'
-    
-    if 'Access-Control-Allow-Methods' not in response.headers:
-        response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS,PATCH'
-    
-    if 'Access-Control-Allow-Credentials' not in response.headers:
-        response.headers['Access-Control-Allow-Credentials'] = 'true'
-    
-    # Expose headers for file downloads
-    if 'Access-Control-Expose-Headers' not in response.headers:
-        response.headers['Access-Control-Expose-Headers'] = 'Content-Type,Content-Disposition'
-    
-    return response
+# Force UTF-8 encoding for stdout/stderr to avoid cp1252 errors in Windows console
+if sys.stdout:
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+if sys.stderr:
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
-# Ensure upload folder exists
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+# Configuration
+if getattr(sys, 'frozen', False):
+    app_path = os.path.dirname(sys.executable)
+    bundle_dir = sys._MEIPASS
+else:
+    bundle_dir = os.path.dirname(os.path.abspath(__file__))
 
+# Supabase Configuration
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
-# ============================================================================
-# DATABASE INITIALIZATION
-# ============================================================================
+# Initialize Supabase Client
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 
-def init_db():
-    """Initialize database from schema.sql if it doesn't exist"""
-    db_exists = os.path.exists(DATABASE)
-    
-    conn = sqlite3.connect(DATABASE)
-    cursor = conn.cursor()
-    
-    if not db_exists:
-        print("🗄️  Initializing database...")
-        with open('schema.sql', 'r', encoding='utf-8') as f:
-            conn.executescript(f.read())
-        conn.commit()
-        print("✅ Database initialized successfully!")
-    else:
-        # Check and add missing columns to existing database
-        cursor.execute("PRAGMA table_info(agreements)")
-        columns = [col[1] for col in cursor.fetchall()]
+ALLOWED_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'gif'}
+JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', secrets.token_urlsafe(32))
+JWT_ALGORITHM = 'HS256'
+JWT_EXPIRATION_HOURS = 24 * 7
+
+# Upload Directory Configuration
+UPLOAD_FOLDER = os.path.join(os.environ.get('APPDATA', os.getcwd()), 'WestBudget', 'uploads')
+
+# Ensure upload directory exists (kept for temp processing or fallback)
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload size
+app.config['JWT_SECRET_KEY'] = JWT_SECRET_KEY
+
+# Setup Rate Limiting
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=[],
+    storage_uri="memory://"
+)
+limiter.enabled = False
+
+import bcrypt
+import jwt
+import stripe
+import sendgrid
+
+# Configure Stripe
+STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY")
+STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET")
+STRIPE_PRICE_ID = os.environ.get("STRIPE_PRICE_ID")
+
+if STRIPE_SECRET_KEY:
+    stripe.api_key = STRIPE_SECRET_KEY
+
+# Configure SendGrid
+SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
+SENDGRID_FROM_EMAIL = os.environ.get("SENDGRID_FROM_EMAIL")
+SENDGRID_FROM_NAME = os.environ.get("SENDGRID_FROM_NAME", "WestBudget")
+
+sendgrid_client = sendgrid.SendGridAPIClient(SENDGRID_API_KEY) if SENDGRID_API_KEY else None
+
+# --- Helper Classes for Postgres Compatibility ---
+
+class PostgresCursorWrapper:
+    """Wrapper to make psycopg cursor behave like sqlite3 cursor for easier migration"""
+    def __init__(self, cursor):
+        self.cursor = cursor
+        self.lastrowid = None
+        self.rowcount = 0
+
+    def execute(self, query, params=None):
+        # Translate SQLite ? placeholders to Postgres %s
+        pg_query = query.replace('?', '%s')
         
-        if 'start_date' not in columns:
-            print("⚠️  Adding start_date column to agreements table...")
-            cursor.execute('ALTER TABLE agreements ADD COLUMN start_date TEXT')
-            conn.commit()
+        # Determine if it's an INSERT/UPDATE that needs RETURNING id for lastrowid
+        is_insert = pg_query.strip().upper().startswith("INSERT")
         
-        if 'end_date' not in columns:
-            print("⚠️  Adding end_date column to agreements table...")
-            cursor.execute('ALTER TABLE agreements ADD COLUMN end_date TEXT')
-            conn.commit()
+        try:
+            if is_insert and "RETURNING id" not in pg_query:
+                 pg_query += " RETURNING id"
+                 if params:
+                     self.cursor.execute(pg_query, params)
+                 else:
+                     self.cursor.execute(pg_query)
+                 
+                 # Fetch the new ID
+                 result = self.cursor.fetchone()
+                 if result:
+                     self.lastrowid = result['id'] # Uses dict access because of dict_row factory
+                 self.rowcount = self.cursor.rowcount
+            else:
+                 if params:
+                     self.cursor.execute(pg_query, params)
+                 else:
+                     self.cursor.execute(pg_query)
+                 self.lastrowid = None # Reset if not insert
+                 self.rowcount = self.cursor.rowcount
+                 
+        except Exception as e:
+            # Re-raise or handle
+            raise e
+            
+    def fetchone(self):
+        return self.cursor.fetchone()
         
-        # Check if saved_searches table exists, if not create it
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='saved_searches'")
-        if not cursor.fetchone():
-            print("⚠️  Creating saved_searches table...")
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS saved_searches (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL,
-                    query TEXT DEFAULT '',
-                    filters TEXT DEFAULT '{}',
-                    entity_type TEXT DEFAULT 'transaction',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            conn.commit()
+    def fetchall(self):
+        return self.cursor.fetchall()
+        
+    def close(self):
+        self.cursor.close()
+
+from psycopg_pool import ConnectionPool
+
+# Global Connection Pool
+pool = None
+
+class PostgresConnectionWrapper:
+    """Wrapper for psycopg connection that returns it to the pool on close"""
+    def __init__(self, conn, pool=None):
+        self.conn = conn
+        self.pool = pool
+
+    def cursor(self):
+        return PostgresCursorWrapper(self.conn.cursor())
+
+    def commit(self):
+        self.conn.commit()
+
+    def close(self):
+        if self.pool:
+            self.pool.putconn(self.conn)
         else:
-            # Check if entity_type column exists, if not add it
-            cursor.execute("PRAGMA table_info(saved_searches)")
-            columns = [col[1] for col in cursor.fetchall()]
-            if 'entity_type' not in columns:
-                print("⚠️  Adding entity_type column to saved_searches table...")
-                cursor.execute('ALTER TABLE saved_searches ADD COLUMN entity_type TEXT DEFAULT "transaction"')
-                conn.commit()
-        
-        # Check if dashboard_layouts table exists, if not create it
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='dashboard_layouts'")
-        if not cursor.fetchone():
-            print("⚠️  Creating dashboard_layouts table...")
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS dashboard_layouts (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    layout_data TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            conn.commit()
-        
-        # Check if custom_themes table exists, if not create it
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='custom_themes'")
-        if not cursor.fetchone():
-            print("⚠️  Creating custom_themes table...")
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS custom_themes (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL,
-                    primary_color TEXT NOT NULL,
-                    secondary_color TEXT,
-                    accent_color TEXT,
-                    is_default INTEGER DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            conn.commit()
-        
-        # Check if report_templates table exists, if not create it
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='report_templates'")
-        if not cursor.fetchone():
-            print("⚠️  Creating report_templates table...")
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS report_templates (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL,
-                    categories TEXT,
-                    components TEXT NOT NULL,
-                    date_range TEXT,
-                    custom_start_date TEXT,
-                    custom_end_date TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            conn.commit()
-        
-        # Check if vehicles table exists, if not create it
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='vehicles'")
-        if not cursor.fetchone():
-            print("⚠️  Creating vehicles table...")
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS vehicles (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    registration_number TEXT UNIQUE NOT NULL,
-                    make_model TEXT NOT NULL,
-                    odometer INTEGER DEFAULT 0,
-                    next_inspection TEXT,
-                    insurance_company TEXT,
-                    insurance_type TEXT,
-                    status TEXT NOT NULL DEFAULT 'Aktiv' CHECK(status IN ('Aktiv', 'Inaktiv', 'Såld')),
-                    category TEXT DEFAULT 'Personbil',
-                    note TEXT DEFAULT '',
-                    images TEXT DEFAULT '[]',
-                    agreement_id INTEGER,
-                    next_service_odometer INTEGER,
-                    next_service_date TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (agreement_id) REFERENCES agreements(id)
-                )
-            ''')
-            conn.commit()
-        
-        # Check if vehicle_expenses table exists, if not create it
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='vehicle_expenses'")
-        if not cursor.fetchone():
-            print("⚠️  Creating vehicle_expenses table...")
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS vehicle_expenses (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    vehicle_id INTEGER NOT NULL,
-                    category TEXT NOT NULL,
-                    amount REAL NOT NULL,
-                    date TEXT NOT NULL,
-                    description TEXT DEFAULT '',
-                    receipt_path TEXT,
-                    note TEXT DEFAULT '',
-                    odometer_at_purchase INTEGER,
-                    transaction_id INTEGER, -- Link to transactions table
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE,
-                    FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE SET NULL
-                )
-            ''')
-            conn.commit()
-        else:
-            # Check if transaction_id column exists, if not add it
-            cursor.execute("PRAGMA table_info(vehicle_expenses)")
-            columns = [col[1] for col in cursor.fetchall()]
-            if 'transaction_id' not in columns:
-                print("⚠️  Adding transaction_id column to vehicle_expenses table...")
-                cursor.execute('ALTER TABLE vehicle_expenses ADD COLUMN transaction_id INTEGER')
-                cursor.execute('CREATE INDEX IF NOT EXISTS idx_vehicle_expenses_transaction_id ON vehicle_expenses(transaction_id)')
-                conn.commit()
-        
-        # Check if loans tables exist, if not create them
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='loans'")
-        if not cursor.fetchone():
-            print("⚠️  Creating loans table...")
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS loans (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL,
-                    lender TEXT NOT NULL,
-                    principal_amount REAL NOT NULL,
-                    current_balance REAL NOT NULL,
-                    interest_rate REAL NOT NULL,
-                    monthly_payment REAL NOT NULL,
-                    amortization_amount REAL NOT NULL,
-                    interest_amount REAL NOT NULL,
-                    start_date TEXT NOT NULL,
-                    end_date TEXT,
-                    status TEXT NOT NULL DEFAULT 'Aktiv' CHECK(status IN ('Aktiv', 'Avslutat', 'Pausad')),
-                    category TEXT DEFAULT 'Bolån',
-                    note TEXT DEFAULT '',
-                    agreement_id INTEGER,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (agreement_id) REFERENCES agreements(id) ON DELETE SET NULL
-                )
-            ''')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_loans_status ON loans(status)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_loans_agreement_id ON loans(agreement_id)')
-            conn.commit()
-        
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='loan_payments'")
-        if not cursor.fetchone():
-            print("⚠️  Creating loan_payments table...")
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS loan_payments (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    loan_id INTEGER NOT NULL,
-                    transaction_id INTEGER,
-                    payment_date TEXT NOT NULL,
-                    amount REAL NOT NULL,
-                    principal_paid REAL NOT NULL,
-                    interest_paid REAL NOT NULL,
-                    extra_payment REAL DEFAULT 0,
-                    note TEXT DEFAULT '',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (loan_id) REFERENCES loans(id) ON DELETE CASCADE,
-                    FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE SET NULL
-                )
-            ''')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_loan_payments_loan_id ON loan_payments(loan_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_loan_payments_transaction_id ON loan_payments(transaction_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_loan_payments_date ON loan_payments(payment_date)')
-            conn.commit()
-        
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='loan_interest_periods'")
-        if not cursor.fetchone():
-            print("⚠️  Creating loan_interest_periods table...")
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS loan_interest_periods (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    loan_id INTEGER NOT NULL,
-                    start_date TEXT NOT NULL,
-                    end_date TEXT,
-                    interest_rate REAL NOT NULL,
-                    note TEXT DEFAULT '',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (loan_id) REFERENCES loans(id) ON DELETE CASCADE
-                )
-            ''')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_loan_interest_periods_loan_id ON loan_interest_periods(loan_id)')
-            conn.commit()
-        
-        # Check if savings tables exist, if not create them
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='savings_goals'")
-        if not cursor.fetchone():
-            print("[INFO] Creating savings_goals table...")
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS savings_goals (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL,
-                    target_amount REAL NOT NULL,
-                    current_amount REAL DEFAULT 0,
-                    deadline TEXT,
-                    category TEXT,
-                    status TEXT DEFAULT 'Aktiv' CHECK(status IN ('Aktiv', 'Pausad', 'Uppnådd', 'Avbruten')),
-                    description TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_savings_goals_status ON savings_goals(status)')
-            conn.commit()
-        
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='savings_accounts'")
-        if not cursor.fetchone():
-            print("[INFO] Creating savings_accounts table...")
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS savings_accounts (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL,
-                    balance REAL DEFAULT 0,
-                    description TEXT,
-                    category TEXT,
-                    status TEXT DEFAULT 'Aktiv' CHECK(status IN ('Aktiv', 'Pausad', 'Stängd')),
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_savings_accounts_status ON savings_accounts(status)')
-            conn.commit()
-        
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='savings_transactions'")
-        if not cursor.fetchone():
-            print("[INFO] Creating savings_transactions table...")
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS savings_transactions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    transaction_id INTEGER,
-                    goal_id INTEGER,
-                    account_id INTEGER,
-                    amount REAL NOT NULL,
-                    type TEXT NOT NULL CHECK(type IN ('deposit', 'withdrawal', 'transfer')),
-                    date TEXT NOT NULL,
-                    notes TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE CASCADE,
-                    FOREIGN KEY (goal_id) REFERENCES savings_goals(id) ON DELETE CASCADE,
-                    FOREIGN KEY (account_id) REFERENCES savings_accounts(id) ON DELETE CASCADE
-                )
-            ''')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_savings_transactions_goal_id ON savings_transactions(goal_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_savings_transactions_account_id ON savings_transactions(account_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_savings_transactions_transaction_id ON savings_transactions(transaction_id)')
-            conn.commit()
-        
-        # Check if users table exists, if not create it
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
-        if not cursor.fetchone():
-            print("⚠️  Creating users table...")
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS users (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    email TEXT UNIQUE NOT NULL,
-                    password_hash TEXT NOT NULL,
-                    role TEXT DEFAULT 'user' CHECK(role IN ('user', 'admin')),
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    last_login TIMESTAMP
-                )
-            ''')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)')
-            conn.commit()
-        else:
-            # Check if role column exists, if not add it
-            cursor.execute("PRAGMA table_info(users)")
-            columns = [col[1] for col in cursor.fetchall()]
-            if 'role' not in columns:
-                print("⚠️  Adding role column to users table...")
-                cursor.execute('ALTER TABLE users ADD COLUMN role TEXT DEFAULT "user" CHECK(role IN ("user", "admin"))')
-                cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)')
-                conn.commit()
-            if 'last_login' not in columns:
-                print("⚠️  Adding last_login column to users table...")
-                cursor.execute('ALTER TABLE users ADD COLUMN last_login TIMESTAMP')
-                conn.commit()
-        
-        # Check if licenses table exists, if not create it
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='licenses'")
-        if not cursor.fetchone():
-            print("⚠️  Creating licenses table...")
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS licenses (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
-                    license_type TEXT NOT NULL CHECK(license_type IN ('trial', 'premium')),
-                    status TEXT NOT NULL CHECK(status IN ('active', 'expired', 'cancelled')),
-                    starts_at TIMESTAMP NOT NULL,
-                    expires_at TIMESTAMP,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    last_validated_at TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-                )
-            ''')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_licenses_user_id ON licenses(user_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_licenses_status ON licenses(status)')
-            conn.commit()
-        
-        # Check if subscriptions table exists, if not create it
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='subscriptions'")
-        if not cursor.fetchone():
-            print("⚠️  Creating subscriptions table...")
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS subscriptions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
-                    stripe_subscription_id TEXT UNIQUE,
-                    stripe_customer_id TEXT,
-                    status TEXT NOT NULL CHECK(status IN ('active', 'cancelled', 'past_due', 'trialing', 'incomplete', 'incomplete_expired', 'unpaid')),
-                    current_period_start TIMESTAMP,
-                    current_period_end TIMESTAMP,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-                )
-            ''')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON subscriptions(user_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_subscriptions_stripe_subscription_id ON subscriptions(stripe_subscription_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status)')
-            conn.commit()
-        
-        # Check if payments table exists, if not create it
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='payments'")
-        if not cursor.fetchone():
-            print("⚠️  Creating payments table...")
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS payments (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
-                    subscription_id INTEGER,
-                    stripe_payment_intent_id TEXT,
-                    amount REAL NOT NULL,
-                    currency TEXT DEFAULT 'sek',
-                    status TEXT NOT NULL CHECK(status IN ('succeeded', 'pending', 'failed', 'refunded')),
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-                    FOREIGN KEY (subscription_id) REFERENCES subscriptions(id) ON DELETE SET NULL
-                )
-            ''')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_payments_user_id ON payments(user_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_payments_subscription_id ON payments(subscription_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_payments_stripe_payment_intent_id ON payments(stripe_payment_intent_id)')
-            conn.commit()
-        
-        # Check if password_reset_tokens table exists, if not create it
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='password_reset_tokens'")
-        if not cursor.fetchone():
-            print("⚠️  Creating password_reset_tokens table...")
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS password_reset_tokens (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
-                    token TEXT UNIQUE NOT NULL,
-                    expires_at TIMESTAMP NOT NULL,
-                    used BOOLEAN DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-                )
-            ''')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id ON password_reset_tokens(user_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_token ON password_reset_tokens(token)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_expires_at ON password_reset_tokens(expires_at)')
-            conn.commit()
-    
-    conn.close()
+            self.conn.close()
 
+def init_db_pool():
+    global pool
+    if pool is None:
+        try:
+            print("DATA BASE URL: ", os.environ.get("DATABASE_URL"))
+            pool = ConnectionPool(
+                os.environ.get("DATABASE_URL"),
+                min_size=0, # Don't hold connections (Supabase Transaction Pooler best practice)
+                max_size=20,
+                max_lifetime=300, # Recycle connections every 5 minutes
+                kwargs={
+                    "row_factory": dict_row,
+                    "sslmode": 'require',
+                    "connect_timeout": 10
+                }
+            )
+            print("✅ Database Connection Pool Initialized")
+        except Exception as e:
+            print(f"❌ Failed to initialize DB pool: {e}")
+            # Do not raise here, allow app to start, but get_db will fail if pool is None
 
 def get_db():
-    """Get database connection"""
-    conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row  # Return rows as dictionaries
-    return conn
-
-
-# ============================================================================
-# AUTHENTICATION HELPERS
-# ============================================================================
-
-def hash_password(password):
-    """Hash a password using bcrypt"""
-    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-
-def verify_password(password, password_hash):
-    """Verify a password against a hash"""
-    return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
-
-def generate_token(user_id, email, role):
-    """Generate JWT token for user"""
-    payload = {
-        'user_id': user_id,
-        'email': email,
-        'role': role,
-        'exp': datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS),
-        'iat': datetime.utcnow()
-    }
-    return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
-
-def verify_token(token):
-    """Verify and decode JWT token"""
+    """Get database connection from pool"""
+    global pool
+    if pool is None:
+        init_db_pool()
+    
     try:
-        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
-        return payload
-    except jwt.ExpiredSignatureError:
-        return None
-    except jwt.InvalidTokenError:
-        return None
+        conn = pool.getconn()
+        return PostgresConnectionWrapper(conn, pool)
+    except Exception as e:
+        print(f"❌ Database connection error: {e}")
+        raise e
 
-def get_token_from_request():
-    """Extract token from Authorization header"""
-    auth_header = request.headers.get('Authorization')
-    if auth_header and auth_header.startswith('Bearer '):
-        return auth_header.split(' ')[1]
-    return None
+# Initialize pool on startup (best effort)
+if os.environ.get("DATABASE_URL"):
+    init_db_pool()
+
+
+
+
+
+
+# ============================================================================
+# DATABASE HELPERS
+# ============================================================================
+
+# The PostgresCursorWrapper and PostgresConnectionWrapper are now defined above.
+
+# The get_db function is now defined above.
+
+
+
+# ============================================================================
+# AUTH DECORATORS
+# ============================================================================
 
 def require_auth(f):
-    """Decorator to require authentication"""
     @wraps(f)
-    def decorated_function(*args, **kwargs):
-        token = get_token_from_request()
-        if not token:
-            return jsonify({'error': 'No token provided'}), 401
-        
-        payload = verify_token(token)
-        if not payload:
-            return jsonify({'error': 'Invalid or expired token'}), 401
-        
-        request.current_user = payload
-        return f(*args, **kwargs)
-    return decorated_function
+    def decorated(*args, **kwargs):
+        if request.method == 'OPTIONS':
+            return jsonify({'status': 'ok'}), 200
 
-def require_admin(f):
-    """Decorator to require admin role"""
-    @wraps(f)
-    @require_auth
-    def decorated_function(*args, **kwargs):
-        if request.current_user.get('role') != 'admin':
-            return jsonify({'error': 'Admin access required'}), 403
-        return f(*args, **kwargs)
-    return decorated_function
-
-
-def allowed_file(filename):
-    """Check if file extension is allowed"""
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-
-# ============================================================================
-# TRANSACTION ENDPOINTS
-# ============================================================================
-
-@app.route('/api/transactions', methods=['GET'])
-def get_transactions():
-    """Get all transactions"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT * FROM transactions ORDER BY id DESC')
-    transactions = [dict(row) for row in cursor.fetchall()]
-    
-    conn.close()
-    return jsonify(transactions), 200
-
-
-@app.route('/api/transactions/<int:transaction_id>', methods=['GET'])
-def get_transaction(transaction_id):
-    """Get a specific transaction"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT * FROM transactions WHERE id = ?', (transaction_id,))
-    transaction = cursor.fetchone()
-    
-    conn.close()
-    
-    if transaction:
-        return jsonify(dict(transaction)), 200
-    return jsonify({'error': 'Transaction not found'}), 404
-
-
-@app.route('/api/transactions', methods=['POST'])
-def create_transaction():
-    """Create a new transaction"""
-    data = request.get_json()
-    
-    required_fields = ['title', 'date', 'amount', 'type', 'category']
-    if not all(field in data for field in required_fields):
-        return jsonify({'error': 'Missing required fields'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    # Check if receipt_path points to deleted folder and restore it
-    receipt_path = data.get('receipt_path', None)
-    if receipt_path and 'deleted' in receipt_path.replace('\\', '/') and os.path.exists(receipt_path):
-        try:
-            # Get receipt storage path
-            cursor.execute('SELECT value FROM settings WHERE key = ?', ('receipt_storage_path',))
-            result = cursor.fetchone()
-            storage_path = result['value'] if result else app.config['UPLOAD_FOLDER']
-            
-            # Extract filename from deleted path
-            filename = os.path.basename(receipt_path)
-            # Remove old transaction ID prefix if present (format: {old_id}_{original_filename})
-            if '_' in filename:
-                parts = filename.split('_', 1)
-                if parts[0].isdigit():
-                    filename = parts[1]  # Keep only original filename
-            
-            # Move file back from deleted folder to main receipt folder
-            restored_path = os.path.join(storage_path, filename)
-            if os.path.exists(receipt_path) and not os.path.exists(restored_path):
-                shutil.move(receipt_path, restored_path)
-                receipt_path = restored_path
-                print(f"♻️ [Backend] Återställde kvittofil: {restored_path}")
-        except Exception as e:
-            print(f"⚠️ [Backend] Kunde inte återställa kvittofil: {e}")
-            # Continue with original path
-    
-    cursor.execute('''
-        INSERT INTO transactions (title, date, amount, type, category, status, receipt, receipt_path, note)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (
-        data['title'],
-        data['date'],
-        data['amount'],
-        data['type'],
-        data['category'],
-        data.get('status', 'Väntar'),
-        data.get('receipt', False),
-        receipt_path,  # Use potentially restored path
-        data.get('note', '')
-    ))
-    
-    transaction_id = cursor.lastrowid
-    conn.commit()
-    
-    # Get created transaction for history
-    cursor.execute('SELECT * FROM transactions WHERE id = ?', (transaction_id,))
-    created_transaction = dict(cursor.fetchone())
-    
-    # Add to history
-    add_history_entry(
-        action_type='create',
-        action=f'Skapade transaktion: {data["title"]}',
-        entity_type='transaction',
-        entity_id=transaction_id,
-        entity_data=created_transaction,
-        undo_data=None
-    )
-    
-    # If receipt_path was restored, update filename with new transaction ID
-    if receipt_path and os.path.exists(receipt_path):
-        try:
-            filename = os.path.basename(receipt_path)
-            # Check if filename doesn't start with transaction_id
-            if not filename.startswith(f"{transaction_id}_"):
-                # Update filename to include transaction ID
-                new_filename = f"{transaction_id}_{filename}"
-                new_path = os.path.join(os.path.dirname(receipt_path), new_filename)
-                
-                if os.path.exists(receipt_path) and receipt_path != new_path:
-                    shutil.move(receipt_path, new_path)
-                    # Update database with new path
-                    cursor.execute('UPDATE transactions SET receipt_path = ? WHERE id = ?', 
-                                 (new_path, transaction_id))
-                    conn.commit()
-                    receipt_path = new_path
-                    print(f"📝 [Backend] Uppdaterade kvittofilnamn med transaction ID: {new_path}")
-        except Exception as e:
-            print(f"⚠️ [Backend] Kunde inte uppdatera kvittofilnamn: {e}")
-    
-    cursor.execute('SELECT * FROM transactions WHERE id = ?', (transaction_id,))
-    new_transaction = dict(cursor.fetchone())
-    
-    conn.close()
-    
-    return jsonify(new_transaction), 201
-
-
-@app.route('/api/transactions/<int:transaction_id>', methods=['PUT'])
-def update_transaction(transaction_id):
-    """Update a transaction - CRUCIAL for notes, category, and receipt_path"""
-    data = request.get_json()
-    
-    if not data:
-        return jsonify({'error': 'No data provided'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    # Get old transaction data for history (undo_data)
-    cursor.execute('SELECT * FROM transactions WHERE id = ?', (transaction_id,))
-    old_transaction = cursor.fetchone()
-    
-    if not old_transaction:
-        conn.close()
-        return jsonify({'error': 'Transaction not found'}), 404
-    
-    old_transaction_data = dict(old_transaction)
-    
-    # Build dynamic UPDATE query
-    update_fields = []
-    values = []
-    
-    allowed_fields = ['title', 'date', 'amount', 'type', 'category', 'status', 'receipt', 'receipt_path', 'note']
-    
-    for field in allowed_fields:
-        if field in data:
-            update_fields.append(f'{field} = ?')
-            values.append(data[field])
-    
-    if not update_fields:
-        conn.close()
-        return jsonify({'error': 'No valid fields to update'}), 400
-    
-    # Add updated_at timestamp
-    update_fields.append('updated_at = ?')
-    values.append(datetime.now().isoformat())
-    
-    # Add transaction_id for WHERE clause
-    values.append(transaction_id)
-    
-    query = f"UPDATE transactions SET {', '.join(update_fields)} WHERE id = ?"
-    
-    cursor.execute(query, values)
-    conn.commit()
-    
-    if cursor.rowcount == 0:
-        conn.close()
-        return jsonify({'error': 'Transaction not found'}), 404
-    
-    cursor.execute('SELECT * FROM transactions WHERE id = ?', (transaction_id,))
-    updated_transaction = dict(cursor.fetchone())
-    
-    # Add to history
-    add_history_entry(
-        action_type='update',
-        action=f'Uppdaterade transaktion: {updated_transaction.get("title", "Okänt")}',
-        entity_type='transaction',
-        entity_id=transaction_id,
-        entity_data=updated_transaction,
-        undo_data=old_transaction_data
-    )
-    
-    conn.close()
-    
-    return jsonify(updated_transaction), 200
-
-
-@app.route('/api/transactions/<int:transaction_id>', methods=['DELETE'])
-def delete_transaction(transaction_id):
-    """Delete a transaction and move its receipt file to deleted folder (for undo support)"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    # Get transaction data before deleting (for undo)
-    cursor.execute('SELECT * FROM transactions WHERE id = ?', (transaction_id,))
-    transaction = cursor.fetchone()
-    
-    if not transaction:
-        conn.close()
-        return jsonify({'error': 'Transaction not found'}), 404
-    
-    receipt_path = transaction['receipt_path'] if transaction else None
-    transaction_data = dict(transaction)  # Save for undo
-    
-    # Delete transaction from database
-    cursor.execute('DELETE FROM transactions WHERE id = ?', (transaction_id,))
-    conn.commit()
-    
-    if cursor.rowcount == 0:
-        conn.close()
-        return jsonify({'error': 'Transaction not found'}), 404
-    
-    # Move receipt file to deleted folder if it exists (instead of deleting for undo support)
-    moved_path = None
-    if receipt_path and os.path.exists(receipt_path):
-        try:
-            # Get receipt storage path
-            cursor.execute('SELECT value FROM settings WHERE key = ?', ('receipt_storage_path',))
-            result = cursor.fetchone()
-            storage_path = result['value'] if result else app.config['UPLOAD_FOLDER']
-            
-            # Create deleted subfolder
-            deleted_folder = os.path.join(storage_path, 'deleted')
-            os.makedirs(deleted_folder, exist_ok=True)
-            
-            # Move file to deleted folder with transaction ID prefix for easy identification
-            filename = os.path.basename(receipt_path)
-            deleted_filename = f"{transaction_id}_{filename}"
-            deleted_path = os.path.join(deleted_folder, deleted_filename)
-            
-            shutil.move(receipt_path, deleted_path)
-            moved_path = deleted_path
-            print(f"🗑️ [Backend] Flyttade kvittofil till deleted-mapp: {deleted_path}")
-        except Exception as e:
-            print(f"⚠️ [Backend] Kunde inte flytta kvittofil {receipt_path}: {e}")
-            # Don't fail the deletion if file move fails
-    
-    # Update transaction_data with moved receipt path for undo
-    if moved_path:
-        transaction_data['receipt_path'] = moved_path
-    
-    # Add to history
-    add_history_entry(
-        action_type='delete',
-        action=f'Raderade transaktion: {transaction_data.get("title", "Okänt")}',
-        entity_type='transaction',
-        entity_id=transaction_id,
-        entity_data=None,
-        undo_data=transaction_data
-    )
-    
-    conn.close()
-    return jsonify({
-        'message': 'Transaction deleted successfully',
-        'receipt_path': receipt_path,  # Original path for undo
-        'moved_receipt_path': moved_path,  # New path in deleted folder
-        'transaction_data': transaction_data  # Full transaction data for undo
-    }), 200
-
-
-# ============================================================================
-# AGREEMENT ENDPOINTS
-# ============================================================================
-
-@app.route('/api/agreements', methods=['GET'])
-def get_agreements():
-    """Get all agreements"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT * FROM agreements ORDER BY name')
-    agreements = []
-    
-    for row in cursor.fetchall():
-        agreement = dict(row)
-        # Parse images if it exists
-        if 'images' in agreement and agreement['images']:
+        token = None
+        if 'Authorization' in request.headers:
+            auth_header = request.headers['Authorization']
             try:
-                import json
-                agreement['images'] = json.loads(agreement['images'])
-            except:
-                agreement['images'] = []
-        else:
-            agreement['images'] = []
-        agreements.append(agreement)
-    
-    conn.close()
-    return jsonify(agreements), 200
+                token = auth_header.split(" ")[1]
+            except IndexError:
+                return jsonify({'message': 'Token is missing'}), 401
+        
+        if not token:
+            return jsonify({'message': 'Token is missing'}), 401
+            
+        try:
+            data = jwt.decode(token, app.config['JWT_SECRET_KEY'], algorithms=["HS256"])
+            request.current_user = data
+        except Exception as e:
+            return jsonify({'message': 'Token is invalid', 'error': str(e)}), 401
+            
+        return f(*args, **kwargs)
+    return decorated
 
-
-@app.route('/api/agreements/<int:agreement_id>', methods=['GET'])
-def get_agreement(agreement_id):
-    """Get a specific agreement"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT * FROM agreements WHERE id = ?', (agreement_id,))
-    agreement = cursor.fetchone()
-    
-    conn.close()
-    
-    if agreement:
-        return jsonify(dict(agreement)), 200
-    return jsonify({'error': 'Agreement not found'}), 404
-
-
-@app.route('/api/agreements', methods=['POST'])
-def create_agreement():
-    """Create a new agreement"""
-    data = request.get_json()
-    
-    required_fields = ['name', 'provider', 'cost', 'frequency', 'next_payment', 'category']
-    if not all(field in data for field in required_fields):
-        return jsonify({'error': 'Missing required fields'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        INSERT INTO agreements (name, provider, cost, frequency, next_payment, status, category, icon, notice, start_date, end_date)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (
-        data['name'],
-        data['provider'],
-        data['cost'],
-        data['frequency'],
-        data['next_payment'],
-        data.get('status', 'Aktiv'),
-        data['category'],
-        data.get('icon', '📄'),
-        data.get('notice', ''),
-        data.get('start_date', ''),
-        data.get('end_date', '')
-    ))
-    
-    agreement_id = cursor.lastrowid
-    conn.commit()
-    
-    cursor.execute('SELECT * FROM agreements WHERE id = ?', (agreement_id,))
-    new_agreement = dict(cursor.fetchone())
-    
-    # Add to history
-    add_history_entry(
-        action_type='create',
-        action=f'Skapade avtal: {data["name"]}',
-        entity_type='agreement',
-        entity_id=agreement_id,
-        entity_data=new_agreement,
-        undo_data=None
-    )
-    
-    conn.close()
-    
-    return jsonify(new_agreement), 201
-
-
-@app.route('/api/agreements/<int:agreement_id>', methods=['PUT'])
-def update_agreement(agreement_id):
-    """Update an agreement"""
-    data = request.get_json()
-    
-    if not data:
-        return jsonify({'error': 'No data provided'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    # Ensure start_date and end_date columns exist
-    cursor.execute("PRAGMA table_info(agreements)")
-    columns = [col[1] for col in cursor.fetchall()]
-    
-    if 'start_date' not in columns:
-        cursor.execute('ALTER TABLE agreements ADD COLUMN start_date TEXT')
-        conn.commit()
-    
-    if 'end_date' not in columns:
-        cursor.execute('ALTER TABLE agreements ADD COLUMN end_date TEXT')
-        conn.commit()
-    
-    # Build dynamic UPDATE query
-    update_fields = []
-    values = []
-    
-    allowed_fields = ['name', 'provider', 'cost', 'frequency', 'next_payment', 'status', 'category', 'icon', 'notice', 'images', 'start_date', 'end_date']
-    
-    for field in allowed_fields:
-        if field in data:
-            update_fields.append(f'{field} = ?')
-            # Convert images array to JSON string if it's a list
-            if field == 'images' and isinstance(data[field], list):
-                import json
-                values.append(json.dumps(data[field]))
-            else:
-                values.append(data[field])
-    
-    if not update_fields:
-        conn.close()
-        return jsonify({'error': 'No valid fields to update'}), 400
-    
-    update_fields.append('updated_at = ?')
-    values.append(datetime.now().isoformat())
-    values.append(agreement_id)
-    
-    query = f"UPDATE agreements SET {', '.join(update_fields)} WHERE id = ?"
-    
-    try:
-        cursor.execute(query, values)
-        conn.commit()
-    except sqlite3.OperationalError as e:
-        conn.close()
-        return jsonify({'error': f'Database error: {str(e)}'}), 500
-    
-    if cursor.rowcount == 0:
-        conn.close()
-        return jsonify({'error': 'Agreement not found'}), 404
-    
-    cursor.execute('SELECT * FROM agreements WHERE id = ?', (agreement_id,))
-    updated_agreement = dict(cursor.fetchone())
-    
-    # Add to history
-    add_history_entry(
-        action_type='update',
-        action=f'Uppdaterade avtal: {updated_agreement.get("name", "Okänt")}',
-        entity_type='agreement',
-        entity_id=agreement_id,
-        entity_data=updated_agreement,
-        undo_data=old_agreement_data
-    )
-    
-    conn.close()
-    
-    return jsonify(updated_agreement), 200
-
-
-@app.route('/api/agreements/<int:agreement_id>', methods=['DELETE'])
-def delete_agreement(agreement_id):
-    """Delete an agreement"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    # Get agreement data before deleting (for undo)
-    cursor.execute('SELECT * FROM agreements WHERE id = ?', (agreement_id,))
-    agreement = cursor.fetchone()
-    
-    if not agreement:
-        conn.close()
-        return jsonify({'error': 'Agreement not found'}), 404
-    
-    agreement_data = dict(agreement)
-    
-    cursor.execute('DELETE FROM agreements WHERE id = ?', (agreement_id,))
-    conn.commit()
-    
-    if cursor.rowcount == 0:
-        conn.close()
-        return jsonify({'error': 'Agreement not found'}), 404
-    
-    # Add to history
-    add_history_entry(
-        action_type='delete',
-        action=f'Raderade avtal: {agreement_data.get("name", "Okänt")}',
-        entity_type='agreement',
-        entity_id=agreement_id,
-        entity_data=None,
-        undo_data=agreement_data
-    )
-    
-    conn.close()
-    return jsonify({'message': 'Agreement deleted successfully'}), 200
-
+def require_role(role):
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if request.method == 'OPTIONS':
+                return jsonify({'status': 'ok'}), 200
+                
+            if not hasattr(request, 'current_user') or not request.current_user:
+                return jsonify({'message': 'Authentication required'}), 401
+            
+            # Check if role matches
+            # We assume request.current_user has 'role' from the token
+            # If not in token, you might need to query DB here, but for now we try token
+            user_role = request.current_user.get('role')
+            if user_role != role:
+                 return jsonify({'error': 'Forbidden: Insufficient permissions'}), 403
+            
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
 
 # ============================================================================
-# AUTHENTICATION ENDPOINTS
+# AUTH ROUTES
 # ============================================================================
 
-@app.route('/api/auth/register', methods=['POST'])
-@limiter.limit("5 per minute")  # Max 5 registreringar per minut per IP
-def register():
-    """Register a new user"""
-    try:
-        data = request.get_json()
-        
-        if not data or not data.get('email') or not data.get('password'):
-            return jsonify({'error': 'Email and password are required'}), 400
-        
-        email = data['email'].lower().strip()
-        password = data['password']
-        
-        # Validate email format
-        if '@' not in email or '.' not in email.split('@')[1]:
-            return jsonify({'error': 'Invalid email format'}), 400
-        
-        # Validate password length
-        if len(password) < 8:
-            return jsonify({'error': 'Password must be at least 8 characters'}), 400
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Check if user already exists
-        cursor.execute('SELECT id FROM users WHERE email = ?', (email,))
-        if cursor.fetchone():
-            conn.close()
-            return jsonify({'error': 'User with this email already exists'}), 409
-        
-        # Hash password
-        password_hash = hash_password(password)
-        
-        # Create user
-        cursor.execute('''
-            INSERT INTO users (email, password_hash, role, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (email, password_hash, 'user', datetime.now().isoformat(), datetime.now().isoformat()))
-        
-        user_id = cursor.lastrowid
-        
-        # Create trial license (30 days)
-        from datetime import datetime, timedelta
-        trial_start = datetime.now()
-        trial_end = trial_start + timedelta(days=30)
-        
-        cursor.execute('''
-            INSERT INTO licenses (user_id, license_type, status, starts_at, expires_at, created_at, updated_at, last_validated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            user_id,
-            'trial',
-            'active',
-            trial_start.isoformat(),
-            trial_end.isoformat(),
-            datetime.now().isoformat(),
-            datetime.now().isoformat(),
-            datetime.now().isoformat()
-        ))
-        
-        conn.commit()
-        
-        # Generate token
-        token = generate_token(user_id, email, 'user')
-        
-        cursor.execute('SELECT id, email, role, created_at FROM users WHERE id = ?', (user_id,))
-        user = dict(cursor.fetchone())
-        
-        conn.close()
-        
-        return jsonify({
-            'message': 'User registered successfully',
-            'user': user,
-            'token': token
-        }), 201
-        
-    except Exception as e:
-        print(f"[Backend] Error registering user: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/auth/login', methods=['POST'])
-@limiter.limit("10 per minute")  # Max 10 login-försök per minut per IP
-def login():
-    """Login user"""
-    try:
-        data = request.get_json()
-        
-        if not data or not data.get('email') or not data.get('password'):
-            return jsonify({'error': 'Email and password are required'}), 400
-        
-        email = data['email'].lower().strip()
-        password = data['password']
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Find user
-        cursor.execute('SELECT id, email, password_hash, role FROM users WHERE email = ?', (email,))
-        user = cursor.fetchone()
-        
-        if not user:
-            conn.close()
-            return jsonify({'error': 'Invalid email or password'}), 401
-        
-        # Verify password
-        if not verify_password(password, user['password_hash']):
-            conn.close()
-            return jsonify({'error': 'Invalid email or password'}), 401
-        
-        # Update last login
-        cursor.execute('''
-            UPDATE users SET last_login = ?, updated_at = ? WHERE id = ?
-        ''', (datetime.now().isoformat(), datetime.now().isoformat(), user['id']))
-        conn.commit()
-        
-        # Generate token
-        token = generate_token(user['id'], user['email'], user['role'])
-        
-        user_dict = {
-            'id': user['id'],
-            'email': user['email'],
-            'role': user['role']
-        }
-        
-        conn.close()
-        
-        return jsonify({
-            'message': 'Login successful',
-            'user': user_dict,
-            'token': token
-        }), 200
-        
-    except Exception as e:
-        print(f"[Backend] Error logging in: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/auth/me', methods=['GET'])
+@app.route('/auth/me', methods=['GET', 'OPTIONS'])
 @require_auth
 def get_current_user():
-    """Get current authenticated user"""
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+        
     try:
         user_id = request.current_user['user_id']
-        
         conn = get_db()
         cursor = conn.cursor()
-        
-        cursor.execute('SELECT id, email, role, created_at, last_login FROM users WHERE id = ?', (user_id,))
+        cursor.execute("SELECT id, email, role, created_at, last_login FROM users WHERE id = %s", (user_id,))
         user = cursor.fetchone()
-        
         conn.close()
         
         if user:
             return jsonify(dict(user)), 200
         return jsonify({'error': 'User not found'}), 404
-        
     except Exception as e:
-        print(f"[Backend] Error getting current user: {e}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/auth/logout', methods=['POST'])
-@require_auth
-def logout():
-    """Logout user (client-side token removal, this is just for consistency)"""
-    return jsonify({'message': 'Logout successful'}), 200
-
-@app.route('/api/auth/forgot-password', methods=['POST'])
-@limiter.limit("3 per hour")  # Max 3 lösenordsåterställningar per timme per IP
-def forgot_password():
-    """Request password reset"""
+@app.route('/auth/register', methods=['POST', 'OPTIONS'])
+def register():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+        
     try:
         data = request.get_json()
+        email = data.get('email')
+        password = data.get('password')
         
-        if not data or not data.get('email'):
-            return jsonify({'error': 'Email is required'}), 400
-        
-        email = data['email'].lower().strip()
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        cursor.execute('SELECT id FROM users WHERE email = ?', (email,))
-        user = cursor.fetchone()
-        
-        conn.close()
-        
-        # Always return success (security: don't reveal if email exists)
-        # In production, send email only if user exists
-        return jsonify({
-            'message': 'If an account with this email exists, a password reset link has been sent'
-        }), 200
-        
-    except Exception as e:
-        print(f"[Backend] Error in forgot password: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/auth/reset-password', methods=['POST'])
-@limiter.limit("5 per hour")  # Max 5 lösenordsåterställningar per timme per IP
-def reset_password():
-    """Reset password with token"""
-    try:
-        data = request.get_json()
-        
-        if not data or not data.get('token') or not data.get('password'):
-            return jsonify({'error': 'Token och lösenord krävs'}), 400
-        
-        token = data['token']
-        new_password = data['password']
-        
-        # Validate password
-        if len(new_password) < 8:
-            return jsonify({'error': 'Lösenordet måste vara minst 8 tecken'}), 400
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Find valid token
-        cursor.execute('''
-            SELECT prt.user_id, prt.expires_at, prt.used
-            FROM password_reset_tokens prt
-            WHERE prt.token = ? AND prt.used = 0
-        ''', (token,))
-        token_record = cursor.fetchone()
-        
-        if not token_record:
-            conn.close()
-            return jsonify({'error': 'Ogiltig eller utgången återställningslänk'}), 400
-        
-        # Check if token is expired
-        expires_at = datetime.fromisoformat(token_record['expires_at'])
-        if datetime.now() > expires_at:
-            # Mark token as used
-            cursor.execute('UPDATE password_reset_tokens SET used = 1 WHERE token = ?', (token,))
-            conn.commit()
-            conn.close()
-            return jsonify({'error': 'Återställningslänken har gått ut. Begär en ny länk.'}), 400
-        
-        # Check if token is already used
-        if token_record['used']:
-            conn.close()
-            return jsonify({'error': 'Denna återställningslänk har redan använts'}), 400
-        
-        user_id = token_record['user_id']
-        
-        # Update password
-        password_hash = hash_password(new_password)
-        cursor.execute('''
-            UPDATE users 
-            SET password_hash = ?, updated_at = ?
-            WHERE id = ?
-        ''', (password_hash, datetime.now().isoformat(), user_id))
-        
-        # Mark token as used
-        cursor.execute('UPDATE password_reset_tokens SET used = 1 WHERE token = ?', (token,))
-        
-        conn.commit()
-        conn.close()
-        
-        print(f"[Backend] Password reset successful for user {user_id}")
-        
-        return jsonify({
-            'message': 'Lösenordet har återställts. Du kan nu logga in med ditt nya lösenord.'
-        }), 200
-        
-    except Exception as e:
-        print(f"[Backend] Error resetting password: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-# ============================================================================
-# LICENSE ENDPOINTS
-# ============================================================================
-
-@app.route('/api/licenses/current', methods=['GET'])
-@require_auth
-def get_current_license():
-    """Get current user's license"""
-    try:
-        user_id = request.current_user['user_id']
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Get most recent active license
-        cursor.execute('''
-            SELECT * FROM licenses 
-            WHERE user_id = ? AND status = 'active'
-            ORDER BY created_at DESC
-            LIMIT 1
-        ''', (user_id,))
-        license = cursor.fetchone()
-        
-        conn.close()
-        
-        if license:
-            license_dict = dict(license)
-            # Check if license is expired
-            if license_dict['expires_at']:
-                expires_at = datetime.fromisoformat(license_dict['expires_at'])
-                if datetime.now() > expires_at:
-                    # Update status to expired
-                    conn = get_db()
-                    cursor = conn.cursor()
-                    cursor.execute('''
-                        UPDATE licenses SET status = 'expired', updated_at = ?
-                        WHERE id = ?
-                    ''', (datetime.now().isoformat(), license_dict['id']))
-                    conn.commit()
-                    conn.close()
-                    license_dict['status'] = 'expired'
+        if not email or not password:
+            return jsonify({'error': 'Email and password required'}), 400
             
-            return jsonify(license_dict), 200
-        
-        return jsonify({'error': 'No active license found'}), 404
-        
-    except Exception as e:
-        print(f"[Backend] Error getting current license: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/licenses/status', methods=['GET'])
-@require_auth
-def get_license_status():
-    """Get license status with validation info"""
-    try:
-        user_id = request.current_user['user_id']
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Get most recent license
-        cursor.execute('''
-            SELECT * FROM licenses 
-            WHERE user_id = ?
-            ORDER BY created_at DESC
-            LIMIT 1
-        ''', (user_id,))
-        license = cursor.fetchone()
-        
-        if not license:
-            conn.close()
-            return jsonify({
-                'has_license': False,
-                'status': 'no_license',
-                'message': 'No license found'
-            }), 200
-        
-        license_dict = dict(license)
-        
-        # Check expiration
-        is_expired = False
-        days_remaining = None
-        if license_dict['expires_at']:
-            expires_at = datetime.fromisoformat(license_dict['expires_at'])
-            now = datetime.now()
-            if now > expires_at:
-                is_expired = True
-                # Update status
-                cursor.execute('''
-                    UPDATE licenses SET status = 'expired', updated_at = ?
-                    WHERE id = ?
-                ''', (datetime.now().isoformat(), license_dict['id']))
-                conn.commit()
-            else:
-                days_remaining = (expires_at - now).days
-        
-        # Check grace period (7 days offline)
-        grace_period_expired = False
-        if license_dict['last_validated_at']:
-            last_validated = datetime.fromisoformat(license_dict['last_validated_at'])
-            days_since_validation = (datetime.now() - last_validated).days
-            if days_since_validation > 7:
-                grace_period_expired = True
-        
-        conn.close()
-        
-        status = 'expired' if is_expired else license_dict['status']
-        if grace_period_expired and status == 'active':
-            status = 'grace_period_expired'
-        
-        return jsonify({
-            'has_license': True,
-            'license': license_dict,
-            'status': status,
-            'is_expired': is_expired,
-            'days_remaining': days_remaining,
-            'grace_period_expired': grace_period_expired,
-            'license_type': license_dict['license_type'],
-            'can_use': status == 'active' and not grace_period_expired
-        }), 200
-        
-    except Exception as e:
-        print(f"[Backend] Error getting license status: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/licenses/validate', methods=['POST'])
-@require_auth
-def validate_license():
-    """Validate license (online validation)"""
-    try:
-        user_id = request.current_user['user_id']
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Get current license
-        cursor.execute('''
-            SELECT * FROM licenses 
-            WHERE user_id = ? AND status = 'active'
-            ORDER BY created_at DESC
-            LIMIT 1
-        ''', (user_id,))
-        license = cursor.fetchone()
-        
-        if not license:
-            conn.close()
-            return jsonify({'error': 'No active license found'}), 404
-        
-        license_dict = dict(license)
-        
-        # Check if license is expired
-        is_valid = True
-        if license_dict['expires_at']:
-            expires_at = datetime.fromisoformat(license_dict['expires_at'])
-            if datetime.now() > expires_at:
-                is_valid = False
-                # Update status
-                cursor.execute('''
-                    UPDATE licenses SET status = 'expired', updated_at = ?
-                    WHERE id = ?
-                ''', (datetime.now().isoformat(), license_dict['id']))
-                conn.commit()
-        
-        # Update last_validated_at
-        cursor.execute('''
-            UPDATE licenses SET last_validated_at = ?, updated_at = ?
-            WHERE id = ?
-        ''', (datetime.now().isoformat(), datetime.now().isoformat(), license_dict['id']))
-        conn.commit()
-        
-        # Log validation
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='license_validations'")
-        if not cursor.fetchone():
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS license_validations (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    license_id INTEGER NOT NULL,
-                    validation_type TEXT NOT NULL CHECK(validation_type IN ('online', 'offline')),
-                    success INTEGER DEFAULT 1,
-                    error_message TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE
-                )
-            ''')
-            conn.commit()
-        
-        cursor.execute('''
-            INSERT INTO license_validations (license_id, validation_type, success, created_at)
-            VALUES (?, ?, ?, ?)
-        ''', (license_dict['id'], 'online', 1 if is_valid else 0, datetime.now().isoformat()))
-        conn.commit()
-        
-        conn.close()
-        
-        return jsonify({
-            'valid': is_valid,
-            'license': license_dict,
-            'message': 'License validated successfully' if is_valid else 'License has expired'
-        }), 200
-        
-    except Exception as e:
-        print(f"[Backend] Error validating license: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-
-# ============================================================================
-# ADMIN ENDPOINTS
-# ============================================================================
-
-@app.route('/api/admin/users', methods=['GET'])
-@require_admin
-def get_all_users():
-    """Get all users (admin only)"""
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT id, email, role, created_at, updated_at, last_login
-            FROM users
-            ORDER BY created_at DESC
-        ''')
-        users = [dict(row) for row in cursor.fetchall()]
-        
-        conn.close()
-        return jsonify(users), 200
-        
-    except Exception as e:
-        print(f"[Backend] Error getting all users: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/admin/users', methods=['POST'])
-@require_admin
-def create_user():
-    """Create a new user (admin only)"""
-    try:
-        data = request.get_json()
-        
-        if not data or not data.get('email') or not data.get('password'):
-            return jsonify({'error': 'Email and password are required'}), 400
-        
-        email = data['email'].lower().strip()
-        password = data['password']
-        role = data.get('role', 'user')
-        
-        if role not in ['user', 'admin']:
-            return jsonify({'error': 'Invalid role'}), 400
-        
-        if len(password) < 8:
-            return jsonify({'error': 'Password must be at least 8 characters'}), 400
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Check if user already exists
-        cursor.execute('SELECT id FROM users WHERE email = ?', (email,))
-        if cursor.fetchone():
-            conn.close()
-            return jsonify({'error': 'User with this email already exists'}), 409
-        
-        # Hash password
-        password_hash = hash_password(password)
-        
-        # Create user
-        cursor.execute('''
-            INSERT INTO users (email, password_hash, role, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (email, password_hash, role, datetime.now().isoformat(), datetime.now().isoformat()))
-        
-        user_id = cursor.lastrowid
-        
-        # Create license if specified
-        license_type = data.get('license_type', 'trial')
-        if license_type in ['trial', 'premium']:
-            trial_start = datetime.now()
-            if license_type == 'trial':
-                trial_end = trial_start + timedelta(days=30)
-            else:
-                trial_end = None  # Premium never expires
-            
-            cursor.execute('''
-                INSERT INTO licenses (user_id, license_type, status, starts_at, expires_at, created_at, updated_at, last_validated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                user_id,
-                license_type,
-                'active',
-                trial_start.isoformat(),
-                trial_end.isoformat() if trial_end else None,
-                datetime.now().isoformat(),
-                datetime.now().isoformat(),
-                datetime.now().isoformat()
-            ))
-        
-        conn.commit()
-        
-        cursor.execute('SELECT id, email, role, created_at FROM users WHERE id = ?', (user_id,))
-        user = dict(cursor.fetchone())
-        
-        conn.close()
-        
-        return jsonify(user), 201
-        
-    except Exception as e:
-        print(f"[Backend] Error creating user: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/admin/users/<int:user_id>', methods=['PUT'])
-@require_admin
-def update_user(user_id):
-    """Update a user (admin only)"""
-    try:
-        data = request.get_json()
-        
-        if not data:
-            return jsonify({'error': 'No data provided'}), 400
-        
         conn = get_db()
         cursor = conn.cursor()
         
         # Check if user exists
-        cursor.execute('SELECT id FROM users WHERE id = ?', (user_id,))
-        if not cursor.fetchone():
+        cursor.execute("SELECT id FROM users WHERE email = %s", (email,))
+        if cursor.fetchone():
             conn.close()
-            return jsonify({'error': 'User not found'}), 404
+            return jsonify({'error': 'User already exists'}), 400
+            
+        # Hash password
+        password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
         
-        update_fields = []
-        values = []
-        
-        if 'email' in data:
-            new_email = data['email'].lower().strip()
-            # Check if email is already taken
-            cursor.execute('SELECT id FROM users WHERE email = ? AND id != ?', (new_email, user_id))
-            if cursor.fetchone():
-                conn.close()
-                return jsonify({'error': 'Email already in use'}), 409
-            update_fields.append('email = ?')
-            values.append(new_email)
-        
-        if 'password' in data:
-            new_password = data['password']
-            if len(new_password) < 8:
-                conn.close()
-                return jsonify({'error': 'Password must be at least 8 characters'}), 400
-            password_hash = hash_password(new_password)
-            update_fields.append('password_hash = ?')
-            values.append(password_hash)
-        
-        if 'role' in data:
-            if data['role'] not in ['user', 'admin']:
-                conn.close()
-                return jsonify({'error': 'Invalid role'}), 400
-            update_fields.append('role = ?')
-            values.append(data['role'])
-        
-        if not update_fields:
-            conn.close()
-            return jsonify({'error': 'No valid fields to update'}), 400
-        
-        update_fields.append('updated_at = ?')
-        values.append(datetime.now().isoformat())
-        values.append(user_id)
-        
-        query = f'UPDATE users SET {", ".join(update_fields)} WHERE id = ?'
-        cursor.execute(query, values)
+        # Insert user
+        cursor.execute(
+            "INSERT INTO users (email, password_hash, role, created_at) VALUES (%s, %s, 'user', NOW()) RETURNING id",
+            (email, password_hash)
+        )
+        user_id = cursor.fetchone()['id']
         conn.commit()
-        
-        cursor.execute('SELECT id, email, role, created_at, last_login FROM users WHERE id = ?', (user_id,))
-        updated_user = dict(cursor.fetchone())
-        
+        conn.commit()
         conn.close()
         
-        return jsonify(updated_user), 200
+        # Send welcome email using our new service (which also logs it)
+        try:
+            send_welcome_email(email, user_id)
+        except Exception as e:
+            print(f"Failed to send welcome email: {e}") 
+
+        return jsonify({'message': 'User created', 'user_id': user_id}), 201
         
     except Exception as e:
-        print(f"[Backend] Error updating user: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"Error registering user: {e}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/admin/users/<int:user_id>/send-credentials', methods=['POST'])
-@require_admin
-def send_user_credentials(user_id):
-    """Send login credentials to user via email (admin only)"""
+@app.route('/auth/login', methods=['POST', 'OPTIONS'])
+def login():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+        
+    try:
+        data = request.get_json()
+        email = data.get('email')
+        password = data.get('password')
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
+        user = cursor.fetchone()
+        
+        if user and bcrypt.checkpw(password.encode('utf-8'), user['password_hash'].encode('utf-8')):
+            # Update last login
+            cursor.execute("UPDATE users SET last_login = NOW() WHERE id = %s", (user['id'],))
+            conn.commit()
+            conn.close()
+            
+            # Generate JWT
+            token = jwt.encode({
+                'user_id': user['id'],
+                'role': user['role'],
+                'exp': datetime.utcnow() + timedelta(hours=24)
+            }, app.config['JWT_SECRET_KEY'], algorithm='HS256')
+            
+            return jsonify({
+                'token': token,
+                'user': {
+                    'id': user['id'],
+                    'email': user['email'],
+                    'role': user['role']
+                }
+            }), 200
+            
+        return jsonify({'error': 'Invalid credentials'}), 401
+        
+    except Exception as e:
+        print(f"Error logging in: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/settings', methods=['GET', 'POST'])
+def handle_settings():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
     try:
         conn = get_db()
         cursor = conn.cursor()
         
-        # Get user
-        cursor.execute('SELECT id, email FROM users WHERE id = ?', (user_id,))
-        user = cursor.fetchone()
-        
-        if not user:
+        if request.method == 'GET':
+            cursor.execute("SELECT key, value FROM settings")
+            rows = cursor.fetchall()
+            settings = {row['key']: row['value'] for row in rows}
             conn.close()
-            return jsonify({'error': 'User not found'}), 404
+            return jsonify(settings), 200
+            
+        # Handle POST
+        data = request.json
+        for key, value in data.items():
+            cursor.execute(
+                "INSERT INTO settings (key, value) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+                (key, str(value))
+            )
+        conn.commit()
+        conn.close()
+        return jsonify({'message': 'Settings saved'}), 200
         
-        data = request.get_json() or {}
+    except Exception as e:
+        print(f"Error handling settings: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+
+# ============================================================================
+# INITIALIZATION
+# ============================================================================
+
+def init_db():
+    """Verify database connection"""
+    try:
+        conn = get_db()
+        print("✅ Connected to PostgreSQL database successfully!")
+        
+        # Ensure 'receipts' bucket exists in Supabase Storage
+        if supabase:
+            try:
+                buckets = supabase.storage.list_buckets()
+                bucket_names = [b.name for b in buckets]
+                if 'receipts' not in bucket_names:
+                    print("📦 Creating 'receipts' storage bucket...")
+                    supabase.storage.create_bucket('receipts', {'public': False})
+            except Exception as e:
+                print(f"⚠️  Could not verify/create storage bucket: {e}")
+                
+        conn.close()
+    except Exception as e:
+        print(f"❌ Database connection failed: {e}")
+
+
+
+
+# ============================================================================
+# ENDPOINTS
+# ============================================================================
+
+# --- Dashboard & Settings ---
+
+@app.route('/dashboard-layout', methods=['GET', 'POST'])
+@require_auth
+def handle_dashboard_layout():
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        if request.method == 'GET':
+            cursor.execute("SELECT value FROM settings WHERE key = 'dashboard_layout'")
+            row = cursor.fetchone()
+            conn.close()
+            return jsonify(json.loads(row['value']) if row else {'widgets': []})
+        
+        data = request.json
+        widgets = data.get('widgets', [])
+        cursor.execute("INSERT INTO settings (key, value) VALUES ('dashboard_layout', %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", (json.dumps(widgets),))
+        conn.commit()
+        conn.close()
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        print(f"Error in dashboard-layout: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# --- Transactions ---
+
+@app.route('/transactions', methods=['GET'])
+@require_auth
+def get_transactions():
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM transactions ORDER BY date DESC")
+        rows = cursor.fetchall()
+        conn.close()
+        # Convert date/timestamp objects to string
+        transactions = []
+        for row in rows:
+            t = dict(row)
+            if t.get('date'): t['date'] = str(t['date'])
+            if t.get('created_at'): t['created_at'] = str(t['created_at'])
+            if t.get('updated_at'): t['updated_at'] = str(t['updated_at'])
+            transactions.append(t)
+        return jsonify(transactions)
+    except Exception as e:
+        print(f"Error getting transactions: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/transactions', methods=['POST'])
+@require_auth
+def create_transaction():
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO transactions (title, date, amount, type, category, status, note, receipt, receipt_path)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING *
+        """, (
+            data.get('title'),
+            data.get('date'),
+            data.get('amount'),
+            data.get('type'),
+            data.get('category'),
+            data.get('status', 'Väntar'),
+            data.get('note', ''),
+            data.get('receipt', False),
+            data.get('receipt_path')
+        ))
+        new_transaction = cursor.fetchone()
+        conn.commit()
+        conn.close()
+        
+        # Serialize
+        new_transaction = dict(new_transaction)
+        new_transaction['date'] = str(new_transaction['date'])
+        new_transaction['created_at'] = str(new_transaction['created_at'])
+        
+        return jsonify(new_transaction), 201
+    except Exception as e:
+        print(f"Error creating transaction: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/transactions/<int:id>', methods=['PUT'])
+@require_auth
+def update_transaction(id):
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        fields = ['title', 'date', 'amount', 'type', 'category', 'status', 'note', 'receipt', 'receipt_path']
+        updates = []
+        values = []
+        for f in fields:
+            if f in data:
+                updates.append(f"{f} = %s")
+                values.append(data[f])
+        
+        if not updates:
+            return jsonify({'message': 'No fields to update'})
+
+        values.append(id)
+        query = f"UPDATE transactions SET {', '.join(updates)}, updated_at = NOW() WHERE id = %s RETURNING *"
+        cursor.execute(query, values)
+        updated = cursor.fetchone()
+        conn.commit()
+        conn.close()
+        
+        if not updated:
+            return jsonify({'error': 'Transaction not found'}), 404
+            
+        res = dict(updated)
+        res['date'] = str(res['date'])
+        res['created_at'] = str(res['created_at'])
+        res['updated_at'] = str(res['updated_at'])
+        return jsonify(res)
+    except Exception as e:
+        print(f"Error updating transaction: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/transactions/<int:id>', methods=['DELETE'])
+@require_auth
+def delete_transaction(id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM transactions WHERE id = %s RETURNING id", (id,))
+        deleted = cursor.fetchone()
+        conn.commit()
+        conn.close()
+        if not deleted:
+            return jsonify({'error': 'Transaction not found'}), 404
+        return jsonify({'message': 'Transaction deleted'})
+    except Exception as e:
+        print(f"Error deleting transaction: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# --- Categories ---
+
+@app.route('/categories', methods=['GET'])
+@require_auth
+def get_categories():
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM categories ORDER BY name")
+        rows = cursor.fetchall()
+        conn.close()
+        return jsonify([dict(row) for row in rows])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/categories', methods=['POST'])
+@require_auth
+def create_category():
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO categories (name) VALUES (%s) RETURNING *", (data.get('name'),))
+        new_cat = cursor.fetchone()
+        conn.commit()
+        conn.close()
+        return jsonify(dict(new_cat)), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/categories/<int:id>', methods=['DELETE'])
+@require_auth
+def delete_category(id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM categories WHERE id = %s RETURNING id", (id,))
+        deleted = cursor.fetchone()
+        conn.commit()
+        conn.close()
+        if not deleted: 
+            return jsonify({'error': 'Category not found'}), 404
+        return jsonify({'message': 'Category deleted'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# --- Agreements ---
+
+@app.route('/agreements', methods=['GET'])
+@require_auth
+def get_agreements():
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM agreements ORDER BY name")
+        rows = cursor.fetchall()
+        conn.close()
+        
+        agreements = []
+        for row in rows:
+            a = dict(row)
+            # Handle JSON fields
+            if a.get('images'): 
+                try: a['images'] = json.loads(a['images'])
+                except: a['images'] = []
+            else: a['images'] = []
+            
+            # Dates to string
+            for date_field in ['next_payment', 'start_date', 'end_date', 'created_at', 'updated_at']:
+                if a.get(date_field): a[date_field] = str(a[date_field])
+            agreements.append(a)
+            
+        return jsonify(agreements)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/agreements', methods=['POST'])
+@require_auth
+def create_agreement():
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Handle images list -> JSON
+        images = json.dumps(data.get('images', []))
+        
+        cursor.execute("""
+            INSERT INTO agreements (name, provider, cost, frequency, next_payment, status, category, icon, notice, images, start_date, end_date)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING *
+        """, (
+            data.get('name'), data.get('provider'), data.get('cost'), data.get('frequency'),
+            data.get('next_payment'), data.get('status', 'Aktiv'), data.get('category'),
+            data.get('icon', '📄'), data.get('notice', ''), images,
+            data.get('start_date'), data.get('end_date')
+        ))
+        new_agreement = cursor.fetchone()
+        conn.commit()
+        conn.close()
+        
+        res = dict(new_agreement)
+        if res.get('created_at'): res['created_at'] = str(res['created_at'])
+        if res.get('next_payment'): res['next_payment'] = str(res['next_payment'])
+        if res.get('images'): res['images'] = json.loads(res['images'])
+        
+        return jsonify(res), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/agreements/<int:id>', methods=['PUT'])
+@require_auth
+def update_agreement(id):
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        fields = ['name', 'provider', 'cost', 'frequency', 'next_payment', 'status', 'category', 'icon', 'notice', 'images', 'start_date', 'end_date']
+        updates = []
+        values = []
+        for f in fields:
+            if f in data:
+                updates.append(f"{f} = %s")
+                val = data[f]
+                if f == 'images' and isinstance(val, list):
+                    val = json.dumps(val)
+                values.append(val)
+        
+        if not updates: return jsonify({'message': 'No updates'})
+        
+        values.append(id)
+        cursor.execute(f"UPDATE agreements SET {', '.join(updates)}, updated_at = NOW() WHERE id = %s RETURNING *", values)
+        updated = cursor.fetchone()
+        conn.commit()
+        conn.close()
+        
+        if not updated: return jsonify({'error': 'Agreement not found'}), 404
+        
+        res = dict(updated)
+        if res.get('images'): res['images'] = json.loads(res['images'])
+        dates = ['next_payment', 'start_date', 'end_date', 'created_at', 'updated_at']
+        for d in dates:
+             if res.get(d): res[d] = str(res[d])
+             
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/agreements/<int:id>', methods=['DELETE'])
+@require_auth
+def delete_agreement(id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM agreements WHERE id = %s RETURNING id", (id,))
+        deleted = cursor.fetchone()
+        conn.commit()
+        conn.close()
+        if not deleted: return jsonify({'error': 'Agreement not found'}), 404
+        return jsonify({'message': 'Agreement deleted'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+
+
+# --- Vehicles ---
+
+@app.route('/vehicles', methods=['GET'])
+@require_auth
+def get_vehicles():
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM vehicles ORDER BY make_model")
+        rows = cursor.fetchall()
+        conn.close()
+        vehicles = []
+        for row in rows:
+            v = dict(row)
+            if v.get('images'): 
+                try: v['images'] = json.loads(v['images'])
+                except: v['images'] = []
+            else: v['images'] = []
+            vehicles.append(v)
+        return jsonify(vehicles)
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+@app.route('/vehicles', methods=['POST'])
+@require_auth
+def create_vehicle():
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO vehicles (registration_number, make_model, odometer, next_inspection, insurance_company, insurance_type, status, category, note, images) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *
+        """, (
+            data.get('registration_number'), data.get('make_model'), data.get('odometer', 0),
+            data.get('next_inspection'), data.get('insurance_company'), data.get('insurance_type'),
+            data.get('status', 'Aktiv'), data.get('category', 'Personbil'), data.get('note', ''),
+            json.dumps(data.get('images', []))
+        ))
+        row = cursor.fetchone()
+        conn.commit()
+        conn.close()
+        res = dict(row)
+        if res.get('images'): res['images'] = json.loads(res['images'])
+        return jsonify(res), 201
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+@app.route('/vehicles/<int:id>', methods=['PUT', 'DELETE'])
+@require_auth
+def manage_vehicle(id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        if request.method == 'DELETE':
+            cursor.execute("DELETE FROM vehicles WHERE id = %s RETURNING id", (id,))
+            if not cursor.fetchone(): return jsonify({'error': 'Not found'}), 404
+            conn.commit()
+            conn.close()
+            return jsonify({'message': 'Deleted'})
+        
+        # PUT
+        data = request.json
+        fields = ['registration_number', 'make_model', 'odometer', 'next_inspection', 'insurance_company', 'insurance_type', 'status', 'category', 'note', 'images', 'next_service_odometer', 'next_service_date']
+        updates, values = [], []
+        for f in fields:
+            if f in data:
+                updates.append(f"{f}=%s")
+                val = data[f]
+                if f == 'images' and isinstance(val, list): val = json.dumps(val)
+                values.append(val)
+        
+        if not updates: return jsonify({'message': 'No updates'})
+        values.append(id)
+        cursor.execute(f"UPDATE vehicles SET {','.join(updates)}, updated_at=NOW() WHERE id=%s RETURNING *", values)
+        row = cursor.fetchone()
+        conn.commit()
+        conn.close()
+        if not row: return jsonify({'error': 'Not found'}), 404
+        res = dict(row)
+        if res.get('images'): res['images'] = json.loads(res['images'])
+        return jsonify(res)
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+# --- Vehicle Expenses ---
+
+@app.route('/vehicle-expenses', methods=['GET'])
+@require_auth
+def get_vehicle_expenses():
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        vehicle_id = request.args.get('vehicle_id')
+        if vehicle_id:
+            cursor.execute("SELECT * FROM vehicle_expenses WHERE vehicle_id = %s ORDER BY date DESC", (vehicle_id,))
+        else:
+            cursor.execute("SELECT * FROM vehicle_expenses ORDER BY date DESC")
+        rows = cursor.fetchall()
+        conn.close()
+        return jsonify([dict(row) for row in rows])
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+@app.route('/vehicle-expenses', methods=['POST'])
+@require_auth
+def create_vehicle_expense():
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO vehicle_expenses (vehicle_id, category, amount, date, description, receipt_path, note, odometer_at_purchase)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING *
+        """, (
+            data.get('vehicle_id'), data.get('category'), data.get('amount'), data.get('date'),
+            data.get('description', ''), data.get('receipt_path'), data.get('note', ''), data.get('odometer_at_purchase')
+        ))
+        row = cursor.fetchone()
+        conn.commit()
+        conn.close()
+        return jsonify(dict(row)), 201
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+@app.route('/vehicle-expenses/<int:id>', methods=['DELETE'])
+@require_auth
+def delete_vehicle_expense(id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM vehicle_expenses WHERE id = %s RETURNING id", (id,))
+        if not cursor.fetchone(): return jsonify({'error': 'Not found'}), 404
+        conn.commit()
+        conn.close()
+        return jsonify({'message': 'Deleted'})
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+# --- Loans ---
+
+@app.route('/loans', methods=['GET'])
+@require_auth
+def get_loans():
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM loans ORDER BY name")
+        rows = cursor.fetchall()
+        conn.close()
+        return jsonify([dict(row) for row in rows])
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+@app.route('/loans', methods=['POST'])
+@require_auth
+def create_loan():
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO loans (name, lender, principal_amount, current_balance, interest_rate, monthly_payment, amortization_amount, interest_amount, start_date, end_date, status, category, note)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *
+        """, (
+            data.get('name'), data.get('lender'), data.get('principal_amount'), data.get('current_balance'),
+            data.get('interest_rate'), data.get('monthly_payment'), data.get('amortization_amount'),
+            data.get('interest_amount'), data.get('start_date'), data.get('end_date'),
+            data.get('status', 'Aktiv'), data.get('category', 'Bolån'), data.get('note', '')
+        ))
+        row = cursor.fetchone()
+        conn.commit()
+        conn.close()
+        return jsonify(dict(row)), 201
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+@app.route('/loans/<int:id>', methods=['PUT', 'DELETE'])
+@require_auth
+def manage_loan(id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        if request.method == 'DELETE':
+            cursor.execute("DELETE FROM loans WHERE id = %s RETURNING id", (id,))
+            if not cursor.fetchone(): return jsonify({'error': 'Not found'}), 404
+            conn.commit()
+            conn.close()
+            return jsonify({'message': 'Deleted'})
+        
+        # PUT
+        data = request.json
+        fields = ['name', 'lender', 'principal_amount', 'current_balance', 'interest_rate', 'monthly_payment', 'amortization_amount', 'interest_amount', 'start_date', 'end_date', 'status', 'category', 'note']
+        updates, values = [], []
+        for f in fields:
+            if f in data:
+                updates.append(f"{f}=%s")
+                values.append(data[f])
+        values.append(id)
+        cursor.execute(f"UPDATE loans SET {','.join(updates)}, updated_at=NOW() WHERE id=%s RETURNING *", values)
+        row = cursor.fetchone()
+        conn.commit()
+        conn.close()
+        if not row: return jsonify({'error': 'Not found'}), 404
+        return jsonify(dict(row))
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+# --- Savings ---
+
+@app.route('/savings/goals', methods=['GET'])
+@require_auth
+def get_savings_goals():
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM savings_goals ORDER BY created_at DESC")
+        rows = cursor.fetchall()
+        conn.close()
+        return jsonify([dict(row) for row in rows])
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+@app.route('/savings/goals', methods=['POST'])
+@require_auth
+def create_savings_goal():
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO savings_goals (name, target_amount, current_amount, deadline, category, status, description)
+            VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *
+        """, (
+            data.get('name'), data.get('target_amount'), data.get('current_amount', 0),
+            data.get('deadline'), data.get('category'), data.get('status', 'Aktiv'), data.get('description', '')
+        ))
+        row = cursor.fetchone()
+        conn.commit()
+        conn.close()
+        return jsonify(dict(row)), 201
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+@app.route('/savings/accounts', methods=['GET'])
+@require_auth
+def get_savings_accounts():
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM savings_accounts ORDER BY name")
+        rows = cursor.fetchall()
+        conn.close()
+        return jsonify([dict(row) for row in rows])
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+@app.route('/savings/accounts', methods=['POST'])
+@require_auth
+def create_savings_account():
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO savings_accounts (name, balance, description, category, status)
+            VALUES (%s, %s, %s, %s, %s) RETURNING *
+        """, (
+            data.get('name'), data.get('balance', 0), data.get('description', ''),
+            data.get('category'), data.get('status', 'Aktiv')
+        ))
+        row = cursor.fetchone()
+        conn.commit()
+        conn.close()
+        return jsonify(dict(row)), 201
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+# --- Licenses ---
+
+@app.route('/licenses/current', methods=['GET'])
+@require_auth
+def get_current_license():
+    try:
+        user_id = request.current_user['user_id']
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM licenses WHERE user_id = %s AND status = 'active' ORDER BY created_at DESC LIMIT 1", (user_id,))
+        row = cursor.fetchone()
+        conn.close()
+        if row: return jsonify(dict(row))
+        return jsonify({'error': 'No active license'}), 404
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+@app.route('/licenses/status', methods=['GET'])
+@require_auth
+def get_license_status():
+    try:
+        user_id = request.current_user['user_id']
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM licenses WHERE user_id = %s ORDER BY created_at DESC LIMIT 1", (user_id,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+             return jsonify({'has_license': False, 'status': 'no_license', 'message': 'No license found'})
+             
+        lic = dict(row)
+        # Simplified expiration check
+        is_expired = False
+        if lic.get('expires_at'):
+             if datetime.now() > lic['expires_at']: is_expired = True # Assuming datetime object from psycopg
+        
+        return jsonify({
+            'has_license': True,
+            'license': lic,
+            'status': 'expired' if is_expired else lic['status'],
+            'is_expired': is_expired,
+            'can_use': not is_expired and lic['status'] == 'active'
+        })
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+
+
+
+# Missing Category Rules Endpoints
+@app.route('/category-rules', methods=['GET'])
+@require_auth
+def get_category_rules():
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM category_rules ORDER BY priority ASC")
+        rows = cursor.fetchall()
+        conn.close()
+        return jsonify([dict(row) for row in rows])
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+@app.route('/category-rules', methods=['POST'])
+@require_auth
+def create_category_rule():
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO category_rules (keyword, category_id, priority)
+            VALUES (%s, %s, %s) RETURNING *
+        """, (data.get('keyword'), data.get('category_id'), data.get('priority', 0)))
+        row = cursor.fetchone()
+        conn.commit()
+        conn.close()
+        return jsonify(dict(row)), 201
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+@app.route('/category-rules/<int:id>', methods=['PUT', 'DELETE'])
+@require_auth
+def manage_category_rule(id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        if request.method == 'DELETE':
+            cursor.execute("DELETE FROM category_rules WHERE id = %s RETURNING id", (id,))
+            if not cursor.fetchone(): return jsonify({'error': 'Not found'}), 404
+            conn.commit()
+            conn.close()
+            return jsonify({'message': 'Deleted'})
+            
+        data = request.json
+        cursor.execute("""
+            UPDATE category_rules SET keyword=%s, category_id=%s, priority=%s WHERE id=%s RETURNING *
+        """, (data.get('keyword'), data.get('category_id'), data.get('priority'), id))
+        row = cursor.fetchone()
+        conn.commit()
+        conn.close()
+        if not row: return jsonify({'error': 'Not found'}), 404
+        return jsonify(dict(row))
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+# Missing Categories with IDs Endpoint
+@app.route('/categories/with-ids', methods=['GET'])
+@require_auth
+def get_categories_with_ids():
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name FROM categories ORDER BY name")
+        rows = cursor.fetchall()
+        conn.close()
+        return jsonify([dict(row) for row in rows])
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+# Missing Payments History Endpoint (Placeholder logic based on existing schema or lack thereof)
+@app.route('/payments/history', methods=['GET'])
+@require_auth
+def get_payment_history():
+    try:
+        # Assuming there is a payments table or requesting similar data
+        conn = get_db()
+        cursor = conn.cursor()
+        # Fallback if no table exists yet: return empty list to stop frontend error
+        # Check if table exists
+        cursor.execute("SELECT to_regclass('public.payments')")
+        if cursor.fetchone()['to_regclass']:
+             cursor.execute("SELECT * FROM payments ORDER BY created_at DESC")
+             rows = cursor.fetchall()
+             conn.close()
+             return jsonify([dict(row) for row in rows])
+        else:
+             conn.close()
+             return jsonify([]) # Return empty list if no payments table
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+# --- Missing Endpoints V2 ---
+
+@app.route('/payments/subscription', methods=['GET'])
+@require_auth
+def get_current_subscription():
+    try:
+        user_id = request.current_user['user_id']
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT s.*, p.amount as last_payment_amount 
+            FROM subscriptions s
+            LEFT JOIN payments p ON s.id = p.subscription_id
+            WHERE s.user_id = %s 
+            ORDER BY s.created_at DESC LIMIT 1
+        """, (user_id,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row: return jsonify(dict(row))
+        return jsonify({'status': 'none', 'message': 'No active subscription'}), 200 # Return 200 even if no sub, handled by frontend
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+@app.route('/media-files', methods=['GET'])
+@require_auth
+def get_media_files():
+    try:
+        # List files in the upload directory
+        files = []
+        if os.path.exists(UPLOAD_FOLDER):
+            for f in os.listdir(UPLOAD_FOLDER):
+                if os.path.isfile(os.path.join(UPLOAD_FOLDER, f)):
+                    files.append({
+                        'name': f,
+                        'url': f'/uploads/{f}',
+                        'size': os.path.getsize(os.path.join(UPLOAD_FOLDER, f)),
+                        'created_at': os.path.getctime(os.path.join(UPLOAD_FOLDER, f))
+                    })
+        return jsonify(files)
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+@app.route('/select-folder', methods=['POST'])
+@require_auth
+def select_folder():
+    # In a web context, we can't really open a system dialog on the server side 
+    # and expect it to work for the client unless it's Electron.
+    # If this is electron, we might need a specific bridge. 
+    # For now, we'll return a stub or use a default if it's just for settings.
+    try:
+        return jsonify({'path': UPLOAD_FOLDER, 'message': 'Folder selection not supported in web mode'}), 200
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+@app.route('/admin/users', methods=['GET'])
+@require_auth
+def get_admin_users():
+    try:
+        if request.current_user['role'] != 'admin':
+            return jsonify({'error': 'Unauthorized'}), 403
+            
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, email, role, created_at, last_login FROM users ORDER BY created_at DESC")
+        rows = cursor.fetchall()
+        conn.close()
+        
+        # Convert dates
+        users = []
+        for row in rows:
+            u = dict(row)
+            if u.get('created_at'): u['created_at'] = str(u['created_at'])
+            if u.get('last_login'): u['last_login'] = str(u['last_login'])
+            users.append(u)
+            
+        return jsonify(users)
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+# --- History Endpoint ---
+
+@app.route('/history', methods=['GET'])
+@require_auth
+def get_history():
+    try:
+        user_id = request.current_user['user_id']
+        limit = request.args.get('limit', 100, type=int)
+        entity_type = request.args.get('entity_type')
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Check if 'history' table exists (it likely doesn't based on previous schema checks)
+        # If it doesn't, we return an empty list to prevent 404/500 errors.
+        # If you later decide to implement a real history table, you'd CREATE it in schema_pg.sql first.
+        cursor.execute("SELECT to_regclass('public.history')")
+        if cursor.fetchone()['to_regclass']:
+             query = "SELECT * FROM history WHERE user_id = %s"
+             params = [user_id]
+             
+             if entity_type:
+                 query += " AND entity_type = %s"
+                 params.append(entity_type)
+                 
+             query += " ORDER BY created_at DESC LIMIT %s"
+             params.append(limit)
+             
+             cursor.execute(query, params)
+             rows = cursor.fetchall()
+             conn.close()
+             
+             history_items = []
+             for row in rows:
+                 item = dict(row)
+                 if item.get('created_at'): item['created_at'] = str(item['created_at'])
+                 history_items.append(item)
+                 
+             return jsonify(history_items)
+        else:
+            conn.close()
+            return jsonify([]) # Return empty list so frontend doesn't crash
+
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+# --- Missing Admin Endpoints ---
+
+@app.route('/admin/licenses', methods=['GET'])
+@require_auth
+def get_admin_licenses():
+    try:
+        if request.current_user['role'] != 'admin':
+            return jsonify({'error': 'Unauthorized'}), 403
+            
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM licenses ORDER BY created_at DESC")
+        rows = cursor.fetchall()
+        conn.close()
+        
+        licenses = []
+        for row in rows:
+            l = dict(row)
+            if l.get('starts_at'): l['starts_at'] = str(l['starts_at'])
+            if l.get('expires_at'): l['expires_at'] = str(l['expires_at'])
+            if l.get('created_at'): l['created_at'] = str(l['created_at'])
+            licenses.append(l)
+            
+        return jsonify(licenses)
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+@app.route('/admin/statistics', methods=['GET'])
+@require_auth
+def get_admin_statistics():
+    try:
+        if request.current_user['role'] != 'admin':
+            return jsonify({'error': 'Unauthorized'}), 403
+            
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        stats = {}
+        
+        # Total users
+        cursor.execute("SELECT COUNT(*) as count FROM users")
+        stats['total_users'] = cursor.fetchone()['count']
+        
+        # New users last 30 days
+        cursor.execute("SELECT COUNT(*) as count FROM users WHERE created_at > NOW() - INTERVAL '30 days'")
+        stats['new_users_30d'] = cursor.fetchone()['count']
+        
+        # Active licenses
+        cursor.execute("SELECT COUNT(*) as count FROM licenses WHERE status = 'active'")
+        stats['active_licenses'] = cursor.fetchone()['count']
+        
+        # Total revenue (from payments)
+        cursor.execute("SELECT SUM(amount) as total FROM payments WHERE status = 'succeeded'")
+        res = cursor.fetchone()
+        stats['total_revenue'] = float(res['total']) if res and res['total'] else 0.0
+        
+        conn.close()
+        return jsonify(stats)
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+@app.route('/admin/payments', methods=['GET'])
+@require_auth
+def get_admin_payments():
+    try:
+        if request.current_user['role'] != 'admin':
+            return jsonify({'error': 'Unauthorized'}), 403
+            
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM payments ORDER BY created_at DESC LIMIT 100")
+        rows = cursor.fetchall()
+        conn.close()
+        
+        payments = []
+        for row in rows:
+            p = dict(row)
+            if p.get('created_at'): p['created_at'] = str(p['created_at'])
+            payments.append(p)
+            
+        return jsonify(payments)
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+@app.route('/admin/system-settings', methods=['GET'])
+@require_auth
+def get_admin_system_settings():
+    try:
+        if request.current_user['role'] != 'admin':
+            return jsonify({'error': 'Unauthorized'}), 403
+        
+        # Get settings from DB
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT key, value FROM settings")
+        rows = cursor.fetchall()
+        conn.close()
+        
+        db_settings = {row['key']: row['value'] for row in rows}
+
+        # Construct nested response as expected by frontend
+        response = {
+            "database": {
+                "type": "PostgreSQL",
+                "upload_folder": app.config.get('UPLOAD_FOLDER', 'uploads')
+            },
+            "stripe": {
+                "secret_key_configured": bool(os.environ.get('STRIPE_SECRET_KEY')),
+                "publishable_key_configured": bool(os.environ.get('STRIPE_PUBLISHABLE_KEY')),
+                "webhook_secret_configured": bool(os.environ.get('STRIPE_WEBHOOK_SECRET')),
+                "price_id": os.environ.get('STRIPE_PRICE_ID'),
+                "price_id_configured": bool(os.environ.get('STRIPE_PRICE_ID'))
+            },
+            "sendgrid": {
+                "api_key_configured": bool(os.environ.get('SENDGRID_API_KEY')),
+                "from_email": os.environ.get('SENDGRID_FROM_EMAIL')
+            },
+            # Include raw DB settings if needed, or map them
+            "general": db_settings
+        }
+        
+        return jsonify(response)
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+@app.route('/settings', methods=['GET', 'POST', 'OPTIONS'])
+@cross_origin(supports_credentials=True)
+@require_auth
+def manage_app_settings():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    if request.method == 'GET':
+        try:
+            cursor.execute("SELECT key, value FROM settings")
+            rows = cursor.fetchall()
+            settings = {row['key']: row['value'] for row in rows}
+            conn.close()
+            return jsonify(settings), 200
+        except Exception as e:
+            conn.close()
+            return jsonify({'error': str(e)}), 500
+
+    if request.method == 'POST':
+        try:
+            data = request.json
+            if not data:
+                conn.close()
+                return jsonify({'error': 'No data provided'}), 400
+            
+            for key, value in data.items():
+                cursor.execute("""
+                    INSERT INTO settings (key, value, updated_at) 
+                    VALUES (%s, %s, NOW()) 
+                    ON CONFLICT (key) 
+                    DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+                """, (str(key), str(value)))
+            
+            conn.commit()
+            conn.close()
+            return jsonify({'message': 'Settings saved'}), 200
+        except Exception as e:
+            conn.close()
+            return jsonify({'error': str(e)}), 500
+
+@app.route('/admin/email-logs', methods=['GET', 'OPTIONS'])
+@cross_origin(supports_credentials=True)
+@require_auth
+@require_role('admin')
+def get_email_logs():
+        
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT el.*, u.email as user_email 
+            FROM email_logs el
+            LEFT JOIN users u ON el.user_id = u.id
+            ORDER BY el.created_at DESC 
+            LIMIT 100
+        """)
+        
+        logs = cursor.fetchall()
+        conn.close()
+        
+        return jsonify(logs), 200
+    except Exception as e:
+        print(f"Error fetching email logs: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/admin/users/<int:user_id>/send-credentials', methods=['POST', 'OPTIONS'])
+@cross_origin(supports_credentials=True)
+@require_auth
+@require_role('admin')
+def send_user_credentials(user_id):
+        
+    try:
+        data = request.get_json()
         password = data.get('password')
         
         if not password:
-            conn.close()
             return jsonify({'error': 'Password is required'}), 400
-        
-        user_email = user['email']
-        
-        # Send email with login credentials
-        if sendgrid_client:
-            try:
-                email_html = f"""
-                <!DOCTYPE html>
-                <html lang="sv">
-                <head>
-                    <meta charset="utf-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-                    <title>Dina inloggningsuppgifter för WestBudget</title>
-                    <style>
-                        body {{ 
-                            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; 
-                            line-height: 1.6; 
-                            color: #333333; 
-                            margin: 0; 
-                            padding: 0; 
-                            background-color: #f4f4f4;
-                        }}
-                        .email-wrapper {{
-                            max-width: 600px; 
-                            margin: 20px auto; 
-                            background-color: #ffffff;
-                            border-radius: 8px;
-                            overflow: hidden;
-                            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                        }}
-                        .header {{ 
-                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                            color: #ffffff; 
-                            padding: 40px 30px; 
-                            text-align: center; 
-                        }}
-                        .header h1 {{
-                            margin: 0;
-                            font-size: 28px;
-                            font-weight: 600;
-                        }}
-                        .header p {{
-                            margin: 10px 0 0 0;
-                            font-size: 16px;
-                            opacity: 0.95;
-                        }}
-                        .content {{ 
-                            padding: 30px; 
-                        }}
-                        .greeting {{
-                            font-size: 16px;
-                            margin-bottom: 20px;
-                        }}
-                        .credentials {{ 
-                            background: #f8f9fa; 
-                            border: 1px solid #e0e0e0; 
-                            border-radius: 6px; 
-                            padding: 20px; 
-                            margin: 25px 0; 
-                        }}
-                        .credential-item {{ 
-                            margin: 15px 0; 
-                        }}
-                        .label {{ 
-                            font-weight: 600; 
-                            color: #667eea; 
-                            display: block;
-                            margin-bottom: 5px;
-                            font-size: 14px;
-                        }}
-                        .value {{ 
-                            font-family: 'Courier New', monospace; 
-                            font-size: 15px; 
-                            color: #212529; 
-                            background: #ffffff; 
-                            padding: 10px 12px; 
-                            border-radius: 4px; 
-                            border: 1px solid #dee2e6;
-                            word-break: break-all;
-                        }}
-                        .warning {{ 
-                            background: #fff3cd; 
-                            border-left: 4px solid #ffc107; 
-                            padding: 15px; 
-                            margin: 25px 0; 
-                            border-radius: 4px;
-                        }}
-                        .warning strong {{
-                            display: block;
-                            margin-bottom: 5px;
-                        }}
-                        .footer {{ 
-                            text-align: center; 
-                            padding: 20px 30px;
-                            background-color: #f8f9fa;
-                            color: #6c757d; 
-                            font-size: 12px; 
-                            border-top: 1px solid #e0e0e0;
-                        }}
-                        .button {{
-                            display: inline-block;
-                            margin: 20px 0;
-                            padding: 12px 24px;
-                            background-color: #667eea;
-                            color: #ffffff !important;
-                            text-decoration: none;
-                            border-radius: 6px;
-                            font-weight: 600;
-                        }}
-                    </style>
-                </head>
-                <body>
-                    <div class="email-wrapper">
-                        <div class="header">
-                            <h1>WestBudget</h1>
-                            <p>Dina inloggningsuppgifter</p>
-                        </div>
-                        <div class="content">
-                            <p class="greeting">Hej!</p>
-                            <p>Din administratör har skapat ett konto åt dig i WestBudget. Här är dina inloggningsuppgifter:</p>
-                            
-                            <div class="credentials">
-                                <div class="credential-item">
-                                    <span class="label">E-postadress:</span>
-                                    <div class="value">{user_email}</div>
-                                </div>
-                                <div class="credential-item">
-                                    <span class="label">Lösenord:</span>
-                                    <div class="value">{password}</div>
-                                </div>
-                            </div>
-                            
-                            <div class="warning">
-                                <strong>Viktigt:</strong> För din säkerhet, ändra lösenordet efter första inloggningen.
-                            </div>
-                            
-                            <p>Du kan nu logga in på WestBudget med dessa uppgifter.</p>
-                            <p>Om du har frågor, kontakta din administratör.</p>
-                        </div>
-                        <div class="footer">
-                            <p>Detta är ett automatiskt meddelande från WestBudget. Svara inte på detta e-post.</p>
-                            <p>&copy; {datetime.now().year} WestBudget. Alla rättigheter reserverade.</p>
-                        </div>
-                    </div>
-                </body>
-                </html>
-                """
-                
-                email_text = f"""
-                Hej!
-                
-                Din administratör har skapat ett konto åt dig i WestBudget. Här är dina inloggningsuppgifter:
-                
-                E-postadress: {user_email}
-                Lösenord: {password}
-                
-                ⚠️ Viktigt: För din säkerhet, ändra lösenordet efter första inloggningen.
-                
-                Du kan nu logga in på WestBudget med dessa uppgifter.
-                
-                Om du har frågor, kontakta din administratör.
-                
-                Detta är ett automatiskt meddelande, svara inte på detta e-post.
-                """
-                
-                message = Mail(
-                    from_email=(SENDGRID_FROM_EMAIL, SENDGRID_FROM_NAME),
-                    to_emails=user_email,
-                    subject='Dina inloggningsuppgifter för WestBudget',
-                    html_content=email_html,
-                    plain_text_content=email_text
-                )
-                
-                # Set email headers to improve deliverability
-                message.add_header("X-Mailer", "WestBudget")
-                message.add_header("X-Priority", "1")
-                message.reply_to = SENDGRID_FROM_EMAIL
-                
-                try:
-                    response = sendgrid_client.send(message)
-                    
-                    # Check response status
-                    if response.status_code >= 200 and response.status_code < 300:
-                        print(f"[Backend] ✅ Login credentials email sent to {user_email}, status: {response.status_code}")
-                    else:
-                        error_body = response.body.decode('utf-8') if response.body else 'Unknown error'
-                        print(f"[Backend] ❌ SendGrid error: Status {response.status_code}, Body: {error_body}")
-                        conn.close()
-                        return jsonify({
-                            'error': f'SendGrid fel (Status {response.status_code}): {error_body}',
-                            'email': user_email,
-                            'password': password  # Return password so admin can send manually if needed
-                        }), 500
-                        
-                except Exception as send_error:
-                    # Try to get more details from the error
-                    error_msg = str(send_error)
-                    error_details = ''
-                    
-                    # Check if it's a ForbiddenError and try to get response body
-                    if hasattr(send_error, 'body'):
-                        try:
-                            error_details = send_error.body.decode('utf-8') if send_error.body else ''
-                        except:
-                            pass
-                    
-                    print(f"[Backend] ❌ Error sending login credentials email: {error_msg}")
-                    if error_details:
-                        print(f"[Backend] ❌ SendGrid error details: {error_details}")
-                    import traceback
-                    traceback.print_exc()
-                    
-                    # Provide helpful error messages
-                    if '403' in error_msg or 'Forbidden' in error_msg:
-                        helpful_msg = f'SendGrid 403 Forbidden: Avsändaradressen "{SENDGRID_FROM_EMAIL}" är inte verifierad i SendGrid Dashboard. Gå till Settings → Sender Authentication och verifiera adressen.'
-                        if error_details:
-                            helpful_msg += f'\n\nDetaljer: {error_details}'
-                    elif '401' in error_msg or 'Unauthorized' in error_msg:
-                        helpful_msg = 'SendGrid API key är ogiltig. Kontrollera att API key är korrekt i miljövariabeln SENDGRID_API_KEY.'
-                    else:
-                        helpful_msg = f'E-postfel: {error_msg}'
-                        if error_details:
-                            helpful_msg += f'\n\nDetaljer: {error_details}'
-                    
-                    conn.close()
-                    return jsonify({
-                        'error': helpful_msg,
-                        'email': user_email,
-                        'password': password  # Return password so admin can send manually if needed
-                    }), 500
-                
-            except Exception as email_error:
-                error_msg = str(email_error)
-                print(f"[Backend] ❌ Unexpected error in email sending: {error_msg}")
-                import traceback
-                traceback.print_exc()
-                
-                conn.close()
-                return jsonify({
-                    'error': f'Oväntat fel vid e-postutskick: {error_msg}',
-                    'email': user_email,
-                    'password': password  # Return password so admin can send manually if needed
-                }), 500
-        else:
-            print(f"[Backend] SendGrid not configured. Login credentials for {user_email}:")
-            print(f"[Backend] Email: {user_email}")
-            print(f"[Backend] Password: {password}")
-            print(f"[Backend] ⚠️  Configure SENDGRID_API_KEY to enable email sending")
-        
-        conn.close()
-        
-        return jsonify({
-            'message': f'Login credentials sent to {user_email}' if sendgrid_client else f'Login credentials (SendGrid not configured - check console)',
-            'email': user_email
-        }), 200
-        
-    except Exception as e:
-        print(f"[Backend] Error sending credentials: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/admin/users/<int:user_id>', methods=['DELETE'])
-@require_admin
-def delete_user(user_id):
-    """Delete a user (admin only)"""
-    try:
+            
         conn = get_db()
         cursor = conn.cursor()
         
-        # Get user data before deleting (for undo)
-        cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))
-        user = cursor.fetchone()
+        # Get user email
+        cursor.execute("SELECT email FROM users WHERE id = %s", (user_id,))
+        user_row = cursor.fetchone()
+        conn.close()
         
-        if not user:
-            conn.close()
+        if not user_row:
             return jsonify({'error': 'User not found'}), 404
+            
+        user_email = user_row['email']
         
-        user_data = dict(user)  # Save for undo
+        # Send credentials email
+        success, message = send_credentials_email(user_email, password, user_id)
         
-        # Get user's licenses before deleting
-        cursor.execute('SELECT * FROM licenses WHERE user_id = ?', (user_id,))
-        licenses = [dict(row) for row in cursor.fetchall()]
-        user_data['licenses'] = licenses
-        
-        # Delete user (cascade will delete licenses)
-        cursor.execute('DELETE FROM users WHERE id = ?', (user_id,))
-        conn.commit()
-        
-        # Add to history
-        add_history_entry(
-            action_type='delete',
-            action=f'Raderade användare: {user_data.get("email", "Okänt")}',
-            entity_type='user',
-            entity_id=user_id,
-            entity_data=None,
-            undo_data=user_data
-        )
-        
-        conn.close()
-        
-        return jsonify({
-            'message': 'User deleted successfully',
-            'user_data': user_data  # Return user data for undo
-        }), 200
-        
+        if success:
+            return jsonify({'message': 'Credentials sent successfully'}), 200
+        else:
+            return jsonify({'error': f'Failed to send email: {message}'}), 500
+            
     except Exception as e:
-        print(f"[Backend] Error deleting user: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"Error sending credentials: {e}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/admin/licenses', methods=['GET'])
-@require_admin
-def get_all_licenses():
-    """Get all licenses (admin only)"""
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT l.*, u.email as user_email
-            FROM licenses l
-            JOIN users u ON l.user_id = u.id
-            ORDER BY l.created_at DESC
-        ''')
-        licenses = [dict(row) for row in cursor.fetchall()]
-        
-        conn.close()
-        return jsonify(licenses), 200
-        
-    except Exception as e:
-        print(f"[Backend] Error getting all licenses: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+# ============================================================================
+# BACKGROUND TASKS
+# ============================================================================
+import threading
+import time
+from datetime import datetime
 
-@app.route('/api/admin/licenses/<int:license_id>', methods=['PUT'])
-@require_admin
-def update_license(license_id):
-    """Update a license (admin only)"""
-    try:
-        data = request.get_json()
-        
-        if not data:
-            return jsonify({'error': 'No data provided'}), 400
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Check if license exists
-        cursor.execute('SELECT id FROM licenses WHERE id = ?', (license_id,))
-        if not cursor.fetchone():
-            conn.close()
-            return jsonify({'error': 'License not found'}), 404
-        
-        update_fields = []
-        values = []
-        
-        if 'license_type' in data:
-            if data['license_type'] not in ['trial', 'premium']:
-                conn.close()
-                return jsonify({'error': 'Invalid license type'}), 400
-            update_fields.append('license_type = ?')
-            values.append(data['license_type'])
-        
-        if 'status' in data:
-            if data['status'] not in ['active', 'expired', 'cancelled']:
-                conn.close()
-                return jsonify({'error': 'Invalid status'}), 400
-            update_fields.append('status = ?')
-            values.append(data['status'])
-        
-        if 'expires_at' in data:
-            update_fields.append('expires_at = ?')
-            values.append(data['expires_at'] if data['expires_at'] else None)
-        
-        if not update_fields:
-            conn.close()
-            return jsonify({'error': 'No valid fields to update'}), 400
-        
-        update_fields.append('updated_at = ?')
-        values.append(datetime.now().isoformat())
-        values.append(license_id)
-        
-        query = f'UPDATE licenses SET {", ".join(update_fields)} WHERE id = ?'
-        cursor.execute(query, values)
-        conn.commit()
-        
-        cursor.execute('SELECT * FROM licenses WHERE id = ?', (license_id,))
-        updated_license = dict(cursor.fetchone())
-        
-        conn.close()
-        
-        return jsonify(updated_license), 200
-        
-    except Exception as e:
-        print(f"[Backend] Error updating license: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/admin/statistics', methods=['GET'])
-@require_admin
-def get_statistics():
-    """Get usage statistics (admin only)"""
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Total users
-        cursor.execute('SELECT COUNT(*) as total FROM users')
-        total_users = cursor.fetchone()['total']
-        
-        # Users by role
-        cursor.execute('SELECT role, COUNT(*) as count FROM users GROUP BY role')
-        users_by_role = {row['role']: row['count'] for row in cursor.fetchall()}
-        
-        # Active licenses
-        cursor.execute('SELECT COUNT(*) as total FROM licenses WHERE status = "active"')
-        active_licenses = cursor.fetchone()['total']
-        
-        # Licenses by type
-        cursor.execute('SELECT license_type, COUNT(*) as count FROM licenses GROUP BY license_type')
-        licenses_by_type = {row['license_type']: row['count'] for row in cursor.fetchall()}
-        
-        # New users this month
-        cursor.execute('''
-            SELECT COUNT(*) as count FROM users
-            WHERE created_at >= date('now', 'start of month')
-        ''')
-        new_users_this_month = cursor.fetchone()['count']
-        
-        # Total transactions
-        cursor.execute('SELECT COUNT(*) as total FROM transactions')
-        total_transactions = cursor.fetchone()['total']
-        
-        # Total agreements
-        cursor.execute('SELECT COUNT(*) as total FROM agreements')
-        total_agreements = cursor.fetchone()['total']
-        
-        # Total loans
-        cursor.execute('SELECT COUNT(*) as total FROM loans')
-        total_loans = cursor.fetchone()['total']
-        
-        # Active subscriptions
-        cursor.execute('SELECT COUNT(*) as total FROM subscriptions WHERE status = "active"')
-        active_subscriptions = cursor.fetchone()['total']
-        
-        # MRR (Monthly Recurring Revenue) - sum of all active subscription amounts
-        cursor.execute('''
-            SELECT SUM(amount) as mrr FROM payments 
-            WHERE status = 'succeeded' 
-            AND created_at >= date('now', 'start of month')
-            AND subscription_id IN (SELECT id FROM subscriptions WHERE status = 'active')
-        ''')
-        mrr_result = cursor.fetchone()
-        mrr = mrr_result['mrr'] if mrr_result['mrr'] else 0
-        
-        # Total revenue this month
-        cursor.execute('''
-            SELECT SUM(amount) as total FROM payments 
-            WHERE status = 'succeeded' 
-            AND created_at >= date('now', 'start of month')
-        ''')
-        revenue_this_month_result = cursor.fetchone()
-        revenue_this_month = revenue_this_month_result['total'] if revenue_this_month_result['total'] else 0
-        
-        # Total revenue all time
-        cursor.execute('''
-            SELECT SUM(amount) as total FROM payments 
-            WHERE status = 'succeeded'
-        ''')
-        total_revenue_result = cursor.fetchone()
-        total_revenue = total_revenue_result['total'] if total_revenue_result['total'] else 0
-        
-        # Users with active subscriptions
-        cursor.execute('''
-            SELECT COUNT(DISTINCT user_id) as count FROM subscriptions 
-            WHERE status = 'active'
-        ''')
-        users_with_subscriptions = cursor.fetchone()['count']
-        
-        # Churn rate calculation (cancelled subscriptions this month / active at start of month)
-        cursor.execute('''
-            SELECT COUNT(*) as count FROM subscriptions 
-            WHERE status = 'cancelled' 
-            AND updated_at >= date('now', 'start of month')
-        ''')
-        cancelled_this_month = cursor.fetchone()['count']
-        
-        # Active subscriptions at start of month (approximation)
-        cursor.execute('''
-            SELECT COUNT(*) as count FROM subscriptions 
-            WHERE status = 'active' 
-            AND created_at < date('now', 'start of month')
-        ''')
-        active_at_start = cursor.fetchone()['count']
-        
-        # Calculate churn rate (if we have data)
-        churn_rate = 0
-        if active_at_start > 0:
-            churn_rate = (cancelled_this_month / active_at_start) * 100
-        
-        # New users per month (last 6 months)
-        cursor.execute('''
-            SELECT 
-                strftime('%Y-%m', created_at) as month,
-                COUNT(*) as count
-            FROM users
-            WHERE created_at >= date('now', '-6 months')
-            GROUP BY month
-            ORDER BY month
-        ''')
-        new_users_by_month = [dict(row) for row in cursor.fetchall()]
-        
-        # License status breakdown
-        cursor.execute('SELECT status, COUNT(*) as count FROM licenses GROUP BY status')
-        licenses_by_status = {row['status']: row['count'] for row in cursor.fetchall()}
-        
-        # Expired licenses
-        cursor.execute('SELECT COUNT(*) as total FROM licenses WHERE status = "expired"')
-        expired_licenses = cursor.fetchone()['total']
-        
-        # Trial licenses expiring soon (within 7 days)
-        cursor.execute('''
-            SELECT COUNT(*) as total FROM licenses 
-            WHERE license_type = 'trial' 
-            AND status = 'active'
-            AND expires_at <= date('now', '+7 days')
-            AND expires_at > date('now')
-        ''')
-        trials_expiring_soon = cursor.fetchone()['total']
-        
-        conn.close()
-        
-        return jsonify({
-            'users': {
-                'total': total_users,
-                'by_role': users_by_role,
-                'new_this_month': new_users_this_month,
-                'new_by_month': new_users_by_month
-            },
-            'licenses': {
-                'active': active_licenses,
-                'expired': expired_licenses,
-                'by_type': licenses_by_type,
-                'by_status': licenses_by_status,
-                'trials_expiring_soon': trials_expiring_soon
-            },
-            'subscriptions': {
-                'active': active_subscriptions,
-                'users_with_subscriptions': users_with_subscriptions
-            },
-            'revenue': {
-                'mrr': mrr / 100 if mrr else 0,  # Convert from cents to currency
-                'this_month': revenue_this_month / 100 if revenue_this_month else 0,
-                'total': total_revenue / 100 if total_revenue else 0
-            },
-            'churn': {
-                'rate': round(churn_rate, 2),
-                'cancelled_this_month': cancelled_this_month
-            },
-            'usage': {
-                'transactions': total_transactions,
-                'agreements': total_agreements,
-                'loans': total_loans
-            }
-        }), 200
-        
-    except Exception as e:
-        print(f"[Backend] Error getting statistics: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/admin/payments', methods=['GET'])
-@require_admin
-def get_all_payments():
-    """Get all payments (admin only)"""
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT p.*, u.email as user_email, s.stripe_subscription_id
-            FROM payments p
-            JOIN users u ON p.user_id = u.id
-            LEFT JOIN subscriptions s ON p.subscription_id = s.id
-            ORDER BY p.created_at DESC
-        ''')
-        payments = [dict(row) for row in cursor.fetchall()]
-        
-        conn.close()
-        return jsonify(payments), 200
-        
-    except Exception as e:
-        print(f"[Backend] Error getting payments: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/admin/refunds', methods=['POST'])
-@require_admin
-def create_refund():
-    """Create a refund for a payment (admin only)"""
-    try:
-        data = request.get_json()
-        payment_id = data.get('payment_id')
-        amount = data.get('amount')  # Optional, för delvis återbetalning
-        reason = data.get('reason', 'requested_by_customer')
-        
-        if not payment_id:
-            return jsonify({'error': 'Payment ID is required'}), 400
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Get payment details
-        cursor.execute('''
-            SELECT p.*, u.email as user_email
-            FROM payments p
-            JOIN users u ON p.user_id = u.id
-            WHERE p.id = ?
-        ''', (payment_id,))
-        payment = cursor.fetchone()
-        
-        if not payment:
-            conn.close()
-            return jsonify({'error': 'Payment not found'}), 404
-        
-        payment_dict = dict(payment)
-        
-        # Check if already refunded
-        if payment_dict['status'] == 'refunded':
-            conn.close()
-            return jsonify({'error': 'Payment already refunded'}), 400
-        
-        # Check if payment succeeded
-        if payment_dict['status'] != 'succeeded':
-            conn.close()
-            return jsonify({'error': 'Can only refund succeeded payments'}), 400
-        
-        # Get Stripe payment intent ID
-        stripe_payment_intent_id = payment_dict.get('stripe_payment_intent_id')
-        if not stripe_payment_intent_id:
-            conn.close()
-            return jsonify({'error': 'Stripe payment intent ID not found'}), 400
-        
-        # Create refund in Stripe
-        if not STRIPE_SECRET_KEY:
-            conn.close()
-            return jsonify({'error': 'Stripe not configured'}), 500
-        
+def check_expiring_trials():
+    """Check for trials expiring in <= 3 days and send warning emails."""
+    with app.app_context():
+        print("Checking for expiring trials...")
         try:
-            refund_amount = None
-            if amount:
-                # Convert to cents for Stripe
-                refund_amount = int(float(amount) * 100)
+            conn = get_db()
+            cursor = conn.cursor()
             
-            if refund_amount:
-                # Delvis återbetalning
-                refund = stripe.Refund.create(
-                    payment_intent=stripe_payment_intent_id,
-                    amount=refund_amount,
-                    reason=reason
-                )
-            else:
-                # Hela beloppet
-                refund = stripe.Refund.create(
-                    payment_intent=stripe_payment_intent_id,
-                    reason=reason
-                )
+            # Find trials expiring in 3 days (or less) that haven't been warned
+            # We look for expiry within the next 3 days + 1 hour buffer (to catch "almost 3 days")
+            cursor.execute("""
+                SELECT l.id, l.user_id, l.expires_at, u.email 
+                FROM licenses l 
+                JOIN users u ON l.user_id = u.id 
+                WHERE l.status = 'active' 
+                AND l.license_type = 'trial' 
+                AND l.warning_sent IS FALSE 
+                AND l.expires_at <= NOW() + INTERVAL '3 days' 
+                AND l.expires_at > NOW()
+            """)
             
-            # Update payment status in database
-            cursor.execute('''
-                UPDATE payments 
-                SET status = 'refunded', updated_at = ?
-                WHERE id = ?
-            ''', (datetime.now().isoformat(), payment_id))
+            expiring_licenses = cursor.fetchall()
             
-            # If subscription exists, cancel it
-            if payment_dict.get('subscription_id'):
-                cursor.execute('''
-                    UPDATE subscriptions 
-                    SET status = 'cancelled', updated_at = ?
-                    WHERE id = ?
-                ''', (datetime.now().isoformat(), payment_dict['subscription_id']))
+            for license in expiring_licenses:
+                days_left = (license['expires_at'].replace(tzinfo=None) - datetime.now()).days
+                if days_left < 0: days_left = 0
                 
-                # Update license to expired
-                cursor.execute('''
-                    UPDATE licenses 
-                    SET status = 'expired', updated_at = ?
-                    WHERE user_id = ? AND status = 'active'
-                ''', (datetime.now().isoformat(), payment_dict['user_id']))
-            
-            conn.commit()
-            conn.close()
-            
-            # Send email notification (if SendGrid is configured)
-            if sendgrid_client:
-                try:
-                    from sendgrid.helpers.mail import Mail
-                    email = Mail(
-                        from_email=(SENDGRID_FROM_EMAIL, SENDGRID_FROM_NAME),
-                        to_emails=payment_dict['user_email'],
-                        subject='Återbetalning bekräftad - WestBudget',
-                        html_content=f'''
-                        <html>
-                        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-                            <h2>Återbetalning bekräftad</h2>
-                            <p>Hej,</p>
-                            <p>Vi har behandlat din återbetalning för din WestBudget-prenumeration.</p>
-                            <p><strong>Återbetalningsdetaljer:</strong></p>
-                            <ul>
-                                <li>Belopp: {refund.amount / 100:.2f} {refund.currency.upper()}</li>
-                                <li>Status: {refund.status}</li>
-                                <li>Refund ID: {refund.id}</li>
-                            </ul>
-                            <p>Återbetalningen kommer att visas på ditt kort inom 5-10 bankdagar.</p>
-                            <p>Din prenumeration har avbrutits och du kommer inte att debiteras framöver.</p>
-                            <p>Om du har frågor, kontakta oss gärna.</p>
-                            <p>Med vänliga hälsningar,<br>WestBudget Team</p>
-                        </body>
-                        </html>
-                        '''
-                    )
-                    sendgrid_client.send(email)
-                except Exception as e:
-                    print(f"[Backend] Error sending refund email: {e}")
-            
-            return jsonify({
-                'success': True,
-                'refund_id': refund.id,
-                'amount': refund.amount / 100,  # Convert from cents
-                'currency': refund.currency,
-                'status': refund.status,
-                'payment_id': payment_id
-            }), 200
-            
-        except stripe.error.StripeError as e:
-            conn.close()
-            print(f"[Backend] Stripe error creating refund: {e}")
-            return jsonify({'error': f'Stripe error: {str(e)}'}), 400
-        
-    except Exception as e:
-        print(f"[Backend] Error creating refund: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/admin/system-settings', methods=['GET'])
-@require_admin
-def get_system_settings():
-    """Get system settings and configuration status (admin only)"""
-    try:
-        # Check Stripe configuration
-        stripe_config = {
-            'secret_key_configured': bool(STRIPE_SECRET_KEY),
-            'publishable_key_configured': bool(STRIPE_PUBLISHABLE_KEY),
-            'webhook_secret_configured': bool(STRIPE_WEBHOOK_SECRET),
-            'price_id_configured': bool(STRIPE_PRICE_ID),
-            'price_id': STRIPE_PRICE_ID if STRIPE_PRICE_ID else None
-        }
-        
-        # Check SendGrid configuration
-        sendgrid_config = {
-            'api_key_configured': bool(SENDGRID_API_KEY),
-            'from_email': SENDGRID_FROM_EMAIL if SENDGRID_FROM_EMAIL else None,
-            'from_name': SENDGRID_FROM_NAME if SENDGRID_FROM_NAME else None
-        }
-        
-        # Database info
-        database_info = {
-            'type': 'SQLite',
-            'upload_folder': app.config['UPLOAD_FOLDER']
-        }
-        
-        return jsonify({
-            'stripe': stripe_config,
-            'sendgrid': sendgrid_config,
-            'database': database_info
-        }), 200
-        
-    except Exception as e:
-        print(f"[Backend] Error getting system settings: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-
-# ============================================================================
-# STRIPE PAYMENT ENDPOINTS
-# ============================================================================
-
-@app.route('/api/payments/create-checkout', methods=['POST'])
-@require_auth
-def create_checkout_session():
-    """Create Stripe Checkout session for premium subscription"""
-    try:
-        if not STRIPE_SECRET_KEY or not STRIPE_PRICE_ID:
-            return jsonify({'error': 'Stripe is not configured'}), 500
-        
-        user_id = request.current_user['user_id']
-        user_email = request.current_user['email']
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Get or create Stripe customer
-        cursor.execute('SELECT stripe_customer_id FROM subscriptions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1', (user_id,))
-        existing = cursor.fetchone()
-        customer_id = existing['stripe_customer_id'] if existing and existing['stripe_customer_id'] else None
-        
-        if not customer_id:
-            # Create Stripe customer
-            customer = stripe.Customer.create(
-                email=user_email,
-                metadata={'user_id': user_id}
-            )
-            customer_id = customer.id
-        
-        # Validate that STRIPE_PRICE_ID is actually a price ID (starts with 'price_')
-        if not STRIPE_PRICE_ID.startswith('price_'):
-            return jsonify({
-                'error': f'Invalid STRIPE_PRICE_ID. Expected a price ID (starts with "price_"), but got: {STRIPE_PRICE_ID}. Please check your .env file and use the Price ID from Stripe Dashboard, not the Product ID.'
-            }), 400
-        
-        # Create checkout session
-        checkout_session = stripe.checkout.Session.create(
-            customer=customer_id,
-            payment_method_types=['card'],
-            line_items=[{
-                'price': STRIPE_PRICE_ID,
-                'quantity': 1,
-            }],
-            mode='subscription',
-            success_url=request.headers.get('Origin', 'http://localhost:5100') + '/settings?payment=success',
-            cancel_url=request.headers.get('Origin', 'http://localhost:5100') + '/settings?payment=cancelled',
-            metadata={'user_id': user_id}
-        )
-        
-        conn.close()
-        
-        return jsonify({
-            'sessionId': checkout_session.id,
-            'url': checkout_session.url
-        }), 200
-        
-    except Exception as e:
-        print(f"[Backend] Error creating checkout session: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/payments/webhook', methods=['POST'])
-def stripe_webhook():
-    """Handle Stripe webhook events"""
-    try:
-        if not STRIPE_WEBHOOK_SECRET:
-            return jsonify({'error': 'Webhook secret not configured'}), 500
-        
-        payload = request.data
-        sig_header = request.headers.get('Stripe-Signature')
-        
-        try:
-            event = stripe.Webhook.construct_event(
-                payload, sig_header, STRIPE_WEBHOOK_SECRET
-            )
-        except ValueError as e:
-            print(f"[Backend] Invalid payload: {e}")
-            return jsonify({'error': 'Invalid payload'}), 400
-        except stripe.error.SignatureVerificationError as e:
-            print(f"[Backend] Invalid signature: {e}")
-            return jsonify({'error': 'Invalid signature'}), 400
-        
-        # Handle the event
-        if event['type'] == 'checkout.session.completed':
-            session = event['data']['object']
-            handle_checkout_completed(session)
-        elif event['type'] == 'invoice.payment_succeeded':
-            invoice = event['data']['object']
-            handle_payment_succeeded(invoice)
-        elif event['type'] == 'invoice.payment_failed':
-            invoice = event['data']['object']
-            handle_payment_failed(invoice)
-        elif event['type'] == 'customer.subscription.updated':
-            subscription = event['data']['object']
-            handle_subscription_updated(subscription)
-        elif event['type'] == 'customer.subscription.deleted':
-            subscription = event['data']['object']
-            handle_subscription_deleted(subscription)
-        
-        return jsonify({'received': True}), 200
-        
-    except Exception as e:
-        print(f"[Backend] Error handling webhook: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-def handle_checkout_completed(session):
-    """Handle checkout.session.completed event"""
-    try:
-        user_id = int(session['metadata']['user_id'])
-        subscription_id = session.get('subscription')
-        customer_id = session.get('customer')
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Create or update subscription
-        cursor.execute('''
-            SELECT id FROM subscriptions WHERE stripe_subscription_id = ?
-        ''', (subscription_id,))
-        existing = cursor.fetchone()
-        
-        if existing:
-            # Update existing subscription
-            cursor.execute('''
-                UPDATE subscriptions 
-                SET status = 'active',
-                    current_period_start = ?,
-                    current_period_end = ?,
-                    updated_at = ?
-                WHERE id = ?
-            ''', (
-                datetime.fromtimestamp(session.get('subscription_details', {}).get('current_period_start', 0)).isoformat(),
-                datetime.fromtimestamp(session.get('subscription_details', {}).get('current_period_end', 0)).isoformat(),
-                datetime.now().isoformat(),
-                existing['id']
-            ))
-            subscription_db_id = existing['id']
-        else:
-            # Create new subscription
-            subscription = stripe.Subscription.retrieve(subscription_id)
-            cursor.execute('''
-                INSERT INTO subscriptions (user_id, stripe_subscription_id, stripe_customer_id, status, current_period_start, current_period_end, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                user_id,
-                subscription_id,
-                customer_id,
-                subscription.status,
-                datetime.fromtimestamp(subscription.current_period_start).isoformat(),
-                datetime.fromtimestamp(subscription.current_period_end).isoformat(),
-                datetime.now().isoformat(),
-                datetime.now().isoformat()
-            ))
-            subscription_db_id = cursor.lastrowid
-        
-        # Update or create premium license
-        cursor.execute('''
-            SELECT id FROM licenses WHERE user_id = ? AND license_type = 'premium' AND status = 'active'
-            ORDER BY created_at DESC LIMIT 1
-        ''', (user_id,))
-        existing_license = cursor.fetchone()
-        
-        if existing_license:
-            # Update existing license
-            cursor.execute('''
-                UPDATE licenses 
-                SET status = 'active',
-                    expires_at = NULL,
-                    updated_at = ?
-                WHERE id = ?
-            ''', (datetime.now().isoformat(), existing_license['id']))
-        else:
-            # Create new premium license
-            cursor.execute('''
-                INSERT INTO licenses (user_id, license_type, status, starts_at, expires_at, created_at, updated_at, last_validated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                user_id,
-                'premium',
-                'active',
-                datetime.now().isoformat(),
-                None,  # Premium never expires
-                datetime.now().isoformat(),
-                datetime.now().isoformat(),
-                datetime.now().isoformat()
-            ))
-        
-        conn.commit()
-        conn.close()
-        
-        print(f"[Backend] Checkout completed for user {user_id}")
-        
-    except Exception as e:
-        print(f"[Backend] Error handling checkout completed: {e}")
-        import traceback
-        traceback.print_exc()
-
-def handle_payment_succeeded(invoice):
-    """Handle invoice.payment_succeeded event"""
-    try:
-        subscription_id = invoice.get('subscription')
-        customer_id = invoice.get('customer')
-        amount = invoice.get('amount_paid', 0) / 100  # Convert from cents
-        payment_intent_id = invoice.get('payment_intent')
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Get subscription
-        cursor.execute('SELECT id, user_id FROM subscriptions WHERE stripe_subscription_id = ?', (subscription_id,))
-        subscription = cursor.fetchone()
-        
-        if subscription:
-            # Record payment
-            cursor.execute('''
-                INSERT INTO payments (user_id, subscription_id, stripe_payment_intent_id, amount, currency, status, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                subscription['user_id'],
-                subscription['id'],
-                payment_intent_id,
-                amount,
-                'sek',
-                'succeeded',
-                datetime.now().isoformat()
-            ))
-            
-            # Update subscription period
-            subscription_obj = stripe.Subscription.retrieve(subscription_id)
-            cursor.execute('''
-                UPDATE subscriptions 
-                SET current_period_start = ?,
-                    current_period_end = ?,
-                    updated_at = ?
-                WHERE id = ?
-            ''', (
-                datetime.fromtimestamp(subscription_obj.current_period_start).isoformat(),
-                datetime.fromtimestamp(subscription_obj.current_period_end).isoformat(),
-                datetime.now().isoformat(),
-                subscription['id']
-            ))
-        
-        conn.commit()
-        conn.close()
-        
-        print(f"[Backend] Payment succeeded for subscription {subscription_id}")
-        
-    except Exception as e:
-        print(f"[Backend] Error handling payment succeeded: {e}")
-        import traceback
-        traceback.print_exc()
-
-def handle_payment_failed(invoice):
-    """Handle invoice.payment_failed event"""
-    try:
-        subscription_id = invoice.get('subscription')
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Update subscription status
-        cursor.execute('''
-            UPDATE subscriptions 
-            SET status = 'past_due',
-                updated_at = ?
-            WHERE stripe_subscription_id = ?
-        ''', (datetime.now().isoformat(), subscription_id))
-        
-        conn.commit()
-        conn.close()
-        
-        print(f"[Backend] Payment failed for subscription {subscription_id}")
-        
-    except Exception as e:
-        print(f"[Backend] Error handling payment failed: {e}")
-        import traceback
-        traceback.print_exc()
-
-def handle_subscription_updated(subscription):
-    """Handle customer.subscription.updated event"""
-    try:
-        subscription_id = subscription['id']
-        status = subscription['status']
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            UPDATE subscriptions 
-            SET status = ?,
-                current_period_start = ?,
-                current_period_end = ?,
-                updated_at = ?
-            WHERE stripe_subscription_id = ?
-        ''', (
-            status,
-            datetime.fromtimestamp(subscription['current_period_start']).isoformat(),
-            datetime.fromtimestamp(subscription['current_period_end']).isoformat(),
-            datetime.now().isoformat(),
-            subscription_id
-        ))
-        
-        # If subscription is cancelled, update license
-        if status in ['cancelled', 'unpaid', 'past_due']:
-            cursor.execute('SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ?', (subscription_id,))
-            sub = cursor.fetchone()
-            if sub:
-                # Set license to expired
-                cursor.execute('''
-                    UPDATE licenses 
-                    SET status = 'expired',
-                        updated_at = ?
-                    WHERE user_id = ? AND license_type = 'premium' AND status = 'active'
-                ''', (datetime.now().isoformat(), sub['user_id']))
-        
-        conn.commit()
-        conn.close()
-        
-        print(f"[Backend] Subscription updated: {subscription_id} -> {status}")
-        
-    except Exception as e:
-        print(f"[Backend] Error handling subscription updated: {e}")
-        import traceback
-        traceback.print_exc()
-
-def handle_subscription_deleted(subscription):
-    """Handle customer.subscription.deleted event"""
-    try:
-        subscription_id = subscription['id']
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Get user_id
-        cursor.execute('SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ?', (subscription_id,))
-        sub = cursor.fetchone()
-        
-        if sub:
-            # Update subscription status
-            cursor.execute('''
-                UPDATE subscriptions 
-                SET status = 'cancelled',
-                    updated_at = ?
-                WHERE stripe_subscription_id = ?
-            ''', (datetime.now().isoformat(), subscription_id))
-            
-            # Set license to expired
-            cursor.execute('''
-                UPDATE licenses 
-                SET status = 'expired',
-                    updated_at = ?
-                WHERE user_id = ? AND license_type = 'premium' AND status = 'active'
-            ''', (datetime.now().isoformat(), sub['user_id']))
-        
-        conn.commit()
-        conn.close()
-        
-        print(f"[Backend] Subscription deleted: {subscription_id}")
-        
-    except Exception as e:
-        print(f"[Backend] Error handling subscription deleted: {e}")
-        import traceback
-        traceback.print_exc()
-
-@app.route('/api/payments/history', methods=['GET'])
-@require_auth
-def get_payment_history():
-    """Get current user's payment history"""
-    try:
-        user_id = request.current_user['user_id']
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT p.*, s.stripe_subscription_id
-            FROM payments p
-            LEFT JOIN subscriptions s ON p.subscription_id = s.id
-            WHERE p.user_id = ?
-            ORDER BY p.created_at DESC
-        ''', (user_id,))
-        payments = [dict(row) for row in cursor.fetchall()]
-        
-        conn.close()
-        return jsonify(payments), 200
-        
-    except Exception as e:
-        print(f"[Backend] Error getting payment history: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/payments/cancel', methods=['POST'])
-@require_auth
-def cancel_subscription():
-    """Cancel current user's subscription"""
-    try:
-        if not STRIPE_SECRET_KEY:
-            return jsonify({'error': 'Stripe is not configured'}), 500
-        
-        user_id = request.current_user['user_id']
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Get active subscription
-        cursor.execute('''
-            SELECT stripe_subscription_id FROM subscriptions 
-            WHERE user_id = ? AND status = 'active'
-            ORDER BY created_at DESC LIMIT 1
-        ''', (user_id,))
-        subscription = cursor.fetchone()
-        
-        if not subscription:
-            conn.close()
-            return jsonify({'error': 'No active subscription found'}), 404
-        
-        # Cancel subscription in Stripe
-        stripe.Subscription.modify(
-            subscription['stripe_subscription_id'],
-            cancel_at_period_end=True
-        )
-        
-        # Update status
-        cursor.execute('''
-            UPDATE subscriptions 
-            SET status = 'cancelled',
-                updated_at = ?
-            WHERE stripe_subscription_id = ?
-        ''', (datetime.now().isoformat(), subscription['stripe_subscription_id']))
-        
-        conn.commit()
-        conn.close()
-        
-        return jsonify({'message': 'Subscription will be cancelled at period end'}), 200
-        
-    except Exception as e:
-        print(f"[Backend] Error cancelling subscription: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/payments/resume', methods=['POST'])
-@require_auth
-def resume_subscription():
-    """Resume cancelled subscription"""
-    try:
-        if not STRIPE_SECRET_KEY:
-            return jsonify({'error': 'Stripe is not configured'}), 500
-        
-        user_id = request.current_user['user_id']
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Get cancelled subscription
-        cursor.execute('''
-            SELECT stripe_subscription_id FROM subscriptions 
-            WHERE user_id = ? AND status = 'cancelled'
-            ORDER BY created_at DESC LIMIT 1
-        ''', (user_id,))
-        subscription = cursor.fetchone()
-        
-        if not subscription:
-            conn.close()
-            return jsonify({'error': 'No cancelled subscription found'}), 404
-        
-        # Resume subscription in Stripe
-        stripe.Subscription.modify(
-            subscription['stripe_subscription_id'],
-            cancel_at_period_end=False
-        )
-        
-        # Update status
-        cursor.execute('''
-            UPDATE subscriptions 
-            SET status = 'active',
-                updated_at = ?
-            WHERE stripe_subscription_id = ?
-        ''', (datetime.now().isoformat(), subscription['stripe_subscription_id']))
-        
-        conn.commit()
-        conn.close()
-        
-        return jsonify({'message': 'Subscription resumed'}), 200
-        
-    except Exception as e:
-        print(f"[Backend] Error resuming subscription: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/payments/subscription', methods=['GET'])
-@require_auth
-def get_current_subscription():
-    """Get current user's subscription details"""
-    try:
-        user_id = request.current_user['user_id']
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Get active subscription
-        cursor.execute('''
-            SELECT id, stripe_subscription_id, stripe_customer_id, status, 
-                   current_period_start, current_period_end, created_at, updated_at
-            FROM subscriptions 
-            WHERE user_id = ? AND status IN ('active', 'trialing', 'past_due', 'cancelled')
-            ORDER BY created_at DESC LIMIT 1
-        ''', (user_id,))
-        subscription = cursor.fetchone()
-        
-        conn.close()
-        
-        if subscription:
-            return jsonify(dict(subscription)), 200
-        else:
-            # Return 200 with null instead of 404 to avoid frontend errors
-            return jsonify({'subscription': None, 'message': 'No subscription found'}), 200
-        
-    except Exception as e:
-        print(f"[Backend] Error getting subscription: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/auth/profile', methods=['PUT'])
-@require_auth
-def update_profile():
-    """Update user profile"""
-    try:
-        user_id = request.current_user['user_id']
-        data = request.get_json()
-        
-        if not data:
-            return jsonify({'error': 'No data provided'}), 400
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        update_fields = []
-        values = []
-        
-        if 'email' in data:
-            new_email = data['email'].lower().strip()
-            # Check if email is already taken
-            cursor.execute('SELECT id FROM users WHERE email = ? AND id != ?', (new_email, user_id))
-            if cursor.fetchone():
-                conn.close()
-                return jsonify({'error': 'Email already in use'}), 409
-            update_fields.append('email = ?')
-            values.append(new_email)
-        
-        if 'password' in data:
-            new_password = data['password']
-            if len(new_password) < 8:
-                conn.close()
-                return jsonify({'error': 'Password must be at least 8 characters'}), 400
-            password_hash = hash_password(new_password)
-            update_fields.append('password_hash = ?')
-            values.append(password_hash)
-        
-        if not update_fields:
-            conn.close()
-            return jsonify({'error': 'No valid fields to update'}), 400
-        
-        update_fields.append('updated_at = ?')
-        values.append(datetime.now().isoformat())
-        values.append(user_id)
-        
-        query = f'UPDATE users SET {", ".join(update_fields)} WHERE id = ?'
-        cursor.execute(query, values)
-        conn.commit()
-        
-        cursor.execute('SELECT id, email, role, created_at, last_login FROM users WHERE id = ?', (user_id,))
-        updated_user = dict(cursor.fetchone())
-        
-        conn.close()
-        
-        return jsonify(updated_user), 200
-        
-    except Exception as e:
-        print(f"[Backend] Error updating profile: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-# ============================================================================
-# SETTINGS ENDPOINTS
-# ============================================================================
-
-@app.route('/api/settings', methods=['GET'])
-def get_settings():
-    """Get all settings"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT key, value FROM settings')
-    settings = {row['key']: row['value'] for row in cursor.fetchall()}
-    
-    conn.close()
-    return jsonify(settings), 200
-
-
-@app.route('/api/select-folder', methods=['POST'])
-def select_folder():
-    """Open a folder selection dialog and return the selected path"""
-    try:
-        # Try to use tkinter for folder selection
-        try:
-            import tkinter as tk
-            from tkinter import filedialog
-            
-            # Create a root window and hide it
-            root = tk.Tk()
-            root.withdraw()  # Hide the main window
-            root.attributes('-topmost', True)  # Bring to front
-            
-            # Open folder dialog
-            folder_path = filedialog.askdirectory(title="Välj mapp")
-            
-            # Destroy the root window
-            root.destroy()
-            
-            if folder_path:
-                # Convert to Windows-style path if on Windows
-                if os.name == 'nt':
-                    folder_path = folder_path.replace('/', '\\')
-                return jsonify({'path': folder_path}), 200
-            else:
-                return jsonify({'error': 'No folder selected'}), 400
+                print(f"Sending warning to {license['email']} (expiring in {days_left} days)")
+                print(f"Sending warning to {license['email']} (expiring in {days_left} days)")
+                success, _ = send_trial_expiring_email(license['email'], days_left, license['user_id'])
                 
-        except ImportError:
-            # Fallback: return error if tkinter is not available
-            return jsonify({'error': 'Folder selection not available. Please enter path manually.'}), 501
+                if success:
+                    # Mark as warned
+                    cursor.execute("UPDATE licenses SET warning_sent = TRUE WHERE id = %s", (license['id'],))
+                    conn.commit()
+            
+            conn.close()
         except Exception as e:
-            return jsonify({'error': f'Error opening folder dialog: {str(e)}'}), 500
-            
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+            print(f"Error in check_expiring_trials: {e}")
 
-
-@app.route('/api/settings', methods=['POST'])
-def update_settings():
-    """Update settings"""
-    data = request.get_json()
-    
-    if not data:
-        return jsonify({'error': 'No data provided'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    for key, value in data.items():
-        cursor.execute('''
-            INSERT OR REPLACE INTO settings (key, value, updated_at)
-            VALUES (?, ?, ?)
-        ''', (key, value, datetime.now().isoformat()))
-    
-    conn.commit()
-    conn.close()
-    
-    return jsonify({'message': 'Settings updated successfully'}), 200
-
-
-# ============================================================================
-# CUSTOM THEMES ENDPOINTS
-# ============================================================================
-
-@app.route('/api/custom-themes', methods=['GET'])
-def get_custom_themes():
-    """Get all custom themes"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT * FROM custom_themes ORDER BY created_at DESC')
-    themes = []
-    for row in cursor.fetchall():
-        themes.append(dict(row))
-    
-    conn.close()
-    return jsonify(themes), 200
-
-
-@app.route('/api/custom-themes', methods=['POST'])
-def create_custom_theme():
-    """Create a new custom theme"""
-    data = request.get_json()
-    
-    if not data or not data.get('name') or not data.get('primary_color'):
-        return jsonify({'error': 'Name and primary_color are required'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    # If this is set as default, unset other defaults
-    if data.get('is_default'):
-        cursor.execute('UPDATE custom_themes SET is_default = 0 WHERE is_default = 1')
-    
-    cursor.execute('''
-        INSERT INTO custom_themes (name, primary_color, secondary_color, accent_color, is_default, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    ''', (
-        data['name'],
-        data['primary_color'],
-        data.get('secondary_color'),
-        data.get('accent_color'),
-        1 if data.get('is_default') else 0,
-        datetime.now().isoformat(),
-        datetime.now().isoformat()
-    ))
-    
-    theme_id = cursor.lastrowid
-    conn.commit()
-    
-    cursor.execute('SELECT * FROM custom_themes WHERE id = ?', (theme_id,))
-    new_theme = dict(cursor.fetchone())
-    
-    conn.close()
-    return jsonify(new_theme), 201
-
-
-@app.route('/api/custom-themes/<int:theme_id>', methods=['PUT'])
-def update_custom_theme(theme_id):
-    """Update a custom theme"""
-    data = request.get_json()
-    
-    if not data:
-        return jsonify({'error': 'No data provided'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    # If this is set as default, unset other defaults
-    if data.get('is_default'):
-        cursor.execute('UPDATE custom_themes SET is_default = 0 WHERE is_default = 1 AND id != ?', (theme_id,))
-    
-    update_fields = []
-    values = []
-    
-    if 'name' in data:
-        update_fields.append('name = ?')
-        values.append(data['name'])
-    if 'primary_color' in data:
-        update_fields.append('primary_color = ?')
-        values.append(data['primary_color'])
-    if 'secondary_color' in data:
-        update_fields.append('secondary_color = ?')
-        values.append(data['secondary_color'])
-    if 'accent_color' in data:
-        update_fields.append('accent_color = ?')
-        values.append(data['accent_color'])
-    if 'is_default' in data:
-        update_fields.append('is_default = ?')
-        values.append(1 if data['is_default'] else 0)
-    
-    update_fields.append('updated_at = ?')
-    values.append(datetime.now().isoformat())
-    values.append(theme_id)
-    
-    cursor.execute(f'''
-        UPDATE custom_themes 
-        SET {', '.join(update_fields)}
-        WHERE id = ?
-    ''', values)
-    
-    if cursor.rowcount == 0:
-        conn.close()
-        return jsonify({'error': 'Theme not found'}), 404
-    
-    conn.commit()
-    
-    cursor.execute('SELECT * FROM custom_themes WHERE id = ?', (theme_id,))
-    updated_theme = dict(cursor.fetchone())
-    
-    conn.close()
-    return jsonify(updated_theme), 200
-
-
-@app.route('/api/custom-themes/<int:theme_id>', methods=['DELETE'])
-def delete_custom_theme(theme_id):
-    """Delete a custom theme"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('DELETE FROM custom_themes WHERE id = ?', (theme_id,))
-    
-    if cursor.rowcount == 0:
-        conn.close()
-        return jsonify({'error': 'Theme not found'}), 404
-    
-    conn.commit()
-    conn.close()
-    
-    return jsonify({'message': 'Theme deleted successfully'}), 200
-
-
-# ============================================================================
-# REPORT TEMPLATES ENDPOINTS
-# ============================================================================
-
-@app.route('/api/report-templates', methods=['GET'])
-def get_report_templates():
-    """Get all report templates"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT * FROM report_templates ORDER BY created_at DESC')
-    templates = []
-    for row in cursor.fetchall():
-        template = dict(row)
-        # Parse JSON fields
-        if template.get('categories'):
-            try:
-                template['categories'] = json.loads(template['categories'])
-            except:
-                template['categories'] = []
-        if template.get('components'):
-            try:
-                template['components'] = json.loads(template['components'])
-            except:
-                template['components'] = []
-        templates.append(template)
-    
-    conn.close()
-    return jsonify(templates), 200
-
-
-@app.route('/api/report-templates', methods=['POST'])
-def create_report_template():
-    """Create a new report template"""
-    data = request.get_json()
-    
-    if not data or not data.get('name') or not data.get('components'):
-        return jsonify({'error': 'Name and components are required'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        INSERT INTO report_templates (name, categories, components, date_range, custom_start_date, custom_end_date, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (
-        data['name'],
-        json.dumps(data.get('categories', [])),
-        json.dumps(data['components']),
-        data.get('dateRange'),
-        data.get('customStartDate'),
-        data.get('customEndDate'),
-        datetime.now().isoformat(),
-        datetime.now().isoformat()
-    ))
-    
-    template_id = cursor.lastrowid
-    conn.commit()
-    
-    cursor.execute('SELECT * FROM report_templates WHERE id = ?', (template_id,))
-    new_template = dict(cursor.fetchone())
-    
-    # Parse JSON fields
-    if new_template.get('categories'):
+def run_scheduler():
+    """Run background checks periodically"""
+    while True:
         try:
-            new_template['categories'] = json.loads(new_template['categories'])
-        except:
-            new_template['categories'] = []
-    if new_template.get('components'):
-        try:
-            new_template['components'] = json.loads(new_template['components'])
-        except:
-            new_template['components'] = []
-    
-    conn.close()
-    return jsonify(new_template), 201
-
-
-@app.route('/api/report-templates/<int:template_id>', methods=['PUT'])
-def update_report_template(template_id):
-    """Update a report template"""
-    data = request.get_json()
-    
-    if not data:
-        return jsonify({'error': 'No data provided'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    update_fields = []
-    values = []
-    
-    if 'name' in data:
-        update_fields.append('name = ?')
-        values.append(data['name'])
-    if 'categories' in data:
-        update_fields.append('categories = ?')
-        values.append(json.dumps(data['categories']))
-    if 'components' in data:
-        update_fields.append('components = ?')
-        values.append(json.dumps(data['components']))
-    if 'dateRange' in data:
-        update_fields.append('date_range = ?')
-        values.append(data['dateRange'])
-    if 'customStartDate' in data:
-        update_fields.append('custom_start_date = ?')
-        values.append(data['customStartDate'])
-    if 'customEndDate' in data:
-        update_fields.append('custom_end_date = ?')
-        values.append(data['customEndDate'])
-    
-    update_fields.append('updated_at = ?')
-    values.append(datetime.now().isoformat())
-    values.append(template_id)
-    
-    cursor.execute(f'''
-        UPDATE report_templates 
-        SET {', '.join(update_fields)}
-        WHERE id = ?
-    ''', values)
-    
-    if cursor.rowcount == 0:
-        conn.close()
-        return jsonify({'error': 'Template not found'}), 404
-    
-    conn.commit()
-    
-    cursor.execute('SELECT * FROM report_templates WHERE id = ?', (template_id,))
-    updated_template = dict(cursor.fetchone())
-    
-    # Parse JSON fields
-    if updated_template.get('categories'):
-        try:
-            updated_template['categories'] = json.loads(updated_template['categories'])
-        except:
-            updated_template['categories'] = []
-    if updated_template.get('components'):
-        try:
-            updated_template['components'] = json.loads(updated_template['components'])
-        except:
-            updated_template['components'] = []
-    
-    conn.close()
-    return jsonify(updated_template), 200
-
-
-@app.route('/api/report-templates/<int:template_id>', methods=['DELETE'])
-def delete_report_template(template_id):
-    """Delete a report template"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('DELETE FROM report_templates WHERE id = ?', (template_id,))
-    
-    if cursor.rowcount == 0:
-        conn.close()
-        return jsonify({'error': 'Template not found'}), 404
-    
-    conn.commit()
-    conn.close()
-    
-    return jsonify({'message': 'Template deleted successfully'}), 200
-
-
-# ============================================================================
-# SAVED SEARCHES ENDPOINTS
-# ============================================================================
-
-@app.route('/api/saved-searches', methods=['GET'])
-def get_saved_searches():
-    """Get all saved searches"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT id, name, query, filters, entity_type, created_at FROM saved_searches ORDER BY created_at DESC')
-    searches = []
-    for row in cursor.fetchall():
-        searches.append({
-            'id': row[0],
-            'name': row[1],
-            'query': row[2],
-            'filters': json.loads(row[3]) if row[3] else {},
-            'entity_type': row[4] if len(row) > 4 else 'transaction',  # Default to transaction for backward compatibility
-            'created_at': row[5] if len(row) > 5 else row[4]  # Handle both old and new schema
-        })
-    
-    conn.close()
-    return jsonify(searches), 200
-
-
-@app.route('/api/saved-searches', methods=['POST'])
-def create_saved_search():
-    """Create a new saved search"""
-    data = request.get_json()
-    
-    if not data or not data.get('name'):
-        return jsonify({'error': 'Name is required'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        INSERT INTO saved_searches (name, query, filters, entity_type, created_at)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (
-        data['name'],
-        data.get('query', ''),
-        json.dumps(data.get('filters', {})),
-        data.get('entity_type', 'transaction'),  # Default to transaction for backward compatibility
-        datetime.now().isoformat()
-    ))
-    
-    conn.commit()
-    search_id = cursor.lastrowid
-    conn.close()
-    
-    return jsonify({
-        'id': search_id,
-        'name': data['name'],
-        'query': data.get('query', ''),
-        'filters': data.get('filters', {}),
-        'message': 'Search saved successfully'
-    }), 201
-
-
-@app.route('/api/saved-searches/<int:search_id>', methods=['DELETE'])
-def delete_saved_search(search_id):
-    """Delete a saved search"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('DELETE FROM saved_searches WHERE id = ?', (search_id,))
-    
-    if cursor.rowcount == 0:
-        conn.close()
-        return jsonify({'error': 'Search not found'}), 404
-    
-    conn.commit()
-    conn.close()
-    
-    return jsonify({'message': 'Search deleted successfully'}), 200
-
-
-# ============================================================================
-# DASHBOARD LAYOUT ENDPOINTS
-# ============================================================================
-
-@app.route('/api/dashboard-layout', methods=['GET'])
-def get_dashboard_layout():
-    """Get dashboard widget layout"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT layout_data FROM dashboard_layouts ORDER BY updated_at DESC LIMIT 1')
-    row = cursor.fetchone()
-    
-    conn.close()
-    
-    if row and row[0]:
-        layout_data = json.loads(row[0])
-        return jsonify(layout_data.get('widgets', [])), 200
-    
-    return jsonify([]), 200
-
-
-@app.route('/api/dashboard-layout', methods=['POST'])
-def save_dashboard_layout():
-    """Save dashboard widget layout"""
-    data = request.get_json()
-    
-    if not data or 'widgets' not in data:
-        return jsonify({'error': 'Widgets data is required'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    # Check if dashboard_layouts table exists, if not create it
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='dashboard_layouts'")
-    if not cursor.fetchone():
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS dashboard_layouts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                layout_data TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        conn.commit()
-    
-    # Save or update layout
-    layout_data = json.dumps({'widgets': data['widgets']})
-    cursor.execute('''
-        INSERT INTO dashboard_layouts (layout_data, updated_at)
-        VALUES (?, ?)
-    ''', (layout_data, datetime.now().isoformat()))
-    
-    conn.commit()
-    conn.close()
-    
-    return jsonify({'message': 'Dashboard layout saved successfully'}), 200
-
-
-# ============================================================================
-# FILE UPLOAD ENDPOINT
-# ============================================================================
-
-@app.route('/api/upload', methods=['POST'])
-def upload_file():
-    """Upload a receipt file (legacy endpoint - kept for backward compatibility)"""
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file provided'}), 400
-    
-    file = request.files['file']
-    
-    if file.filename == '':
-        return jsonify({'error': 'No file selected'}), 400
-    
-    if not allowed_file(file.filename):
-        return jsonify({'error': 'File type not allowed'}), 400
-    
-    # Get receipt storage path from settings or use default
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute('SELECT value FROM settings WHERE key = ?', ('receipt_storage_path',))
-    result = cursor.fetchone()
-    conn.close()
-    
-    if result:
-        storage_path = result['value']
-    else:
-        storage_path = app.config['UPLOAD_FOLDER']
-    
-    # Create directory if it doesn't exist
-    os.makedirs(storage_path, exist_ok=True)
-    
-    # Secure filename and save (legacy format: timestamp_filename)
-    filename = secure_filename(file.filename)
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    filename = f"{timestamp}_{filename}"
-    
-    file_path = os.path.join(storage_path, filename)
-    file.save(file_path)
-    
-    return jsonify({
-        'message': 'File uploaded successfully',
-        'file_path': file_path,
-        'filename': filename
-    }), 200
-
-
-@app.route('/api/transactions/<int:transaction_id>/upload-receipt', methods=['POST'])
-def upload_transaction_receipt(transaction_id):
-    """Upload a receipt file for a specific transaction - supports multiple receipts (stored as JSON array)"""
-    try:
-        # Verify transaction exists
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute('SELECT id, receipt_path, receipt FROM transactions WHERE id = ?', (transaction_id,))
-        transaction = cursor.fetchone()
-        
-        if not transaction:
-            conn.close()
-            return jsonify({'error': 'Transaction not found'}), 404
-        
-        if 'file' not in request.files:
-            conn.close()
-            return jsonify({'error': 'No file provided'}), 400
-        
-        file = request.files['file']
-        
-        if file.filename == '':
-            conn.close()
-            return jsonify({'error': 'No file selected'}), 400
-        
-        if not allowed_file(file.filename):
-            conn.close()
-            return jsonify({'error': 'File type not allowed'}), 400
-        
-        # Get receipt storage path from settings or use default
-        cursor.execute('SELECT value FROM settings WHERE key = ?', ('receipt_storage_path',))
-        result = cursor.fetchone()
-        
-        if result:
-            storage_path = result['value']
-        else:
-            storage_path = app.config['UPLOAD_FOLDER']
-        
-        # Create directory if it doesn't exist
-        os.makedirs(storage_path, exist_ok=True)
-        
-        # Secure filename and save with transaction ID prefix
-        original_filename = secure_filename(file.filename)
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"{transaction_id}_{timestamp}_{original_filename}"
-        
-        file_path = os.path.join(storage_path, filename)
-        file.save(file_path)
-        
-        # Parse existing receipt paths (support both old single path and new JSON array)
-        current_receipt_paths = []
-        old_receipt_path = transaction['receipt_path'] if transaction else None
-        
-        if old_receipt_path:
-            try:
-                # Try to parse as JSON array
-                current_receipt_paths = json.loads(old_receipt_path)
-                if not isinstance(current_receipt_paths, list):
-                    # If it's not an array, convert single path to array
-                    current_receipt_paths = [old_receipt_path]
-            except (json.JSONDecodeError, TypeError):
-                # If it's not JSON, treat as single path
-                current_receipt_paths = [old_receipt_path] if old_receipt_path else []
-        
-        # Add new receipt path to array
-        current_receipt_paths.append(file_path)
-        
-        # Save as JSON array
-        receipt_paths_json = json.dumps(current_receipt_paths)
-        
-        # Update transaction with new receipt paths array
-        cursor.execute('UPDATE transactions SET receipt = ?, receipt_path = ?, updated_at = ? WHERE id = ?',
-                      (True, receipt_paths_json, datetime.now().isoformat(), transaction_id))
-        conn.commit()
-        
-        # Get updated transaction for history
-        cursor.execute('SELECT * FROM transactions WHERE id = ?', (transaction_id,))
-        updated_transaction = dict(cursor.fetchone())
-        
-        # Add to history
-        add_history_entry(
-            action_type='update',
-            action=f'Laddade upp kvitto för transaktion: {updated_transaction.get("title", "Okänt")}',
-            entity_type='transaction',
-            entity_id=transaction_id,
-            entity_data=updated_transaction,
-            undo_data={'receipt_path': old_receipt_path} if old_receipt_path else None
-        )
-        
-        conn.close()
-        
-        return jsonify({
-            'message': 'Receipt uploaded successfully',
-            'file_path': file_path,
-            'filename': filename,
-            'receipt_paths': current_receipt_paths
-        }), 200
-        
-    except Exception as e:
-        print(f"❌ [Backend] Error uploading receipt: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': f'Upload failed: {str(e)}'}), 500
-
-
-@app.route('/api/agreements/<int:agreement_id>/upload-image', methods=['POST'])
-def upload_agreement_image(agreement_id):
-    """Upload an image for an agreement - saves to uploads/avtal/"""
-    try:
-        print(f"📤 [Backend] Upload request för avtal {agreement_id}")
-        
-        if 'file' not in request.files:
-            print("❌ [Backend] Ingen fil i request")
-            return jsonify({'error': 'No file provided'}), 400
-        
-        file = request.files['file']
-        
-        if file.filename == '':
-            print("❌ [Backend] Tomt filnamn")
-            return jsonify({'error': 'No file selected'}), 400
-        
-        print(f"📁 [Backend] Fil: {file.filename}, Storlek: {file.content_length}")
-        
-        # Only allow images
-        if not file.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
-            print(f"❌ [Backend] Fel filtyp: {file.filename}")
-            return jsonify({'error': 'Only image files are allowed'}), 400
-        
-        # Get agreement images storage path from settings or use default
-        conn_settings = get_db()
-        cursor_settings = conn_settings.cursor()
-        cursor_settings.execute('SELECT value FROM settings WHERE key = ?', ('agreement_images_path',))
-        result_settings = cursor_settings.fetchone()
-        conn_settings.close()
-        
-        if result_settings:
-            avtal_folder = result_settings['value']
-        else:
-            # Default: uploads/avtal
-            avtal_folder = os.path.join(app.config['UPLOAD_FOLDER'], 'avtal')
-        
-        # Create directory if it doesn't exist
-        os.makedirs(avtal_folder, exist_ok=True)
-        print(f"📂 [Backend] Avtal-mapp: {avtal_folder}")
-        
-        # Secure filename and save
-        filename = secure_filename(file.filename)
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"{agreement_id}_{timestamp}_{filename}"
-        
-        file_path = os.path.join(avtal_folder, filename)
-        print(f"💾 [Backend] Sparar fil till: {file_path}")
-        
-        file.save(file_path)
-        
-        # Kontrollera att filen faktiskt sparades
-        if not os.path.exists(file_path):
-            print(f"❌ [Backend] Filen sparades inte: {file_path}")
-            return jsonify({'error': 'File save failed'}), 500
-        
-        print(f"✅ [Backend] Fil sparad: {file_path}")
-        
-        # Update agreement with new image path
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Check if images column exists, if not add it
-        cursor.execute("PRAGMA table_info(agreements)")
-        columns = [col[1] for col in cursor.fetchall()]
-        if 'images' not in columns:
-            print("⚠️ [Backend] Lägger till images-kolumn...")
-            cursor.execute('ALTER TABLE agreements ADD COLUMN images TEXT DEFAULT "[]"')
-            conn.commit()
-        
-        # Check if start_date and end_date columns exist, if not add them
-        if 'start_date' not in columns:
-            print("⚠️ [Backend] Lägger till start_date-kolumn...")
-            cursor.execute('ALTER TABLE agreements ADD COLUMN start_date TEXT')
-            conn.commit()
-        if 'end_date' not in columns:
-            print("⚠️ [Backend] Lägger till end_date-kolumn...")
-            cursor.execute('ALTER TABLE agreements ADD COLUMN end_date TEXT')
-            conn.commit()
-        
-        # Get current images
-        cursor.execute('SELECT images FROM agreements WHERE id = ?', (agreement_id,))
-        result = cursor.fetchone()
-        
-        if not result:
-            conn.close()
-            print(f"❌ [Backend] Avtal {agreement_id} hittades inte")
-            return jsonify({'error': 'Agreement not found'}), 404
-        
-        # Parse existing images (stored as JSON string)
-        try:
-            import json
-            current_images = json.loads(result['images']) if result['images'] else []
-            print(f"📸 [Backend] Nuvarande bilder: {current_images}")
+            check_expiring_trials()
         except Exception as e:
-            print(f"⚠️ [Backend] Kunde inte parsa images: {e}")
-            current_images = []
+            print(f"Scheduler error: {e}")
         
-        # Store full path in database (or relative path if using default)
-        # If using custom path, store the full path
-        if result_settings and result_settings['value'] != os.path.join(app.config['UPLOAD_FOLDER'], 'avtal'):
-            # Custom path - store full path
-            image_path = file_path
-        else:
-            # Default path - store relative path
-            image_path = os.path.join('avtal', filename).replace('\\', '/')
-        
-        current_images.append(image_path)
-        print(f"📸 [Backend] Ny bildlista: {current_images}")
-        
-        # Get old images for history
-        old_images = current_images.copy() if current_images else []
-        
-        # Update agreement
-        cursor.execute('UPDATE agreements SET images = ?, updated_at = ? WHERE id = ?', 
-                       (json.dumps(current_images), datetime.now().isoformat(), agreement_id))
-        conn.commit()
-        
-        # Get updated agreement for history
-        cursor.execute('SELECT * FROM agreements WHERE id = ?', (agreement_id,))
-        updated_agreement = dict(cursor.fetchone())
-        
-        # Add to history
-        add_history_entry(
-            action_type='update',
-            action=f'Laddade upp bild för avtal: {updated_agreement.get("name", "Okänt")}',
-            entity_type='agreement',
-            entity_id=agreement_id,
-            entity_data=updated_agreement,
-            undo_data={'images': old_images} if old_images else None
-        )
-        
-        conn.close()
-        
-        print(f"✅ [Backend] Avtal uppdaterat med ny bild: {image_path}")
-        
-        return jsonify({
-            'message': 'Image uploaded successfully',
-            'image_path': image_path,
-            'filename': filename
-        }), 200
-        
-    except Exception as e:
-        print(f"❌ [Backend] Fel vid bilduppladdning: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': f'Upload failed: {str(e)}'}), 500
-
-
-@app.route('/uploads/<path:filename>')
-def serve_uploaded_file(filename):
-    """Serve uploaded files (images, receipts, etc.)"""
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
-
-
-@app.route('/api/files/<path:filepath>')
-def serve_custom_file(filepath):
-    """Serve files from custom paths (with security checks)"""
-    # Säkerhetskontroll - bara tillåt sökvägar som börjar med tillåtna mappar
-    # Normalisera sökväg
-    normalized_path = filepath.replace('\\', '/')
-    
-    # URL-decode sökvägen
-    from urllib.parse import unquote
-    normalized_path = unquote(normalized_path)
-    
-    # Kontrollera om det är en absolut sökväg som börjar med en tillåten mapp
-    # Hämta inställningar för att kontrollera tillåtna mappar
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    # Kontrollera agreement_images_path
-    cursor.execute('SELECT value FROM settings WHERE key = ?', ('agreement_images_path',))
-    agreement_path_result = cursor.fetchone()
-    
-    # Kontrollera receipt_storage_path
-    cursor.execute('SELECT value FROM settings WHERE key = ?', ('receipt_storage_path',))
-    receipt_path_result = cursor.fetchone()
-    
-    conn.close()
-    
-    # Försök hitta filen i agreement images path
-    if agreement_path_result and agreement_path_result['value']:
-        allowed_path = agreement_path_result['value'].replace('\\', '/')
-        # Kontrollera om filen finns i den tillåtna mappen
-        if normalized_path.startswith(allowed_path):
-            if os.path.exists(normalized_path) and os.path.isfile(normalized_path):
-                return send_file(normalized_path)
-        # Om det är en relativ sökväg, försök konstruera full path
-        elif not os.path.isabs(normalized_path):
-            full_path = os.path.join(allowed_path, normalized_path).replace('\\', '/')
-            if os.path.exists(full_path) and os.path.isfile(full_path):
-                return send_file(full_path)
-    
-    # Försök hitta filen i receipt storage path
-    if receipt_path_result and receipt_path_result['value']:
-        allowed_path = receipt_path_result['value'].replace('\\', '/')
-        if normalized_path.startswith(allowed_path):
-            if os.path.exists(normalized_path) and os.path.isfile(normalized_path):
-                return send_file(normalized_path)
-        elif not os.path.isabs(normalized_path):
-            full_path = os.path.join(allowed_path, normalized_path).replace('\\', '/')
-            if os.path.exists(full_path) and os.path.isfile(full_path):
-                return send_file(full_path)
-    
-    # Försök med default uploads folder
-    default_path = os.path.join(app.config['UPLOAD_FOLDER'], normalized_path).replace('\\', '/')
-    if os.path.exists(default_path) and os.path.isfile(default_path):
-        return send_file(default_path)
-    
-    # Försök med avtal subfolder
-    avtal_path = os.path.join(app.config['UPLOAD_FOLDER'], 'avtal', normalized_path.replace('avtal/', '')).replace('\\', '/')
-    if os.path.exists(avtal_path) and os.path.isfile(avtal_path):
-        return send_file(avtal_path)
-    
-    return jsonify({'error': 'File not found or access denied', 'path': normalized_path}), 404
-
-
-# ============================================================================
-# CATEGORIES ENDPOINTS
-# ============================================================================
-
-@app.route('/api/categories', methods=['GET'])
-def get_categories():
-    """Get all categories"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT * FROM categories ORDER BY name')
-    categories = [row['name'] for row in cursor.fetchall()]
-    
-    conn.close()
-    return jsonify(categories), 200
-
-
-@app.route('/api/categories', methods=['POST'])
-def create_category():
-    """Create a new category"""
-    data = request.get_json()
-    
-    if not data or 'name' not in data:
-        return jsonify({'error': 'Category name is required'}), 400
-    
-    name = data['name'].strip()
-    
-    if not name:
-        return jsonify({'error': 'Category name cannot be empty'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    try:
-        cursor.execute('INSERT INTO categories (name) VALUES (?)', (name,))
-        conn.commit()
-        category_id = cursor.lastrowid
-        
-        cursor.execute('SELECT * FROM categories WHERE id = ?', (category_id,))
-        new_category = dict(cursor.fetchone())
-        
-        conn.close()
-        return jsonify(new_category), 201
-    except sqlite3.IntegrityError:
-        conn.close()
-        return jsonify({'error': 'Category already exists'}), 400
-    except Exception as e:
-        conn.close()
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/categories/<int:category_id>', methods=['PUT'])
-def update_category(category_id):
-    """Update a category"""
-    data = request.get_json()
-    
-    if not data or 'name' not in data:
-        return jsonify({'error': 'Category name is required'}), 400
-    
-    name = data['name'].strip()
-    
-    if not name:
-        return jsonify({'error': 'Category name cannot be empty'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    try:
-        # Check if category exists
-        cursor.execute('SELECT * FROM categories WHERE id = ?', (category_id,))
-        if not cursor.fetchone():
-            conn.close()
-            return jsonify({'error': 'Category not found'}), 404
-        
-        # Update category
-        cursor.execute('UPDATE categories SET name = ? WHERE id = ?', (name, category_id))
-        conn.commit()
-        
-        cursor.execute('SELECT * FROM categories WHERE id = ?', (category_id,))
-        updated_category = dict(cursor.fetchone())
-        
-        conn.close()
-        return jsonify(updated_category), 200
-    except sqlite3.IntegrityError:
-        conn.close()
-        return jsonify({'error': 'Category name already exists'}), 400
-    except Exception as e:
-        conn.close()
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/categories/<int:category_id>', methods=['DELETE'])
-def delete_category(category_id):
-    """Delete a category"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    # Check if category exists
-    cursor.execute('SELECT * FROM categories WHERE id = ?', (category_id,))
-    if not cursor.fetchone():
-        conn.close()
-        return jsonify({'error': 'Category not found'}), 404
-    
-    # Check if category is used in transactions or agreements
-    cursor.execute('SELECT COUNT(*) FROM transactions WHERE category = (SELECT name FROM categories WHERE id = ?)', (category_id,))
-    tx_count = cursor.fetchone()[0]
-    
-    cursor.execute('SELECT COUNT(*) FROM agreements WHERE category = (SELECT name FROM categories WHERE id = ?)', (category_id,))
-    ag_count = cursor.fetchone()[0]
-    
-    if tx_count > 0 or ag_count > 0:
-        conn.close()
-        return jsonify({
-            'error': 'Cannot delete category that is in use',
-            'transactions': tx_count,
-            'agreements': ag_count
-        }), 400
-    
-    # Delete category
-    cursor.execute('DELETE FROM categories WHERE id = ?', (category_id,))
-    conn.commit()
-    
-    conn.close()
-    return jsonify({'message': 'Category deleted successfully'}), 200
-
-
-@app.route('/api/categories/with-ids', methods=['GET'])
-def get_categories_with_ids():
-    """Get all categories with their IDs and usage statistics"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT * FROM categories ORDER BY name')
-    categories = []
-    
-    for row in cursor.fetchall():
-        category = dict(row)
-        category_id = category['id']
-        category_name = category['name']
-        
-        # Count transactions using this category
-        cursor.execute('SELECT COUNT(*) FROM transactions WHERE category = ?', (category_name,))
-        tx_count = cursor.fetchone()[0]
-        
-        # Count agreements using this category
-        cursor.execute('SELECT COUNT(*) FROM agreements WHERE category = ?', (category_name,))
-        ag_count = cursor.fetchone()[0]
-        
-        category['transaction_count'] = tx_count
-        category['agreement_count'] = ag_count
-        category['total_usage'] = tx_count + ag_count
-        
-        categories.append(category)
-    
-    conn.close()
-    return jsonify(categories), 200
-
-
-@app.route('/api/categories/merge', methods=['POST'])
-def merge_categories():
-    """Merge two categories into one"""
-    data = request.get_json()
-    
-    if not data or 'source_id' not in data or 'target_id' not in data or 'new_name' not in data:
-        return jsonify({'error': 'source_id, target_id, and new_name are required'}), 400
-    
-    source_id = data['source_id']
-    target_id = data['target_id']
-    new_name = data['new_name'].strip()
-    
-    if not new_name:
-        return jsonify({'error': 'Category name cannot be empty'}), 400
-    
-    if source_id == target_id:
-        return jsonify({'error': 'Cannot merge category with itself'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    try:
-        # Get category names
-        cursor.execute('SELECT name FROM categories WHERE id = ?', (source_id,))
-        source_result = cursor.fetchone()
-        if not source_result:
-            conn.close()
-            return jsonify({'error': 'Source category not found'}), 404
-        
-        source_name = source_result['name']
-        
-        cursor.execute('SELECT name FROM categories WHERE id = ?', (target_id,))
-        target_result = cursor.fetchone()
-        if not target_result:
-            conn.close()
-            return jsonify({'error': 'Target category not found'}), 404
-        
-        target_name = target_result['name']
-        
-        # Update all transactions using source category to use new name
-        cursor.execute('UPDATE transactions SET category = ? WHERE category = ?', (new_name, source_name))
-        tx_updated = cursor.rowcount
-        
-        # Update all agreements using source category to use new name
-        cursor.execute('UPDATE agreements SET category = ? WHERE category = ?', (new_name, source_name))
-        ag_updated = cursor.rowcount
-        
-        # Update target category name if different
-        if target_name != new_name:
-            cursor.execute('UPDATE categories SET name = ? WHERE id = ?', (new_name, target_id))
-        
-        # Delete source category
-        cursor.execute('DELETE FROM categories WHERE id = ?', (source_id,))
-        
-        conn.commit()
-        
-        # Get updated category
-        cursor.execute('SELECT * FROM categories WHERE id = ?', (target_id,))
-        merged_category = dict(cursor.fetchone())
-        
-        # Get usage counts
-        cursor.execute('SELECT COUNT(*) FROM transactions WHERE category = ?', (new_name,))
-        tx_count = cursor.fetchone()[0]
-        
-        cursor.execute('SELECT COUNT(*) FROM agreements WHERE category = ?', (new_name,))
-        ag_count = cursor.fetchone()[0]
-        
-        merged_category['transaction_count'] = tx_count
-        merged_category['agreement_count'] = ag_count
-        merged_category['total_usage'] = tx_count + ag_count
-        
-        conn.close()
-        
-        return jsonify({
-            'message': 'Categories merged successfully',
-            'category': merged_category,
-            'transactions_updated': tx_updated,
-            'agreements_updated': ag_updated
-        }), 200
-        
-    except sqlite3.IntegrityError:
-        conn.close()
-        return jsonify({'error': 'Category name already exists'}), 400
-    except Exception as e:
-        conn.close()
-        return jsonify({'error': str(e)}), 500
-
-
-# ============================================================================
-# CATEGORY RULES ENDPOINTS
-# ============================================================================
-
-@app.route('/api/category-rules', methods=['GET'])
-def get_category_rules():
-    """Get all category rules"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    # Check if table exists, create if not
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='category_rules'")
-    if not cursor.fetchone():
-        cursor.execute('''
-            CREATE TABLE category_rules (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                description_pattern TEXT NOT NULL,
-                category TEXT NOT NULL,
-                is_active BOOLEAN NOT NULL DEFAULT 1,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        conn.commit()
-    
-    # Return all rules (not just active) so UI can show all
-    cursor.execute('SELECT * FROM category_rules ORDER BY description_pattern')
-    rows = cursor.fetchall()
-    
-    # Parse description_pattern as JSON if it's an array, otherwise keep as string
-    import json
-    rules = []
-    for row in rows:
-        rule = dict(row)
-        try:
-            # Try to parse as JSON array
-            patterns = json.loads(rule['description_pattern'])
-            if isinstance(patterns, list):
-                rule['description_patterns'] = patterns
-                rule['description_pattern'] = patterns[0] if patterns else ''  # Keep first for backward compatibility
-            else:
-                rule['description_patterns'] = [patterns] if patterns else []
-        except (json.JSONDecodeError, TypeError):
-            # Not JSON, treat as single pattern string
-            rule['description_patterns'] = [rule['description_pattern']] if rule['description_pattern'] else []
-        rules.append(rule)
-    
-    conn.close()
-    return jsonify(rules), 200
-
-
-@app.route('/api/category-rules', methods=['POST'])
-def create_category_rule():
-    """Create a new category rule"""
-    data = request.get_json()
-    
-    # Support both single pattern (string) and multiple patterns (array)
-    patterns = data.get('description_patterns') or data.get('description_pattern')
-    if not patterns or not data.get('category'):
-        return jsonify({'error': 'Missing description_pattern(s) or category'}), 400
-    
-    # Convert to list if single pattern
-    if isinstance(patterns, str):
-        patterns = [patterns]
-    
-    # Store as JSON array
-    import json
-    patterns_json = json.dumps(patterns)
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    # Check if table exists
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='category_rules'")
-    if not cursor.fetchone():
-        cursor.execute('''
-            CREATE TABLE category_rules (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                description_pattern TEXT NOT NULL,
-                category TEXT NOT NULL,
-                is_active BOOLEAN NOT NULL DEFAULT 1,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        conn.commit()
-    
-    cursor.execute('''
-        INSERT INTO category_rules (description_pattern, category, is_active)
-        VALUES (?, ?, ?)
-    ''', (
-        patterns_json,
-        data['category'],
-        data.get('is_active', True)
-    ))
-    
-    rule_id = cursor.lastrowid
-    conn.commit()
-    
-    cursor.execute('SELECT * FROM category_rules WHERE id = ?', (rule_id,))
-    row = cursor.fetchone()
-    new_rule = dict(row)
-    
-    # Parse description_pattern as JSON
-    import json
-    try:
-        patterns = json.loads(new_rule['description_pattern'])
-        if isinstance(patterns, list):
-            new_rule['description_patterns'] = patterns
-            new_rule['description_pattern'] = patterns[0] if patterns else ''
-        else:
-            new_rule['description_patterns'] = [patterns] if patterns else []
-    except (json.JSONDecodeError, TypeError):
-        new_rule['description_patterns'] = [new_rule['description_pattern']] if new_rule['description_pattern'] else []
-    
-    conn.close()
-    return jsonify(new_rule), 201
-
-
-@app.route('/api/category-rules/<int:rule_id>', methods=['PUT'])
-def update_category_rule(rule_id):
-    """Update a category rule"""
-    data = request.get_json()
-    
-    if not data:
-        return jsonify({'error': 'No data provided'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    update_fields = []
-    values = []
-    
-    if 'description_patterns' in data or 'description_pattern' in data:
-        # Support both description_patterns (array) and description_pattern (string)
-        patterns = data.get('description_patterns') or data.get('description_pattern')
-        if isinstance(patterns, str):
-            patterns = [patterns]
-        
-        import json
-        patterns_json = json.dumps(patterns)
-        update_fields.append('description_pattern = ?')
-        values.append(patterns_json)
-    
-    if 'category' in data:
-        update_fields.append('category = ?')
-        values.append(data['category'])
-    
-    if 'is_active' in data:
-        update_fields.append('is_active = ?')
-        values.append(data['is_active'])
-    
-    if not update_fields:
-        conn.close()
-        return jsonify({'error': 'No valid fields to update'}), 400
-    
-    update_fields.append('updated_at = ?')
-    values.append(datetime.now().isoformat())
-    values.append(rule_id)
-    
-    query = f"UPDATE category_rules SET {', '.join(update_fields)} WHERE id = ?"
-    
-    cursor.execute(query, values)
-    conn.commit()
-    
-    if cursor.rowcount == 0:
-        conn.close()
-        return jsonify({'error': 'Rule not found'}), 404
-    
-    cursor.execute('SELECT * FROM category_rules WHERE id = ?', (rule_id,))
-    row = cursor.fetchone()
-    updated_rule = dict(row)
-    
-    # Parse description_pattern as JSON
-    import json
-    try:
-        patterns = json.loads(updated_rule['description_pattern'])
-        if isinstance(patterns, list):
-            updated_rule['description_patterns'] = patterns
-            updated_rule['description_pattern'] = patterns[0] if patterns else ''
-        else:
-            updated_rule['description_patterns'] = [patterns] if patterns else []
-    except (json.JSONDecodeError, TypeError):
-        updated_rule['description_patterns'] = [updated_rule['description_pattern']] if updated_rule['description_pattern'] else []
-    
-    conn.close()
-    return jsonify(updated_rule), 200
-
-
-@app.route('/api/category-rules/<int:rule_id>', methods=['DELETE'])
-def delete_category_rule(rule_id):
-    """Delete a category rule"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('DELETE FROM category_rules WHERE id = ?', (rule_id,))
-    conn.commit()
-    
-    if cursor.rowcount == 0:
-        conn.close()
-        return jsonify({'error': 'Rule not found'}), 404
-    
-    conn.close()
-    return jsonify({'message': 'Rule deleted successfully'}), 200
-
-
-# ============================================================================
-# VEHICLE ENDPOINTS
-# ============================================================================
-
-@app.route('/api/vehicles', methods=['GET'])
-def get_vehicles():
-    """Get all vehicles"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT * FROM vehicles ORDER BY registration_number')
-    vehicles = []
-    
-    for row in cursor.fetchall():
-        vehicle = dict(row)
-        # Parse images if it exists
-        if 'images' in vehicle and vehicle['images']:
-            try:
-                import json
-                vehicle['images'] = json.loads(vehicle['images'])
-            except:
-                vehicle['images'] = []
-        else:
-            vehicle['images'] = []
-        vehicles.append(vehicle)
-    
-    conn.close()
-    return jsonify(vehicles), 200
-
-
-@app.route('/api/vehicles/<int:vehicle_id>', methods=['GET'])
-def get_vehicle(vehicle_id):
-    """Get a specific vehicle"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT * FROM vehicles WHERE id = ?', (vehicle_id,))
-    row = cursor.fetchone()
-    conn.close()
-    
-    if row:
-        vehicle = dict(row)
-        # Parse images
-        if 'images' in vehicle and vehicle['images']:
-            try:
-                import json
-                vehicle['images'] = json.loads(vehicle['images'])
-            except:
-                vehicle['images'] = []
-        else:
-            vehicle['images'] = []
-        return jsonify(vehicle), 200
-    
-    return jsonify({'error': 'Vehicle not found'}), 404
-
-
-@app.route('/api/vehicles', methods=['POST'])
-def create_vehicle():
-    """Create a new vehicle"""
-    data = request.get_json()
-    
-    required_fields = ['registration_number', 'make_model']
-    if not all(field in data for field in required_fields):
-        return jsonify({'error': 'Missing required fields'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    # Check if registration number already exists
-    cursor.execute('SELECT id FROM vehicles WHERE registration_number = ?', (data['registration_number'],))
-    if cursor.fetchone():
-        conn.close()
-        return jsonify({'error': 'Registration number already exists'}), 400
-    
-    cursor.execute('''
-        INSERT INTO vehicles (
-            registration_number, make_model, odometer, next_inspection,
-            insurance_company, insurance_type, status, category, note,
-            agreement_id, next_service_odometer, next_service_date
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (
-        data['registration_number'],
-        data['make_model'],
-        data.get('odometer', 0),
-        data.get('next_inspection', ''),
-        data.get('insurance_company', ''),
-        data.get('insurance_type', ''),
-        data.get('status', 'Aktiv'),
-        data.get('category', 'Personbil'),
-        data.get('note', ''),
-        data.get('agreement_id'),
-        data.get('next_service_odometer'),
-        data.get('next_service_date', '')
-    ))
-    
-    vehicle_id = cursor.lastrowid
-    conn.commit()
-    
-    cursor.execute('SELECT * FROM vehicles WHERE id = ?', (vehicle_id,))
-    new_vehicle = dict(cursor.fetchone())
-    
-    conn.close()
-    
-    return jsonify(new_vehicle), 201
-
-
-@app.route('/api/vehicles/<int:vehicle_id>', methods=['PUT'])
-def update_vehicle(vehicle_id):
-    """Update a vehicle"""
-    data = request.get_json()
-    
-    if not data:
-        return jsonify({'error': 'No data provided'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    # Check if vehicle exists
-    cursor.execute('SELECT id FROM vehicles WHERE id = ?', (vehicle_id,))
-    if not cursor.fetchone():
-        conn.close()
-        return jsonify({'error': 'Vehicle not found'}), 404
-    
-    # Check if registration number is being changed and if it already exists
-    if 'registration_number' in data:
-        cursor.execute('SELECT id FROM vehicles WHERE registration_number = ? AND id != ?', 
-                      (data['registration_number'], vehicle_id))
-        if cursor.fetchone():
-            conn.close()
-            return jsonify({'error': 'Registration number already exists'}), 400
-    
-    # Build update query dynamically
-    update_fields = []
-    values = []
-    
-    allowed_fields = [
-        'registration_number', 'make_model', 'odometer', 'next_inspection',
-        'insurance_company', 'insurance_type', 'status', 'category', 'note',
-        'agreement_id', 'next_service_odometer', 'next_service_date'
-    ]
-    
-    for field in allowed_fields:
-        if field in data:
-            update_fields.append(f"{field} = ?")
-            values.append(data[field])
-    
-    if 'images' in data:
-        import json
-        images_json = json.dumps(data['images']) if isinstance(data['images'], list) else data['images']
-        update_fields.append("images = ?")
-        values.append(images_json)
-    
-    if not update_fields:
-        conn.close()
-        return jsonify({'error': 'No valid fields to update'}), 400
-    
-    update_fields.append("updated_at = ?")
-    values.append(datetime.now().isoformat())
-    values.append(vehicle_id)
-    
-    cursor.execute(f'''
-        UPDATE vehicles 
-        SET {', '.join(update_fields)}
-        WHERE id = ?
-    ''', values)
-    
-    conn.commit()
-    
-    cursor.execute('SELECT * FROM vehicles WHERE id = ?', (vehicle_id,))
-    updated_vehicle = dict(cursor.fetchone())
-    
-    # Parse images
-    if 'images' in updated_vehicle and updated_vehicle['images']:
-        try:
-            updated_vehicle['images'] = json.loads(updated_vehicle['images'])
-        except:
-            updated_vehicle['images'] = []
-    else:
-        updated_vehicle['images'] = []
-    
-    conn.close()
-    
-    return jsonify(updated_vehicle), 200
-
-
-@app.route('/api/vehicles/<int:vehicle_id>', methods=['DELETE'])
-def delete_vehicle(vehicle_id):
-    """Delete a vehicle"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('DELETE FROM vehicles WHERE id = ?', (vehicle_id,))
-    
-    if cursor.rowcount == 0:
-        conn.close()
-        return jsonify({'error': 'Vehicle not found'}), 404
-    
-    conn.commit()
-    conn.close()
-    
-    return jsonify({'message': 'Vehicle deleted successfully'}), 200
-
-
-@app.route('/api/vehicles/<int:vehicle_id>/upload-image', methods=['POST'])
-def upload_vehicle_image(vehicle_id):
-    """Upload an image for a vehicle"""
-    try:
-        if 'file' not in request.files:
-            return jsonify({'error': 'No file provided'}), 400
-        
-        file = request.files['file']
-        if file.filename == '':
-            return jsonify({'error': 'No file selected'}), 400
-        
-        if not allowed_file(file.filename):
-            return jsonify({'error': 'File type not allowed'}), 400
-        
-        # Get vehicle images storage path from settings or use default
-        conn_settings = get_db()
-        cursor_settings = conn_settings.cursor()
-        cursor_settings.execute('SELECT value FROM settings WHERE key = ?', ('vehicle_images_path',))
-        result_settings = cursor_settings.fetchone()
-        conn_settings.close()
-        
-        if result_settings:
-            vehicle_folder = result_settings['value']
-        else:
-            # Default: uploads/vehicles
-            vehicle_folder = os.path.join(app.config['UPLOAD_FOLDER'], 'vehicles')
-        
-        # Create directory if it doesn't exist
-        os.makedirs(vehicle_folder, exist_ok=True)
-        
-        # Secure filename and save
-        filename = secure_filename(file.filename)
-        file_path = os.path.join(vehicle_folder, filename)
-        file.save(file_path)
-        
-        # Get current images
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute('SELECT images FROM vehicles WHERE id = ?', (vehicle_id,))
-        row = cursor.fetchone()
-        
-        if not row:
-            conn.close()
-            return jsonify({'error': 'Vehicle not found'}), 404
-        
-        import json
-        current_images = []
-        if row['images']:
-            try:
-                current_images = json.loads(row['images'])
-            except:
-                current_images = []
-        
-        # Store full path in database (or relative path if using default)
-        if result_settings and result_settings['value'] != os.path.join(app.config['UPLOAD_FOLDER'], 'vehicles'):
-            # Custom path - store full path
-            image_path = file_path
-        else:
-            # Default path - store relative path
-            image_path = os.path.join('vehicles', filename).replace('\\', '/')
-        
-        current_images.append(image_path)
-        
-        # Update vehicle
-        cursor.execute('UPDATE vehicles SET images = ?, updated_at = ? WHERE id = ?',
-                      (json.dumps(current_images), datetime.now().isoformat(), vehicle_id))
-        conn.commit()
-        conn.close()
-        
-        return jsonify({'message': 'Image uploaded successfully', 'image_path': image_path}), 200
-        
-    except Exception as e:
-        print(f"❌ [Backend] Error uploading vehicle image: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-# ============================================================================
-# VEHICLE EXPENSES ENDPOINTS
-# ============================================================================
-
-@app.route('/api/vehicle-expenses', methods=['GET'])
-def get_vehicle_expenses():
-    """Get all vehicle expenses, optionally filtered by vehicle_id"""
-    vehicle_id = request.args.get('vehicle_id', type=int)
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    if vehicle_id:
-        cursor.execute('SELECT * FROM vehicle_expenses WHERE vehicle_id = ? ORDER BY date DESC', (vehicle_id,))
-    else:
-        cursor.execute('SELECT * FROM vehicle_expenses ORDER BY date DESC')
-    
-    expenses = [dict(row) for row in cursor.fetchall()]
-    conn.close()
-    
-    return jsonify(expenses), 200
-
-
-@app.route('/api/vehicle-expenses/<int:expense_id>', methods=['GET'])
-def get_vehicle_expense(expense_id):
-    """Get a specific vehicle expense"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT * FROM vehicle_expenses WHERE id = ?', (expense_id,))
-    row = cursor.fetchone()
-    conn.close()
-    
-    if row:
-        return jsonify(dict(row)), 200
-    
-    return jsonify({'error': 'Vehicle expense not found'}), 404
-
-
-@app.route('/api/vehicle-expenses', methods=['POST'])
-def create_vehicle_expense():
-    """Create a new vehicle expense"""
-    data = request.get_json()
-    
-    required_fields = ['vehicle_id', 'category', 'amount', 'date']
-    if not all(field in data for field in required_fields):
-        return jsonify({'error': 'Missing required fields'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    # Verify vehicle exists
-    cursor.execute('SELECT id FROM vehicles WHERE id = ?', (data['vehicle_id'],))
-    if not cursor.fetchone():
-        conn.close()
-        return jsonify({'error': 'Vehicle not found'}), 404
-    
-    cursor.execute('''
-        INSERT INTO vehicle_expenses (
-            vehicle_id, category, amount, date, description,
-            receipt_path, note, odometer_at_purchase, transaction_id
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (
-        data['vehicle_id'],
-        data['category'],
-        data['amount'],
-        data['date'],
-        data.get('description', ''),
-        data.get('receipt_path', ''),
-        data.get('note', ''),
-        data.get('odometer_at_purchase'),
-        data.get('transaction_id')
-    ))
-    
-    expense_id = cursor.lastrowid
-    conn.commit()
-    
-    cursor.execute('SELECT * FROM vehicle_expenses WHERE id = ?', (expense_id,))
-    new_expense = dict(cursor.fetchone())
-    
-    conn.close()
-    
-    return jsonify(new_expense), 201
-
-
-@app.route('/api/vehicle-expenses/<int:expense_id>', methods=['PUT'])
-def update_vehicle_expense(expense_id):
-    """Update a vehicle expense"""
-    data = request.get_json()
-    
-    if not data:
-        return jsonify({'error': 'No data provided'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    # Check if expense exists
-    cursor.execute('SELECT id FROM vehicle_expenses WHERE id = ?', (expense_id,))
-    if not cursor.fetchone():
-        conn.close()
-        return jsonify({'error': 'Vehicle expense not found'}), 404
-    
-    # Build update query dynamically
-    update_fields = []
-    values = []
-    
-    allowed_fields = [
-        'vehicle_id', 'category', 'amount', 'date', 'description',
-        'receipt_path', 'note', 'odometer_at_purchase'
-    ]
-    
-    for field in allowed_fields:
-        if field in data:
-            update_fields.append(f"{field} = ?")
-            values.append(data[field])
-    
-    if not update_fields:
-        conn.close()
-        return jsonify({'error': 'No valid fields to update'}), 400
-    
-    update_fields.append("updated_at = ?")
-    values.append(datetime.now().isoformat())
-    values.append(expense_id)
-    
-    cursor.execute(f'''
-        UPDATE vehicle_expenses 
-        SET {', '.join(update_fields)}
-        WHERE id = ?
-    ''', values)
-    
-    conn.commit()
-    
-    cursor.execute('SELECT * FROM vehicle_expenses WHERE id = ?', (expense_id,))
-    updated_expense = dict(cursor.fetchone())
-    
-    conn.close()
-    
-    return jsonify(updated_expense), 200
-
-
-@app.route('/api/vehicle-expenses/<int:expense_id>', methods=['DELETE'])
-def delete_vehicle_expense(expense_id):
-    """Delete a vehicle expense"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('DELETE FROM vehicle_expenses WHERE id = ?', (expense_id,))
-    
-    if cursor.rowcount == 0:
-        conn.close()
-        return jsonify({'error': 'Vehicle expense not found'}), 404
-    
-    conn.commit()
-    conn.close()
-    
-    return jsonify({'message': 'Vehicle expense deleted successfully'}), 200
-
-
-# ============================================================================
-# ROOT & HEALTH CHECK
-# ============================================================================
-
-@app.route('/')
-def index():
-    return jsonify({
-        'message': 'Welcome to WestBudget API',
-        'version': '1.0.0',
-        'endpoints': {
-            'transactions': '/api/transactions',
-            'agreements': '/api/agreements',
-            'settings': '/api/settings',
-            'upload': '/api/upload',
-            'categories': '/api/categories',
-            'vehicles': '/api/vehicles',
-            'vehicle-expenses': '/api/vehicle-expenses'
-        }
-    }), 200
-
-
-@app.route('/health')
-def health():
-    return jsonify({'status': 'healthy', 'database': os.path.exists(DATABASE)}), 200
-
-
-# ============================================================================
-# SAVINGS ENDPOINTS
-# ============================================================================
-
-@app.route('/api/savings/goals', methods=['GET'])
-def get_savings_goals():
-    """Get all savings goals"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT * FROM savings_goals ORDER BY created_at DESC')
-    goals = [dict(row) for row in cursor.fetchall()]
-    
-    conn.close()
-    return jsonify(goals), 200
-
-
-@app.route('/api/savings/goals', methods=['POST'])
-def create_savings_goal():
-    """Create a new savings goal"""
-    data = request.get_json()
-    
-    required_fields = ['name', 'target_amount']
-    if not all(field in data for field in required_fields):
-        return jsonify({'error': 'Missing required fields: name, target_amount'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        INSERT INTO savings_goals (name, target_amount, current_amount, deadline, category, status, description)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    ''', (
-        data['name'],
-        data['target_amount'],
-        data.get('current_amount', 0),
-        data.get('deadline'),
-        data.get('category'),
-        data.get('status', 'Aktiv'),
-        data.get('description')
-    ))
-    
-    goal_id = cursor.lastrowid
-    conn.commit()
-    
-    cursor.execute('SELECT * FROM savings_goals WHERE id = ?', (goal_id,))
-    new_goal = dict(cursor.fetchone())
-    
-    conn.close()
-    return jsonify(new_goal), 201
-
-
-@app.route('/api/savings/goals/<int:goal_id>', methods=['PUT'])
-def update_savings_goal(goal_id):
-    """Update a savings goal"""
-    data = request.get_json()
-    
-    if not data:
-        return jsonify({'error': 'No data provided'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    update_fields = []
-    values = []
-    allowed_fields = ['name', 'target_amount', 'current_amount', 'deadline', 'category', 'status', 'description']
-    
-    for field in allowed_fields:
-        if field in data:
-            update_fields.append(f'{field} = ?')
-            values.append(data[field])
-    
-    if not update_fields:
-        conn.close()
-        return jsonify({'error': 'No valid fields to update'}), 400
-    
-    update_fields.append('updated_at = ?')
-    values.append(datetime.now().isoformat())
-    values.append(goal_id)
-    
-    cursor.execute(f'''
-        UPDATE savings_goals 
-        SET {', '.join(update_fields)}
-        WHERE id = ?
-    ''', values)
-    
-    conn.commit()
-    
-    cursor.execute('SELECT * FROM savings_goals WHERE id = ?', (goal_id,))
-    updated_goal = cursor.fetchone()
-    
-    conn.close()
-    
-    if updated_goal:
-        return jsonify(dict(updated_goal)), 200
-    return jsonify({'error': 'Goal not found'}), 404
-
-
-@app.route('/api/savings/goals/<int:goal_id>', methods=['DELETE'])
-def delete_savings_goal(goal_id):
-    """Delete a savings goal"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('DELETE FROM savings_goals WHERE id = ?', (goal_id,))
-    conn.commit()
-    
-    deleted = cursor.rowcount > 0
-    conn.close()
-    
-    if deleted:
-        return jsonify({'message': 'Goal deleted successfully'}), 200
-    return jsonify({'error': 'Goal not found'}), 404
-
-
-@app.route('/api/savings/accounts', methods=['GET'])
-def get_savings_accounts():
-    """Get all savings accounts"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT * FROM savings_accounts ORDER BY created_at DESC')
-    accounts = [dict(row) for row in cursor.fetchall()]
-    
-    conn.close()
-    return jsonify(accounts), 200
-
-
-@app.route('/api/savings/accounts', methods=['POST'])
-def create_savings_account():
-    """Create a new savings account"""
-    data = request.get_json()
-    
-    required_fields = ['name']
-    if not all(field in data for field in required_fields):
-        return jsonify({'error': 'Missing required field: name'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        INSERT INTO savings_accounts (name, balance, description, category, status)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (
-        data['name'],
-        data.get('balance', 0),
-        data.get('description'),
-        data.get('category'),
-        data.get('status', 'Aktiv')
-    ))
-    
-    account_id = cursor.lastrowid
-    conn.commit()
-    
-    cursor.execute('SELECT * FROM savings_accounts WHERE id = ?', (account_id,))
-    new_account = dict(cursor.fetchone())
-    
-    conn.close()
-    return jsonify(new_account), 201
-
-
-@app.route('/api/savings/accounts/<int:account_id>', methods=['PUT'])
-def update_savings_account(account_id):
-    """Update a savings account"""
-    data = request.get_json()
-    
-    if not data:
-        return jsonify({'error': 'No data provided'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    update_fields = []
-    values = []
-    allowed_fields = ['name', 'balance', 'description', 'category', 'status']
-    
-    for field in allowed_fields:
-        if field in data:
-            update_fields.append(f'{field} = ?')
-            values.append(data[field])
-    
-    if not update_fields:
-        conn.close()
-        return jsonify({'error': 'No valid fields to update'}), 400
-    
-    update_fields.append('updated_at = ?')
-    values.append(datetime.now().isoformat())
-    values.append(account_id)
-    
-    cursor.execute(f'''
-        UPDATE savings_accounts 
-        SET {', '.join(update_fields)}
-        WHERE id = ?
-    ''', values)
-    
-    conn.commit()
-    
-    cursor.execute('SELECT * FROM savings_accounts WHERE id = ?', (account_id,))
-    updated_account = cursor.fetchone()
-    
-    conn.close()
-    
-    if updated_account:
-        return jsonify(dict(updated_account)), 200
-    return jsonify({'error': 'Account not found'}), 404
-
-
-@app.route('/api/savings/accounts/<int:account_id>', methods=['DELETE'])
-def delete_savings_account(account_id):
-    """Delete a savings account"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('DELETE FROM savings_accounts WHERE id = ?', (account_id,))
-    conn.commit()
-    
-    deleted = cursor.rowcount > 0
-    conn.close()
-    
-    if deleted:
-        return jsonify({'message': 'Account deleted successfully'}), 200
-    return jsonify({'error': 'Account not found'}), 404
-
-
-@app.route('/api/savings/transfer', methods=['POST'])
-def transfer_savings():
-    """Transfer money to/from savings account or goal"""
-    data = request.get_json()
-    
-    required_fields = ['account_id', 'amount', 'type', 'date']
-    if not all(field in data for field in required_fields):
-        return jsonify({'error': 'Missing required fields: account_id, amount, type, date'}), 400
-    
-    account_id = data.get('account_id')
-    goal_id = data.get('goal_id')
-    amount = float(data['amount'])
-    transfer_type = data['type']  # 'deposit' or 'withdrawal'
-    date = data['date']
-    notes = data.get('notes', '')
-    
-    if not account_id and not goal_id:
-        return jsonify({'error': 'Either account_id or goal_id must be provided'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    try:
-        # Create savings transaction record
-        cursor.execute('''
-            INSERT INTO savings_transactions (account_id, goal_id, amount, type, date, notes)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (account_id, goal_id, amount, transfer_type, date, notes))
-        
-        transaction_id = cursor.lastrowid
-        
-        # Update account balance or goal current_amount
-        if account_id:
-            if transfer_type == 'deposit':
-                cursor.execute('UPDATE savings_accounts SET balance = balance + ?, updated_at = ? WHERE id = ?',
-                             (amount, datetime.now().isoformat(), account_id))
-            elif transfer_type == 'withdrawal':
-                # Check if sufficient balance
-                cursor.execute('SELECT balance, name FROM savings_accounts WHERE id = ?', (account_id,))
-                result = cursor.fetchone()
-                if result and result['balance'] < amount:
-                    conn.rollback()
-                    conn.close()
-                    return jsonify({
-                        'error': 'Insufficient balance',
-                        'message': f'Kontot "{result["name"]}" har bara {result["balance"]:.2f} kr men du försöker ta ut {amount:.2f} kr.'
-                    }), 400
-                cursor.execute('UPDATE savings_accounts SET balance = balance - ?, updated_at = ? WHERE id = ?',
-                             (amount, datetime.now().isoformat(), account_id))
-        
-        if goal_id:
-            if transfer_type == 'deposit':
-                cursor.execute('UPDATE savings_goals SET current_amount = current_amount + ?, updated_at = ? WHERE id = ?',
-                             (amount, datetime.now().isoformat(), goal_id))
-            elif transfer_type == 'withdrawal':
-                # Check if sufficient amount
-                cursor.execute('SELECT current_amount, name FROM savings_goals WHERE id = ?', (goal_id,))
-                result = cursor.fetchone()
-                if result and result['current_amount'] < amount:
-                    conn.rollback()
-                    conn.close()
-                    return jsonify({
-                        'error': 'Insufficient amount in goal',
-                        'message': f'Målet "{result["name"]}" har bara {result["current_amount"]:.2f} kr men du försöker ta ut {amount:.2f} kr.'
-                    }), 400
-                cursor.execute('UPDATE savings_goals SET current_amount = current_amount - ?, updated_at = ? WHERE id = ?',
-                             (amount, datetime.now().isoformat(), goal_id))
-        
-        conn.commit()
-        
-        cursor.execute('SELECT * FROM savings_transactions WHERE id = ?', (transaction_id,))
-        new_transaction = dict(cursor.fetchone())
-        
-        conn.close()
-        return jsonify(new_transaction), 201
-        
-    except Exception as e:
-        conn.rollback()
-        conn.close()
-        print(f"[ERROR] Transfer failed: {str(e)}")
-        return jsonify({'error': f'Transfer failed: {str(e)}'}), 500
-
-
-@app.route('/api/savings/transactions', methods=['GET'])
-def get_savings_transactions():
-    """Get all savings transactions"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    account_id = request.args.get('account_id', type=int)
-    goal_id = request.args.get('goal_id', type=int)
-    
-    query = 'SELECT * FROM savings_transactions WHERE 1=1'
-    params = []
-    
-    if account_id:
-        query += ' AND account_id = ?'
-        params.append(account_id)
-    
-    if goal_id:
-        query += ' AND goal_id = ?'
-        params.append(goal_id)
-    
-    query += ' ORDER BY date DESC, created_at DESC'
-    
-    cursor.execute(query, params)
-    transactions = [dict(row) for row in cursor.fetchall()]
-    
-    conn.close()
-    return jsonify(transactions), 200
-
-
-@app.route('/api/savings/link-transaction', methods=['POST'])
-def link_transaction_to_savings():
-    """Link a regular transaction to a savings goal or account"""
-    data = request.get_json()
-    
-    required_fields = ['transaction_id', 'amount', 'date']
-    if not all(field in data for field in required_fields):
-        return jsonify({'error': 'Missing required fields: transaction_id, amount, date'}), 400
-    
-    transaction_id = data['transaction_id']
-    account_id = data.get('account_id')
-    goal_id = data.get('goal_id')
-    amount = float(data['amount'])
-    date = data['date']
-    notes = data.get('notes', '')
-    
-    if not account_id and not goal_id:
-        return jsonify({'error': 'Either account_id or goal_id must be provided'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    try:
-        # Check if transaction exists
-        cursor.execute('SELECT * FROM transactions WHERE id = ?', (transaction_id,))
-        transaction = cursor.fetchone()
-        if not transaction:
-            conn.close()
-            return jsonify({'error': 'Transaction not found'}), 404
-        
-        # Determine type based on is_withdrawal flag
-        # If is_withdrawal is True, it's a withdrawal, otherwise it's always a deposit
-        is_withdrawal = data.get('is_withdrawal', False)
-        transfer_type = 'withdrawal' if is_withdrawal else 'deposit'
-        
-        # Create savings transaction record
-        cursor.execute('''
-            INSERT INTO savings_transactions (transaction_id, account_id, goal_id, amount, type, date, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (transaction_id, account_id, goal_id, amount, transfer_type, date, notes))
-        
-        savings_transaction_id = cursor.lastrowid
-        
-        # Update account balance or goal current_amount
-        if account_id:
-            if transfer_type == 'deposit':
-                cursor.execute('UPDATE savings_accounts SET balance = balance + ?, updated_at = ? WHERE id = ?',
-                             (amount, datetime.now().isoformat(), account_id))
-            elif transfer_type == 'withdrawal':
-                # Check if sufficient balance
-                cursor.execute('SELECT balance, name FROM savings_accounts WHERE id = ?', (account_id,))
-                result = cursor.fetchone()
-                if result and result['balance'] < amount:
-                    conn.rollback()
-                    conn.close()
-                    return jsonify({
-                        'error': 'Insufficient balance',
-                        'message': f'Kontot "{result["name"]}" har bara {result["balance"]:.2f} kr men du försöker ta ut {amount:.2f} kr.'
-                    }), 400
-                cursor.execute('UPDATE savings_accounts SET balance = balance - ?, updated_at = ? WHERE id = ?',
-                             (amount, datetime.now().isoformat(), account_id))
-        
-        if goal_id:
-            if transfer_type == 'deposit':
-                cursor.execute('UPDATE savings_goals SET current_amount = current_amount + ?, updated_at = ? WHERE id = ?',
-                             (amount, datetime.now().isoformat(), goal_id))
-            elif transfer_type == 'withdrawal':
-                # Check if sufficient amount
-                cursor.execute('SELECT current_amount, name FROM savings_goals WHERE id = ?', (goal_id,))
-                result = cursor.fetchone()
-                if result and result['current_amount'] < amount:
-                    conn.rollback()
-                    conn.close()
-                    return jsonify({
-                        'error': 'Insufficient amount in goal',
-                        'message': f'Målet "{result["name"]}" har bara {result["current_amount"]:.2f} kr men du försöker ta ut {amount:.2f} kr.'
-                    }), 400
-                cursor.execute('UPDATE savings_goals SET current_amount = current_amount - ?, updated_at = ? WHERE id = ?',
-                             (amount, datetime.now().isoformat(), goal_id))
-        
-        conn.commit()
-        
-        cursor.execute('SELECT * FROM savings_transactions WHERE id = ?', (savings_transaction_id,))
-        new_savings_transaction = dict(cursor.fetchone())
-        
-        conn.close()
-        return jsonify(new_savings_transaction), 201
-        
-    except Exception as e:
-        conn.rollback()
-        conn.close()
-        print(f"[ERROR] Link transaction failed: {str(e)}")
-        return jsonify({'error': f'Link transaction failed: {str(e)}'}), 500
-
-
-# ============================================================================
-# LOANS ENDPOINTS
-# ============================================================================
-
-@app.route('/api/loans', methods=['GET'])
-def get_loans():
-    """Get all loans"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT * FROM loans ORDER BY created_at DESC')
-    loans = [dict(row) for row in cursor.fetchall()]
-    
-    conn.close()
-    return jsonify(loans), 200
-
-
-@app.route('/api/loans', methods=['POST', 'OPTIONS'])
-def create_loan():
-    """Create a new loan"""
-    if request.method == 'OPTIONS':
-        return '', 200
-    
-    try:
-        data = request.get_json()
-        
-        if not data:
-            return jsonify({'error': 'No data provided'}), 400
-        
-        required_fields = ['name', 'lender', 'principal_amount', 'current_balance', 'interest_rate', 'monthly_payment', 'amortization_amount', 'interest_amount', 'start_date']
-        missing_fields = [field for field in required_fields if field not in data]
-        if missing_fields:
-            return jsonify({'error': f'Missing required fields: {", ".join(missing_fields)}'}), 400
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Convert string numbers to float if needed
-        principal_amount = float(data['principal_amount']) if isinstance(data['principal_amount'], str) else data['principal_amount']
-        current_balance = float(data['current_balance']) if isinstance(data['current_balance'], str) else data['current_balance']
-        interest_rate = float(data['interest_rate']) if isinstance(data['interest_rate'], str) else data['interest_rate']
-        monthly_payment = float(data['monthly_payment']) if isinstance(data['monthly_payment'], str) else data['monthly_payment']
-        amortization_amount = float(data['amortization_amount']) if isinstance(data['amortization_amount'], str) else data['amortization_amount']
-        interest_amount = float(data['interest_amount']) if isinstance(data['interest_amount'], str) else data['interest_amount']
-        
-        cursor.execute('''
-            INSERT INTO loans (
-                name, lender, principal_amount, current_balance, interest_rate,
-                monthly_payment, amortization_amount, interest_amount, start_date,
-                end_date, status, category, note, agreement_id
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            data['name'],
-            data['lender'],
-            principal_amount,
-            current_balance,
-            interest_rate,
-            monthly_payment,
-            amortization_amount,
-            interest_amount,
-            data['start_date'],
-            data.get('end_date') or None,
-            data.get('status', 'Aktiv'),
-            data.get('category', 'Bolån'),
-            data.get('note', ''),
-            data.get('agreement_id') or None
-        ))
-        
-        loan_id = cursor.lastrowid
-        conn.commit()
-        
-        # Create initial interest period
-        cursor.execute('''
-            INSERT INTO loan_interest_periods (loan_id, start_date, interest_rate, note)
-            VALUES (?, ?, ?, ?)
-        ''', (loan_id, data['start_date'], interest_rate, 'Initial räntesats'))
-        conn.commit()
-        
-        cursor.execute('SELECT * FROM loans WHERE id = ?', (loan_id,))
-        new_loan = dict(cursor.fetchone())
-        
-        # Add to history
-        add_history_entry(
-            action_type='create',
-            action=f'Skapade lån: {data["name"]}',
-            entity_type='loan',
-            entity_id=loan_id,
-            entity_data=new_loan,
-            undo_data=None
-        )
-        
-        conn.close()
-        return jsonify(new_loan), 201
-    except Exception as e:
-        import traceback
-        error_msg = str(e)
-        traceback.print_exc()
-        return jsonify({'error': f'Error creating loan: {error_msg}'}), 500
-
-
-@app.route('/api/loans/<int:loan_id>', methods=['PUT'])
-def update_loan(loan_id):
-    """Update a loan"""
-    data = request.get_json()
-    
-    if not data:
-        return jsonify({'error': 'No data provided'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    # Get old loan data for history (undo_data)
-    cursor.execute('SELECT * FROM loans WHERE id = ?', (loan_id,))
-    old_loan = cursor.fetchone()
-    
-    if not old_loan:
-        conn.close()
-        return jsonify({'error': 'Loan not found'}), 404
-    
-    old_loan_data = dict(old_loan)
-    
-    update_fields = []
-    values = []
-    allowed_fields = ['name', 'lender', 'principal_amount', 'current_balance', 'interest_rate', 
-                     'monthly_payment', 'amortization_amount', 'interest_amount', 'start_date',
-                     'end_date', 'status', 'category', 'note', 'agreement_id']
-    
-    for field in allowed_fields:
-        if field in data:
-            update_fields.append(f'{field} = ?')
-            values.append(data[field])
-    
-    if not update_fields:
-        conn.close()
-        return jsonify({'error': 'No valid fields to update'}), 400
-    
-    update_fields.append('updated_at = ?')
-    values.append(datetime.now().isoformat())
-    values.append(loan_id)
-    
-    cursor.execute(f'''
-        UPDATE loans 
-        SET {', '.join(update_fields)}
-        WHERE id = ?
-    ''', values)
-    
-    conn.commit()
-    
-    cursor.execute('SELECT * FROM loans WHERE id = ?', (loan_id,))
-    updated_loan = cursor.fetchone()
-    
-    if updated_loan:
-        updated_loan_dict = dict(updated_loan)
-        
-        # Add to history
-        add_history_entry(
-            action_type='update',
-            action=f'Uppdaterade lån: {updated_loan_dict.get("name", "Okänt")}',
-            entity_type='loan',
-            entity_id=loan_id,
-            entity_data=updated_loan_dict,
-            undo_data=old_loan_data
-        )
-        
-        conn.close()
-        return jsonify(updated_loan_dict), 200
-    
-    conn.close()
-    return jsonify({'error': 'Loan not found'}), 404
-
-
-@app.route('/api/loans/<int:loan_id>', methods=['DELETE'])
-def delete_loan(loan_id):
-    """Delete a loan"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    # Get loan data before deleting (for undo)
-    cursor.execute('SELECT * FROM loans WHERE id = ?', (loan_id,))
-    loan = cursor.fetchone()
-    
-    if not loan:
-        conn.close()
-        return jsonify({'error': 'Loan not found'}), 404
-    
-    loan_data = dict(loan)
-    
-    cursor.execute('DELETE FROM loans WHERE id = ?', (loan_id,))
-    conn.commit()
-    
-    deleted = cursor.rowcount > 0
-    
-    if deleted:
-        # Add to history
-        add_history_entry(
-            action_type='delete',
-            action=f'Raderade lån: {loan_data.get("name", "Okänt")}',
-            entity_type='loan',
-            entity_id=loan_id,
-            entity_data=None,
-            undo_data=loan_data
-        )
-    
-    conn.close()
-    
-    if deleted:
-        return jsonify({'message': 'Loan deleted successfully'}), 200
-    return jsonify({'error': 'Loan not found'}), 404
-
-
-@app.route('/api/loans/<int:loan_id>/payments', methods=['GET'])
-def get_loan_payments(loan_id):
-    """Get all payments for a loan"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT * FROM loan_payments WHERE loan_id = ? ORDER BY payment_date DESC', (loan_id,))
-    payments = [dict(row) for row in cursor.fetchall()]
-    
-    conn.close()
-    return jsonify(payments), 200
-
-
-@app.route('/api/loans/<int:loan_id>/payments', methods=['POST'])
-def create_loan_payment(loan_id):
-    """Create a loan payment"""
-    data = request.get_json()
-    
-    required_fields = ['payment_date', 'amount', 'principal_paid', 'interest_paid']
-    if not all(field in data for field in required_fields):
-        return jsonify({'error': 'Missing required fields'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    # Verify loan exists
-    cursor.execute('SELECT * FROM loans WHERE id = ?', (loan_id,))
-    loan = cursor.fetchone()
-    if not loan:
-        conn.close()
-        return jsonify({'error': 'Loan not found'}), 404
-    
-    loan_dict = dict(loan)
-    
-    cursor.execute('''
-        INSERT INTO loan_payments (
-            loan_id, transaction_id, payment_date, amount,
-            principal_paid, interest_paid, extra_payment, note
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (
-        loan_id,
-        data.get('transaction_id'),
-        data['payment_date'],
-        data['amount'],
-        data['principal_paid'],
-        data['interest_paid'],
-        data.get('extra_payment', 0),
-        data.get('note', '')
-    ))
-    
-    payment_id = cursor.lastrowid
-    
-    # Update loan balance
-    new_balance = loan_dict['current_balance'] - data['principal_paid'] - data.get('extra_payment', 0)
-    cursor.execute('UPDATE loans SET current_balance = ?, updated_at = ? WHERE id = ?',
-                 (max(0, new_balance), datetime.now().isoformat(), loan_id))
-    
-    conn.commit()
-    
-    cursor.execute('SELECT * FROM loan_payments WHERE id = ?', (payment_id,))
-    new_payment = dict(cursor.fetchone())
-    
-    conn.close()
-    return jsonify(new_payment), 201
-
-
-@app.route('/api/loans/<int:loan_id>/interest-periods', methods=['GET'])
-def get_loan_interest_periods(loan_id):
-    """Get all interest periods for a loan"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT * FROM loan_interest_periods WHERE loan_id = ? ORDER BY start_date DESC', (loan_id,))
-    periods = [dict(row) for row in cursor.fetchall()]
-    
-    conn.close()
-    return jsonify(periods), 200
-
-
-@app.route('/api/loans/<int:loan_id>/interest-periods', methods=['POST'])
-def create_loan_interest_period(loan_id):
-    """Create a new interest period (for variable interest rates)"""
-    data = request.get_json()
-    
-    required_fields = ['start_date', 'interest_rate']
-    if not all(field in data for field in required_fields):
-        return jsonify({'error': 'Missing required fields: start_date, interest_rate'}), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    # Verify loan exists
-    cursor.execute('SELECT id FROM loans WHERE id = ?', (loan_id,))
-    if not cursor.fetchone():
-        conn.close()
-        return jsonify({'error': 'Loan not found'}), 404
-    
-    # End previous period if it exists
-    cursor.execute('''
-        UPDATE loan_interest_periods 
-        SET end_date = ?
-        WHERE loan_id = ? AND end_date IS NULL
-    ''', (data['start_date'], loan_id))
-    
-    # Create new period
-    cursor.execute('''
-        INSERT INTO loan_interest_periods (loan_id, start_date, end_date, interest_rate, note)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (
-        loan_id,
-        data['start_date'],
-        data.get('end_date'),
-        data['interest_rate'],
-        data.get('note', '')
-    ))
-    
-    period_id = cursor.lastrowid
-    conn.commit()
-    
-    cursor.execute('SELECT * FROM loan_interest_periods WHERE id = ?', (period_id,))
-    new_period = dict(cursor.fetchone())
-    
-    conn.close()
-    return jsonify(new_period), 201
-
-
-@app.route('/api/loans/<int:loan_id>/amortization-plan', methods=['GET'])
-def get_amortization_plan(loan_id):
-    """Calculate and return amortization plan for a loan"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT * FROM loans WHERE id = ?', (loan_id,))
-    loan = cursor.fetchone()
-    if not loan:
-        conn.close()
-        return jsonify({'error': 'Loan not found'}), 404
-    
-    loan_dict = dict(loan)
-    
-    # Get all interest periods
-    cursor.execute('SELECT * FROM loan_interest_periods WHERE loan_id = ? ORDER BY start_date', (loan_id,))
-    periods = [dict(row) for row in cursor.fetchall()]
-    
-    # Get all payments
-    cursor.execute('SELECT * FROM loan_payments WHERE loan_id = ? ORDER BY payment_date', (loan_id,))
-    payments = [dict(row) for row in cursor.fetchall()]
-    
-    conn.close()
-    
-    # Calculate amortization plan
-    def add_months(date, months):
-        """Add months to a date"""
-        month = date.month - 1 + months
-        year = date.year + month // 12
-        month = month % 12 + 1
-        day = min(date.day, [31, 29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month-1])
-        return datetime(year, month, day)
-    
-    plan = []
-    current_balance = loan_dict['current_balance']
-    current_date = datetime.strptime(loan_dict['start_date'], '%Y-%m-%d')
-    end_date = datetime.strptime(loan_dict['end_date'], '%Y-%m-%d') if loan_dict.get('end_date') else None
-    
-    # If no end date, calculate for 30 years or until balance is 0
-    if not end_date:
-        end_date = add_months(current_date, 30 * 12)
-    
-    month = 0
-    while current_balance > 0.01 and current_date <= end_date:
-        # Get current interest rate for this period
-        current_rate = loan_dict['interest_rate']
-        for period in periods:
-            period_start = datetime.strptime(period['start_date'], '%Y-%m-%d')
-            period_end = datetime.strptime(period['end_date'], '%Y-%m-%d') if period.get('end_date') else datetime.now()
-            if period_start <= current_date <= period_end:
-                current_rate = period['interest_rate']
-                break
-        
-        # Calculate monthly interest
-        monthly_interest_rate = current_rate / 100 / 12
-        interest_payment = current_balance * monthly_interest_rate
-        
-        # Get payment for this month if exists
-        payment_for_month = next((p for p in payments if p['payment_date'].startswith(current_date.strftime('%Y-%m'))), None)
-        
-        if payment_for_month:
-            principal_paid = payment_for_month['principal_paid']
-            extra_payment = payment_for_month.get('extra_payment', 0)
-        else:
-            principal_paid = loan_dict['amortization_amount']
-            extra_payment = 0
-        
-        total_payment = interest_payment + principal_paid + extra_payment
-        current_balance = max(0, current_balance - principal_paid - extra_payment)
-        
-        plan.append({
-            'month': month + 1,
-            'date': current_date.strftime('%Y-%m-%d'),
-            'balance': round(current_balance, 2),
-            'principal_paid': round(principal_paid, 2),
-            'interest_paid': round(interest_payment, 2),
-            'extra_payment': round(extra_payment, 2),
-            'total_payment': round(total_payment, 2),
-            'interest_rate': current_rate
-        })
-        
-        current_date = add_months(current_date, 1)
-        month += 1
-        
-        if month > 600:  # Safety limit
-            break
-    
-    return jsonify(plan), 200
-
-
-@app.route('/api/loans/link-transaction', methods=['POST'])
-def link_transaction_to_loan():
-    """Link a transaction to a loan payment"""
-    data = request.get_json()
-    
-    required_fields = ['transaction_id', 'loan_id', 'payment_date', 'amount', 'principal_paid', 'interest_paid']
-    if not all(field in data for field in required_fields):
-        return jsonify({'error': 'Missing required fields'}), 400
-    
-    transaction_id = data['transaction_id']
-    loan_id = data['loan_id']
-    payment_date = data['payment_date']
-    amount = float(data['amount'])
-    principal_paid = float(data['principal_paid'])
-    interest_paid = float(data['interest_paid'])
-    extra_payment = float(data.get('extra_payment', 0))
-    note = data.get('note', '')
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    try:
-        # Check if transaction exists
-        cursor.execute('SELECT * FROM transactions WHERE id = ?', (transaction_id,))
-        transaction = cursor.fetchone()
-        if not transaction:
-            conn.close()
-            return jsonify({'error': 'Transaction not found'}), 404
-        
-        # Check if loan exists
-        cursor.execute('SELECT * FROM loans WHERE id = ?', (loan_id,))
-        loan = cursor.fetchone()
-        if not loan:
-            conn.close()
-            return jsonify({'error': 'Loan not found'}), 404
-        
-        loan_dict = dict(loan)
-        
-        # Check if payment already exists for this transaction
-        cursor.execute('SELECT * FROM loan_payments WHERE transaction_id = ?', (transaction_id,))
-        existing = cursor.fetchone()
-        if existing:
-            conn.close()
-            return jsonify({'error': 'Transaction already linked to a loan payment'}), 400
-        
-        # Create loan payment linked to transaction
-        cursor.execute('''
-            INSERT INTO loan_payments (
-                loan_id, transaction_id, payment_date, amount,
-                principal_paid, interest_paid, extra_payment, note
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            loan_id,
-            transaction_id,
-            payment_date,
-            amount,
-            principal_paid,
-            interest_paid,
-            extra_payment,
-            note or f'Kopplad från transaktion: {dict(transaction)["title"]}'
-        ))
-        
-        payment_id = cursor.lastrowid
-        
-        # Update loan balance
-        new_balance = loan_dict['current_balance'] - principal_paid - extra_payment
-        cursor.execute('UPDATE loans SET current_balance = ?, updated_at = ? WHERE id = ?',
-                     (max(0, new_balance), datetime.now().isoformat(), loan_id))
-        
-        conn.commit()
-        
-        cursor.execute('SELECT * FROM loan_payments WHERE id = ?', (payment_id,))
-        new_payment = dict(cursor.fetchone())
-        
-        conn.close()
-        return jsonify(new_payment), 201
-        
-    except Exception as e:
-        conn.rollback()
-        conn.close()
-        print(f"[ERROR] Link transaction to loan failed: {str(e)}")
-        return jsonify({'error': f'Link transaction to loan failed: {str(e)}'}), 500
-
-
-# ============================================================================
-# LINK TRANSACTION TO VEHICLE ENDPOINT
-# ============================================================================
-
-@app.route('/api/vehicles/link-transaction', methods=['POST'])
-def link_transaction_to_vehicle():
-    """Link a transaction to a vehicle, creating a vehicle expense"""
-    data = request.get_json()
-    
-    required_fields = ['transaction_id', 'vehicle_id', 'amount', 'date']
-    if not all(field in data for field in required_fields):
-        return jsonify({'error': 'Missing required fields: transaction_id, vehicle_id, amount, date'}), 400
-    
-    transaction_id = data['transaction_id']
-    vehicle_id = data['vehicle_id']
-    amount = float(data['amount'])
-    date = data['date']
-    category = data.get('category', 'Övrigt')
-    description = data.get('description', '')
-    note = data.get('note', '')
-    odometer_at_purchase = data.get('odometer_at_purchase')
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    try:
-        # Check if transaction exists
-        cursor.execute('SELECT * FROM transactions WHERE id = ?', (transaction_id,))
-        transaction = cursor.fetchone()
-        if not transaction:
-            conn.close()
-            return jsonify({'error': 'Transaction not found'}), 404
-        
-        # Check if vehicle exists
-        cursor.execute('SELECT * FROM vehicles WHERE id = ?', (vehicle_id,))
-        vehicle_row = cursor.fetchone()
-        if not vehicle_row:
-            conn.close()
-            return jsonify({'error': 'Vehicle not found'}), 404
-        vehicle = dict(vehicle_row)
-        
-        # Check if expense already exists for this transaction
-        cursor.execute('SELECT * FROM vehicle_expenses WHERE transaction_id = ?', (transaction_id,))
-        existing = cursor.fetchone()
-        if existing:
-            conn.close()
-            return jsonify({'error': 'Transaction already linked to a vehicle expense'}), 400
-        
-        # Create vehicle expense linked to transaction
-        cursor.execute('''
-            INSERT INTO vehicle_expenses (
-                vehicle_id, category, amount, date, description,
-                note, odometer_at_purchase, transaction_id
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            vehicle_id,
-            category,
-            amount,
-            date,
-            description or transaction['title'],
-            note or f'Kopplad från transaktion: {transaction["title"]}',
-            odometer_at_purchase,
-            transaction_id
-        ))
-        
-        expense_id = cursor.lastrowid
-        conn.commit()
-        
-        cursor.execute('SELECT * FROM vehicle_expenses WHERE id = ?', (expense_id,))
-        new_expense = dict(cursor.fetchone())
-        
-        conn.close()
-        return jsonify(new_expense), 201
-        
-    except Exception as e:
-        conn.rollback()
-        conn.close()
-        print(f"[ERROR] Link transaction to vehicle failed: {str(e)}")
-        return jsonify({'error': f'Link transaction to vehicle failed: {str(e)}'}), 500
-
-
-# ============================================================================
-# MEDIA FILES ENDPOINT
-# ============================================================================
-
-@app.route('/api/media-files', methods=['GET'])
-def get_media_files():
-    """Get all media files (receipts and agreement images) with metadata"""
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Get storage paths from settings
-        cursor.execute('SELECT value FROM settings WHERE key = ?', ('receipt_storage_path',))
-        receipt_path_result = cursor.fetchone()
-        receipt_storage_path = receipt_path_result['value'] if receipt_path_result else app.config['UPLOAD_FOLDER']
-        
-        cursor.execute('SELECT value FROM settings WHERE key = ?', ('agreement_images_path',))
-        agreement_path_result = cursor.fetchone()
-        agreement_images_path = agreement_path_result['value'] if agreement_path_result else os.path.join(app.config['UPLOAD_FOLDER'], 'avtal')
-        
-        media_files = []
-        
-        # Get all transactions with receipts
-        cursor.execute('SELECT id, title, date, receipt_path FROM transactions WHERE receipt = 1 AND receipt_path IS NOT NULL')
-        transactions = cursor.fetchall()
-        
-        for trans in transactions:
-            receipt_path = trans['receipt_path']
-            if receipt_path and os.path.exists(receipt_path):
-                file_size = os.path.getsize(receipt_path)
-                media_files.append({
-                    'type': 'receipt',
-                    'filename': os.path.basename(receipt_path),
-                    'path': receipt_path,
-                    'size': file_size,
-                    'date': trans['date'],
-                    'transaction_id': trans['id'],
-                    'transaction_title': trans['title']
-                })
-        
-        # Get all agreement images
-        cursor.execute('SELECT id, name, images FROM agreements WHERE images IS NOT NULL AND images != ""')
-        agreements = cursor.fetchall()
-        
-        for agr in agreements:
-            images_str = agr['images']
-            if images_str:
-                try:
-                    import json
-                    images = json.loads(images_str) if isinstance(images_str, str) else images_str
-                    if isinstance(images, list):
-                        for img_path in images:
-                            if img_path and os.path.exists(img_path):
-                                file_size = os.path.getsize(img_path)
-                                media_files.append({
-                                    'type': 'agreement',
-                                    'filename': os.path.basename(img_path),
-                                    'path': img_path,
-                                    'size': file_size,
-                                    'date': None,  # Agreements don't have a specific date
-                                    'agreement_id': agr['id'],
-                                    'agreement_name': agr['name']
-                                })
-                except (json.JSONDecodeError, TypeError):
-                    # If images is a single string path
-                    if isinstance(images_str, str) and os.path.exists(images_str):
-                        file_size = os.path.getsize(images_str)
-                        media_files.append({
-                            'type': 'agreement',
-                            'filename': os.path.basename(images_str),
-                            'path': images_str,
-                            'size': file_size,
-                            'date': None,
-                            'agreement_id': agr['id'],
-                            'agreement_name': agr['name']
-                        })
-        
-        conn.close()
-        
-        return jsonify(media_files), 200
-        
-    except Exception as e:
-        print(f"❌ [Backend] Error getting media files: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': f'Failed to get media files: {str(e)}'}), 500
-
-
-# ============================================================================
-# BACKUP & RESTORE ENDPOINTS
-# ============================================================================
-
-@app.route('/api/backup/create', methods=['POST', 'OPTIONS'])
-def create_backup():
-    """Create a backup ZIP file containing database and all images"""
-    if request.method == 'OPTIONS':
-        return '', 200
-    
-    try:
-        # Create temporary directory for backup
-        temp_dir = tempfile.mkdtemp()
-        backup_dir = os.path.join(temp_dir, 'westbudget_backup')
-        os.makedirs(backup_dir, exist_ok=True)
-        
-        # 1. Copy database
-        if os.path.exists(DATABASE):
-            shutil.copy2(DATABASE, os.path.join(backup_dir, DATABASE))
-            print(f"[Backup] Database copied: {DATABASE}")
-        else:
-            return jsonify({'error': 'Database file not found'}), 404
-        
-        # 2. Copy all images from uploads folder
-        uploads_backup_dir = os.path.join(backup_dir, 'uploads')
-        if os.path.exists(UPLOAD_FOLDER):
-            shutil.copytree(UPLOAD_FOLDER, uploads_backup_dir, dirs_exist_ok=True)
-            print(f"[Backup] Uploads folder copied: {UPLOAD_FOLDER}")
-        
-        # 3. Get custom image paths from settings and copy them too
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Get receipt storage path
-        cursor.execute('SELECT value FROM settings WHERE key = ?', ('receipt_storage_path',))
-        receipt_path_result = cursor.fetchone()
-        if receipt_path_result and receipt_path_result['value']:
-            receipt_path = receipt_path_result['value']
-            if os.path.exists(receipt_path) and receipt_path != UPLOAD_FOLDER:
-                # Copy to backup/uploads/receipts
-                receipts_backup = os.path.join(uploads_backup_dir, 'receipts')
-                os.makedirs(receipts_backup, exist_ok=True)
-                for item in os.listdir(receipt_path):
-                    src = os.path.join(receipt_path, item)
-                    dst = os.path.join(receipts_backup, item)
-                    if os.path.isfile(src):
-                        shutil.copy2(src, dst)
-                    elif os.path.isdir(src):
-                        shutil.copytree(src, dst, dirs_exist_ok=True)
-                print(f"[Backup] Custom receipts folder copied: {receipt_path}")
-        
-        # Get agreement images path
-        cursor.execute('SELECT value FROM settings WHERE key = ?', ('agreement_images_path',))
-        agreement_path_result = cursor.fetchone()
-        if agreement_path_result and agreement_path_result['value']:
-            agreement_path = agreement_path_result['value']
-            default_agreement_path = os.path.join(UPLOAD_FOLDER, 'avtal')
-            if os.path.exists(agreement_path) and agreement_path != default_agreement_path:
-                # Copy to backup/uploads/avtal
-                avtal_backup = os.path.join(uploads_backup_dir, 'avtal')
-                os.makedirs(avtal_backup, exist_ok=True)
-                for item in os.listdir(agreement_path):
-                    src = os.path.join(agreement_path, item)
-                    dst = os.path.join(avtal_backup, item)
-                    if os.path.isfile(src):
-                        shutil.copy2(src, dst)
-                    elif os.path.isdir(src):
-                        shutil.copytree(src, dst, dirs_exist_ok=True)
-                print(f"[Backup] Custom agreement images folder copied: {agreement_path}")
-        
-        # Get vehicle images path
-        cursor.execute('SELECT value FROM settings WHERE key = ?', ('vehicle_images_path',))
-        vehicle_path_result = cursor.fetchone()
-        if vehicle_path_result and vehicle_path_result['value']:
-            vehicle_path = vehicle_path_result['value']
-            default_vehicle_path = os.path.join(UPLOAD_FOLDER, 'vehicles')
-            if os.path.exists(vehicle_path) and vehicle_path != default_vehicle_path:
-                # Copy to backup/uploads/vehicles
-                vehicles_backup = os.path.join(uploads_backup_dir, 'vehicles')
-                os.makedirs(vehicles_backup, exist_ok=True)
-                for item in os.listdir(vehicle_path):
-                    src = os.path.join(vehicle_path, item)
-                    dst = os.path.join(vehicles_backup, item)
-                    if os.path.isfile(src):
-                        shutil.copy2(src, dst)
-                    elif os.path.isdir(src):
-                        shutil.copytree(src, dst, dirs_exist_ok=True)
-                print(f"[Backup] Custom vehicle images folder copied: {vehicle_path}")
-        
-        conn.close()
-        
-        # 4. Create ZIP file
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        zip_filename = f'westbudget_backup_{timestamp}.zip'
-        zip_path = os.path.join(temp_dir, zip_filename)
-        
-        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            for root, dirs, files in os.walk(backup_dir):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    arcname = os.path.relpath(file_path, backup_dir)
-                    zipf.write(file_path, arcname)
-        
-        print(f"[Backup] ZIP file created: {zip_path}")
-        
-        # 5. Return ZIP file
-        return send_file(
-            zip_path,
-            mimetype='application/zip',
-            as_attachment=True,
-            download_name=zip_filename
-        )
-        
-    except Exception as e:
-        print(f"[Backup] Error creating backup: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': f'Backup failed: {str(e)}'}), 500
-    finally:
-        # Cleanup temporary directory after a delay (to allow file download)
-        # Note: In production, you might want to use a background task for cleanup
-        pass
-
-
-@app.route('/api/backup/restore', methods=['POST', 'OPTIONS'])
-def restore_backup():
-    """Restore from a backup ZIP file"""
-    if request.method == 'OPTIONS':
-        return '', 200
-    
-    try:
-        if 'file' not in request.files:
-            return jsonify({'error': 'No backup file provided'}), 400
-        
-        file = request.files['file']
-        
-        if file.filename == '':
-            return jsonify({'error': 'No file selected'}), 400
-        
-        if not file.filename.endswith('.zip'):
-            return jsonify({'error': 'Invalid backup file. Must be a ZIP file.'}), 400
-        
-        # Save uploaded ZIP to temporary location
-        temp_dir = tempfile.mkdtemp()
-        zip_path = os.path.join(temp_dir, file.filename)
-        file.save(zip_path)
-        
-        # Extract ZIP
-        extract_dir = os.path.join(temp_dir, 'extracted')
-        os.makedirs(extract_dir, exist_ok=True)
-        
-        with zipfile.ZipFile(zip_path, 'r') as zipf:
-            zipf.extractall(extract_dir)
-        
-        # Find database file
-        db_path = None
-        for root, dirs, files in os.walk(extract_dir):
-            if DATABASE in files:
-                db_path = os.path.join(root, DATABASE)
-                break
-        
-        if not db_path:
-            return jsonify({'error': 'Database file not found in backup'}), 400
-        
-        # Backup current database before restore
-        current_db_backup = f'{DATABASE}.backup_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
-        if os.path.exists(DATABASE):
-            shutil.copy2(DATABASE, current_db_backup)
-            print(f"[Restore] Current database backed up to: {current_db_backup}")
-        
-        # Replace database
-        shutil.copy2(db_path, DATABASE)
-        print(f"[Restore] Database restored from backup")
-        
-        # Restore images
-        uploads_backup = os.path.join(extract_dir, 'uploads')
-        if os.path.exists(uploads_backup):
-            # Remove existing uploads folder
-            if os.path.exists(UPLOAD_FOLDER):
-                shutil.rmtree(UPLOAD_FOLDER)
-            # Copy backup uploads
-            shutil.copytree(uploads_backup, UPLOAD_FOLDER, dirs_exist_ok=True)
-            print(f"[Restore] Uploads folder restored")
-        
-        # Restore custom image paths if they exist in backup
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Check for custom receipt path
-        receipts_backup = os.path.join(uploads_backup, 'receipts')
-        if os.path.exists(receipts_backup):
-            cursor.execute('SELECT value FROM settings WHERE key = ?', ('receipt_storage_path',))
-            result = cursor.fetchone()
-            if result and result['value']:
-                receipt_path = result['value']
-                if os.path.exists(receipt_path):
-                    shutil.rmtree(receipt_path)
-                shutil.copytree(receipts_backup, receipt_path, dirs_exist_ok=True)
-                print(f"[Restore] Custom receipts folder restored: {receipt_path}")
-        
-        # Check for custom agreement images path
-        avtal_backup = os.path.join(uploads_backup, 'avtal')
-        if os.path.exists(avtal_backup):
-            cursor.execute('SELECT value FROM settings WHERE key = ?', ('agreement_images_path',))
-            result = cursor.fetchone()
-            if result and result['value']:
-                agreement_path = result['value']
-                default_agreement_path = os.path.join(UPLOAD_FOLDER, 'avtal')
-                if agreement_path != default_agreement_path and os.path.exists(agreement_path):
-                    shutil.rmtree(agreement_path)
-                    shutil.copytree(avtal_backup, agreement_path, dirs_exist_ok=True)
-                    print(f"[Restore] Custom agreement images folder restored: {agreement_path}")
-        
-        # Check for custom vehicle images path
-        vehicles_backup = os.path.join(uploads_backup, 'vehicles')
-        if os.path.exists(vehicles_backup):
-            cursor.execute('SELECT value FROM settings WHERE key = ?', ('vehicle_images_path',))
-            result = cursor.fetchone()
-            if result and result['value']:
-                vehicle_path = result['value']
-                default_vehicle_path = os.path.join(UPLOAD_FOLDER, 'vehicles')
-                if vehicle_path != default_vehicle_path and os.path.exists(vehicle_path):
-                    shutil.rmtree(vehicle_path)
-                    shutil.copytree(vehicles_backup, vehicle_path, dirs_exist_ok=True)
-                    print(f"[Restore] Custom vehicle images folder restored: {vehicle_path}")
-        
-        conn.close()
-        
-        # Cleanup
-        shutil.rmtree(temp_dir)
-        
-        return jsonify({
-            'message': 'Backup restored successfully',
-            'warning': 'Please restart the application to see the restored data'
-        }), 200
-        
-    except Exception as e:
-        print(f"[Restore] Error restoring backup: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': f'Restore failed: {str(e)}'}), 500
-
-
-# ============================================================================
-# HISTORY SYSTEM (Separate JSON file to avoid DB load)
-# ============================================================================
-
-HISTORY_FILE = 'action_history.json'
-MAX_HISTORY_ITEMS = 1000  # Keep last 1000 actions
-
-def load_history():
-    """Load action history from JSON file"""
-    if not os.path.exists(HISTORY_FILE):
-        return []
-    try:
-        with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except (json.JSONDecodeError, IOError) as e:
-        print(f"[History] Error loading history: {str(e)}")
-        return []
-
-def save_history(history):
-    """Save action history to JSON file"""
-    try:
-        # Keep only last MAX_HISTORY_ITEMS
-        if len(history) > MAX_HISTORY_ITEMS:
-            history = history[-MAX_HISTORY_ITEMS:]
-        
-        with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
-            json.dump(history, f, ensure_ascii=False, indent=2)
-        return True
-    except IOError as e:
-        print(f"[History] Error saving history: {str(e)}")
-        return False
-
-def add_history_entry(action_type, action, entity_type, entity_id, entity_data=None, undo_data=None):
-    """Add an entry to the history"""
-    history = load_history()
-    
-    entry = {
-        'id': len(history) + 1,
-        'timestamp': datetime.now().isoformat(),
-        'action_type': action_type,  # 'create', 'update', 'delete', 'link', etc.
-        'action': action,  # Human-readable description
-        'entity_type': entity_type,  # 'transaction', 'agreement', 'loan', etc.
-        'entity_id': entity_id,
-        'entity_data': entity_data,  # Current state (for undo)
-        'undo_data': undo_data  # Previous state (for restore)
-    }
-    
-    history.append(entry)
-    save_history(history)
-    return entry
-
-@app.route('/api/history', methods=['GET'])
-def get_history():
-    """Get action history"""
-    try:
-        limit = request.args.get('limit', type=int, default=100)
-        entity_type = request.args.get('entity_type', type=str)
-        
-        history = load_history()
-        
-        # Filter by entity type if specified
-        if entity_type:
-            history = [h for h in history if h.get('entity_type') == entity_type]
-        
-        # Sort by timestamp (newest first)
-        history.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
-        
-        # Limit results
-        history = history[:limit]
-        
-        return jsonify(history), 200
-    except Exception as e:
-        print(f"[History] Error getting history: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/history/<int:history_id>/undo', methods=['POST'])
-def undo_history_action(history_id):
-    """Undo a specific history action"""
-    try:
-        history = load_history()
-        
-        # Find the history entry
-        entry = next((h for h in history if h.get('id') == history_id), None)
-        if not entry:
-            return jsonify({'error': 'History entry not found'}), 404
-        
-        action_type = entry.get('action_type')
-        entity_type = entry.get('entity_type')
-        entity_id = entry.get('entity_id')
-        undo_data = entry.get('undo_data')
-        entity_data = entry.get('entity_data')
-        
-        # Perform undo based on action type
-        if action_type == 'delete':
-            # Restore deleted entity
-            if entity_type == 'user' and undo_data:
-                conn = get_db()
-                cursor = conn.cursor()
-                
-                # Restore user
-                cursor.execute('''
-                    INSERT INTO users (id, email, password_hash, role, created_at, updated_at, last_login)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                ''', (
-                    undo_data.get('id'),
-                    undo_data.get('email'),
-                    undo_data.get('password_hash'),
-                    undo_data.get('role', 'user'),
-                    undo_data.get('created_at'),
-                    undo_data.get('updated_at'),
-                    undo_data.get('last_login')
-                ))
-                
-                # Restore licenses if they existed
-                if 'licenses' in undo_data and undo_data['licenses']:
-                    for license_data in undo_data['licenses']:
-                        cursor.execute('''
-                            INSERT INTO licenses (id, user_id, license_type, status, starts_at, expires_at, created_at, updated_at, last_validated_at)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ''', (
-                            license_data.get('id'),
-                            license_data.get('user_id'),
-                            license_data.get('license_type'),
-                            license_data.get('status'),
-                            license_data.get('starts_at'),
-                            license_data.get('expires_at'),
-                            license_data.get('created_at'),
-                            license_data.get('updated_at'),
-                            license_data.get('last_validated_at')
-                        ))
-                
-                conn.commit()
-                conn.close()
-                
-                # Add undo entry to history
-                add_history_entry('restore', f'Återställde {entity_type}', entity_type, entity_id, undo_data)
-                
-                return jsonify({'message': 'User restored', 'restored_id': entity_id}), 200
-                
-            elif entity_type == 'transaction' and undo_data:
-                conn = get_db()
-                cursor = conn.cursor()
-                cursor.execute('''
-                    INSERT INTO transactions (title, date, amount, type, category, status, note, receipt, receipt_path)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (
-                    undo_data.get('title'),
-                    undo_data.get('date'),
-                    undo_data.get('amount'),
-                    undo_data.get('type'),
-                    undo_data.get('category'),
-                    undo_data.get('status', 'Bokförd'),
-                    undo_data.get('note', ''),
-                    undo_data.get('receipt', 0),
-                    undo_data.get('receipt_path')
-                ))
-                conn.commit()
-                conn.close()
-                
-                # Add undo entry to history
-                add_history_entry('restore', f'Återställde {entity_type}', entity_type, entity_id, undo_data)
-                
-                return jsonify({'message': 'Transaction restored', 'restored_id': cursor.lastrowid}), 200
-                
-            elif entity_type == 'agreement' and undo_data:
-                conn = get_db()
-                cursor = conn.cursor()
-                cursor.execute('''
-                    INSERT INTO agreements (name, provider, amount, frequency, start_date, next_payment, category, status, note, image_path)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (
-                    undo_data.get('name'),
-                    undo_data.get('provider'),
-                    undo_data.get('amount'),
-                    undo_data.get('frequency'),
-                    undo_data.get('start_date'),
-                    undo_data.get('next_payment'),
-                    undo_data.get('category'),
-                    undo_data.get('status', 'Aktiv'),
-                    undo_data.get('note', ''),
-                    undo_data.get('image_path')
-                ))
-                conn.commit()
-                conn.close()
-                
-                add_history_entry('restore', f'Återställde {entity_type}', entity_type, entity_id, undo_data)
-                
-                return jsonify({'message': 'Agreement restored', 'restored_id': cursor.lastrowid}), 200
-        
-        elif action_type == 'create':
-            # Delete created entity
-            if entity_type == 'transaction':
-                conn = get_db()
-                cursor = conn.cursor()
-                cursor.execute('DELETE FROM transactions WHERE id = ?', (entity_id,))
-                conn.commit()
-                conn.close()
-                
-                add_history_entry('undo', f'Ångrade skapande av {entity_type}', entity_type, entity_id, None, entity_data)
-                
-                return jsonify({'message': 'Transaction deleted'}), 200
-                
-            elif entity_type == 'agreement':
-                conn = get_db()
-                cursor = conn.cursor()
-                cursor.execute('DELETE FROM agreements WHERE id = ?', (entity_id,))
-                conn.commit()
-                conn.close()
-                
-                add_history_entry('undo', f'Ångrade skapande av {entity_type}', entity_type, entity_id, None, entity_data)
-                
-                return jsonify({'message': 'Agreement deleted'}), 200
-        
-        elif action_type == 'update':
-            # Restore previous state
-            if entity_type == 'transaction' and undo_data:
-                conn = get_db()
-                cursor = conn.cursor()
-                
-                # Check if this is a receipt-related undo
-                if 'receipt_path' in undo_data:
-                    # Restore receipt file if it was moved to deleted folder
-                    receipt_path = undo_data.get('receipt_path')
-                    if receipt_path and 'deleted' in receipt_path.replace('\\', '/'):
-                        try:
-                            # Get receipt storage path
-                            cursor.execute('SELECT value FROM settings WHERE key = ?', ('receipt_storage_path',))
-                            result = cursor.fetchone()
-                            storage_path = result['value'] if result else app.config['UPLOAD_FOLDER']
-                            
-                            # Move file back from deleted folder
-                            filename = os.path.basename(receipt_path)
-                            # Remove transaction ID prefix if present
-                            if '_' in filename:
-                                parts = filename.split('_', 1)
-                                if parts[0].isdigit():
-                                    filename = parts[1]
-                            
-                            restored_path = os.path.join(storage_path, filename)
-                            if os.path.exists(receipt_path) and not os.path.exists(restored_path):
-                                shutil.move(receipt_path, restored_path)
-                                receipt_path = restored_path
-                        except Exception as e:
-                            print(f"⚠️ [History] Kunde inte återställa kvittofil: {e}")
-                    
-                    # Update transaction with restored receipt
-                    cursor.execute('''
-                        UPDATE transactions 
-                        SET receipt = ?, receipt_path = ?, updated_at = ?
-                        WHERE id = ?
-                    ''', (
-                        True if receipt_path else False,
-                        receipt_path,
-                        datetime.now().isoformat(),
-                        entity_id
-                    ))
-                else:
-                    # Regular update restore
-                    cursor.execute('''
-                        UPDATE transactions 
-                        SET title = ?, date = ?, amount = ?, type = ?, category = ?, status = ?, note = ?
-                        WHERE id = ?
-                    ''', (
-                        undo_data.get('title'),
-                        undo_data.get('date'),
-                        undo_data.get('amount'),
-                        undo_data.get('type'),
-                        undo_data.get('category'),
-                        undo_data.get('status'),
-                        undo_data.get('note', ''),
-                        entity_id
-                    ))
-                
-                conn.commit()
-                conn.close()
-                
-                add_history_entry('restore', f'Återställde {entity_type}', entity_type, entity_id, undo_data, entity_data)
-                
-                return jsonify({'message': 'Transaction restored to previous state'}), 200
-            
-            elif entity_type == 'agreement' and undo_data:
-                conn = get_db()
-                cursor = conn.cursor()
-                
-                # Check if this is an image-related undo
-                if 'images' in undo_data or 'deleted_image_path' in undo_data:
-                    import json
-                    # Restore image file if it was moved to deleted folder
-                    deleted_image_path = undo_data.get('deleted_image_path')
-                    if deleted_image_path and 'deleted' in deleted_image_path.replace('\\', '/'):
-                        try:
-                            # Get agreement images path
-                            cursor.execute('SELECT value FROM settings WHERE key = ?', ('agreement_images_path',))
-                            result = cursor.fetchone()
-                            storage_path = result['value'] if result else os.path.join(app.config['UPLOAD_FOLDER'], 'avtal')
-                            
-                            # Move file back from deleted folder
-                            filename = os.path.basename(deleted_image_path)
-                            # Remove agreement ID prefix if present
-                            if '_' in filename:
-                                parts = filename.split('_', 1)
-                                if parts[0].isdigit():
-                                    filename = parts[1]
-                            
-                            restored_path = os.path.join(storage_path, filename)
-                            if os.path.exists(deleted_image_path) and not os.path.exists(restored_path):
-                                shutil.move(deleted_image_path, restored_path)
-                                
-                                # Restore to images array
-                                old_images = undo_data.get('images', [])
-                                if restored_path not in old_images:
-                                    old_images.append(restored_path)
-                                
-                                cursor.execute('UPDATE agreements SET images = ?, updated_at = ? WHERE id = ?',
-                                            (json.dumps(old_images), datetime.now().isoformat(), entity_id))
-                        except Exception as e:
-                            print(f"⚠️ [History] Kunde inte återställa bildfil: {e}")
-                    else:
-                        # Just restore images array
-                        old_images = undo_data.get('images', [])
-                        cursor.execute('UPDATE agreements SET images = ?, updated_at = ? WHERE id = ?',
-                                    (json.dumps(old_images), datetime.now().isoformat(), entity_id))
-                else:
-                    # Regular update restore
-                    cursor.execute('''
-                        UPDATE agreements 
-                        SET name = ?, provider = ?, cost = ?, frequency = ?, next_payment = ?, status = ?, category = ?
-                        WHERE id = ?
-                    ''', (
-                        undo_data.get('name'),
-                        undo_data.get('provider'),
-                        undo_data.get('cost'),
-                        undo_data.get('frequency'),
-                        undo_data.get('next_payment'),
-                        undo_data.get('status'),
-                        undo_data.get('category'),
-                        entity_id
-                    ))
-                
-                conn.commit()
-                conn.close()
-                
-                add_history_entry('restore', f'Återställde {entity_type}', entity_type, entity_id, undo_data, entity_data)
-                
-                return jsonify({'message': 'Agreement restored to previous state'}), 200
-        
-        return jsonify({'error': 'Unsupported action type for undo'}), 400
-        
-    except Exception as e:
-        print(f"[History] Error undoing action: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/history/clear', methods=['POST'])
-def clear_history():
-    """Clear all history"""
-    try:
-        if os.path.exists(HISTORY_FILE):
-            os.remove(HISTORY_FILE)
-        return jsonify({'message': 'History cleared'}), 200
-    except Exception as e:
-        print(f"[History] Error clearing history: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-# ============================================================================
-# ERROR HANDLERS
-# ============================================================================
-
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({'error': 'Endpoint not found'}), 404
-
-
-@app.errorhandler(500)
-def internal_error(error):
-    return jsonify({'error': 'Internal server error'}), 500
-
-
-# ============================================================================
-# FILE/DOCUMENT MANAGEMENT ENDPOINTS
-# ============================================================================
-
-@app.route('/api/transactions/<int:transaction_id>/receipt', methods=['DELETE'])
-def delete_transaction_receipt(transaction_id):
-    """Delete a specific receipt file for a transaction (supports multiple receipts)"""
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Get transaction and receipt path(s)
-        cursor.execute('SELECT * FROM transactions WHERE id = ?', (transaction_id,))
-        transaction = cursor.fetchone()
-        
-        if not transaction:
-            conn.close()
-            return jsonify({'error': 'Transaction not found'}), 404
-        
-        receipt_path_data = transaction['receipt_path']
-        
-        if not receipt_path_data:
-            conn.close()
-            return jsonify({'error': 'No receipt to delete'}), 400
-        
-        # Get receipt path to delete from query parameter
-        receipt_path_to_delete = request.args.get('path')
-        
-        if not receipt_path_to_delete:
-            conn.close()
-            return jsonify({'error': 'No receipt path specified'}), 400
-        
-        # Parse receipt paths (support both old single path and new JSON array)
-        receipt_paths = []
-        try:
-            receipt_paths = json.loads(receipt_path_data)
-            if not isinstance(receipt_paths, list):
-                receipt_paths = [receipt_path_data]
-        except (json.JSONDecodeError, TypeError):
-            receipt_paths = [receipt_path_data] if receipt_path_data else []
-        
-        # Remove the specified receipt path
-        if receipt_path_to_delete not in receipt_paths:
-            conn.close()
-            return jsonify({'error': 'Receipt path not found'}), 404
-        
-        receipt_paths.remove(receipt_path_to_delete)
-        
-        # Move file to deleted folder
-        if os.path.exists(receipt_path_to_delete):
-            try:
-                # Get receipt storage path
-                cursor.execute('SELECT value FROM settings WHERE key = ?', ('receipt_storage_path',))
-                result = cursor.fetchone()
-                storage_path = result['value'] if result else app.config['UPLOAD_FOLDER']
-                
-                # Create deleted subfolder
-                deleted_folder = os.path.join(storage_path, 'deleted')
-                os.makedirs(deleted_folder, exist_ok=True)
-                
-                # Move file to deleted folder
-                filename = os.path.basename(receipt_path_to_delete)
-                deleted_path = os.path.join(deleted_folder, filename)
-                
-                if os.path.exists(receipt_path_to_delete):
-                    shutil.move(receipt_path_to_delete, deleted_path)
-                    print(f"🗑️ [Backend] Flyttade kvittofil till deleted-mapp: {deleted_path}")
-            except Exception as e:
-                print(f"⚠️ [Backend] Kunde inte flytta kvittofil: {e}")
-                deleted_path = None
-        else:
-            deleted_path = None
-        
-        # Update transaction with remaining receipt paths
-        if len(receipt_paths) > 0:
-            receipt_paths_json = json.dumps(receipt_paths)
-            cursor.execute('UPDATE transactions SET receipt = ?, receipt_path = ?, updated_at = ? WHERE id = ?',
-                          (True, receipt_paths_json, datetime.now().isoformat(), transaction_id))
-        else:
-            # No receipts left
-            cursor.execute('UPDATE transactions SET receipt = ?, receipt_path = ?, updated_at = ? WHERE id = ?',
-                          (False, None, datetime.now().isoformat(), transaction_id))
-        
-        conn.commit()
-        
-        # Get updated transaction for history
-        cursor.execute('SELECT * FROM transactions WHERE id = ?', (transaction_id,))
-        updated_transaction = dict(cursor.fetchone())
-        
-        # Add to history
-        add_history_entry(
-            action_type='update',
-            action=f'Tog bort kvitto för transaktion: {updated_transaction.get("title", "Okänt")}',
-            entity_type='receipt',
-            entity_id=transaction_id,
-            entity_data=updated_transaction,
-            undo_data={'receipt_path': receipt_path_to_delete, 'deleted_path': deleted_path}
-        )
-        
-        conn.close()
-        
-        return jsonify({
-            'message': 'Receipt deleted successfully',
-            'remaining_receipts': len(receipt_paths),
-            'deleted_path': deleted_path  # Return deleted path for undo functionality
-        }), 200
-        
-    except Exception as e:
-        print(f"[Backend] Error deleting receipt: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/agreements/<int:agreement_id>/images/<path:image_path>', methods=['DELETE'])
-def delete_agreement_image(agreement_id, image_path):
-    """Delete an image from an agreement"""
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Get agreement
-        cursor.execute('SELECT * FROM agreements WHERE id = ?', (agreement_id,))
-        agreement = cursor.fetchone()
-        
-        if not agreement:
-            conn.close()
-            return jsonify({'error': 'Agreement not found'}), 404
-        
-        # Parse current images
-        import json
-        current_images = json.loads(agreement['images']) if agreement['images'] else []
-        
-        # Find and remove the image
-        old_images = current_images.copy()
-        if image_path in current_images:
-            current_images.remove(image_path)
-        else:
-            # Try to find by filename
-            filename = os.path.basename(image_path)
-            current_images = [img for img in current_images if os.path.basename(img) != filename]
-        
-        # Move file to deleted folder (for undo)
-        moved_path = None
-        full_image_path = image_path
-        if not os.path.isabs(image_path):
-            # Relative path - construct full path
-            cursor.execute('SELECT value FROM settings WHERE key = ?', ('agreement_images_path',))
-            result = cursor.fetchone()
-            storage_path = result['value'] if result else os.path.join(app.config['UPLOAD_FOLDER'], 'avtal')
-            full_image_path = os.path.join(storage_path, image_path.replace('avtal/', ''))
-        
-        if os.path.exists(full_image_path):
-            try:
-                # Get agreement images path
-                cursor.execute('SELECT value FROM settings WHERE key = ?', ('agreement_images_path',))
-                result = cursor.fetchone()
-                storage_path = result['value'] if result else os.path.join(app.config['UPLOAD_FOLDER'], 'avtal')
-                
-                # Create deleted subfolder
-                deleted_folder = os.path.join(storage_path, 'deleted')
-                os.makedirs(deleted_folder, exist_ok=True)
-                
-                # Move file to deleted folder
-                filename = os.path.basename(full_image_path)
-                deleted_filename = f"{agreement_id}_{filename}"
-                deleted_path = os.path.join(deleted_folder, deleted_filename)
-                
-                shutil.move(full_image_path, deleted_path)
-                moved_path = deleted_path
-            except Exception as e:
-                print(f"⚠️ [Backend] Kunde inte flytta bildfil: {e}")
-        
-        # Update agreement
-        cursor.execute('UPDATE agreements SET images = ?, updated_at = ? WHERE id = ?',
-                      (json.dumps(current_images), datetime.now().isoformat(), agreement_id))
-        conn.commit()
-        
-        # Get updated agreement for history
-        cursor.execute('SELECT * FROM agreements WHERE id = ?', (agreement_id,))
-        updated_agreement = dict(cursor.fetchone())
-        
-        # Add to history
-        add_history_entry(
-            action_type='update',
-            action=f'Raderade bild för avtal: {updated_agreement.get("name", "Okänt")}',
-            entity_type='agreement',
-            entity_id=agreement_id,
-            entity_data=updated_agreement,
-            undo_data={'images': old_images, 'deleted_image_path': moved_path or full_image_path}
-        )
-        
-        conn.close()
-        
-        return jsonify({
-            'message': 'Image deleted successfully',
-            'moved_path': moved_path
-        }), 200
-        
-    except Exception as e:
-        print(f"[Backend] Error deleting image: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
+        # Check every hour (desktop app might be closed/opened frequently)
+        time.sleep(3600)  
 
 # ============================================================================
 # MAIN
@@ -6919,13 +1616,15 @@ if __name__ == '__main__':
     # Initialize database on startup
     init_db()
     
-    print("=" * 50)
-    print("🚀 WestBudget Backend Server")
-    print("=" * 50)
-    print(f"📊 Database: {DATABASE}")
-    print(f"📁 Upload folder: {UPLOAD_FOLDER}")
-    print(f"🌐 Server: http://0.0.0.0:5000")
-    print(f"🌐 Network: http://192.168.1.232:5000")
-    print("=" * 50)
+    # Start scheduler in background thread
+    scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
+    scheduler_thread.start()
     
+    port = 5000
+    print('=' * 50)
+    print(f" Starting WestBudget Backend Server on port {port}...")
+    print('=' * 50)
+
+    print(f' Upload folder: {UPLOAD_FOLDER}')
     app.run(host='0.0.0.0', port=5000, debug=True)
+
