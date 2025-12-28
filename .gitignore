@@ -69,3 +69,5 @@ Thumbs.db
 
 create_admin.py
 .md
+# Electron Builds
+frontend/dist-electron/
