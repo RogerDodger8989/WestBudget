@@ -29,5 +29,5 @@ jobs:
         with:
           context: .
           push: true
-          # Hardcoded tag is safest to avoid uppercase issues
-          tags: rogerdodger8989/westbudget:latest
+          # Using the username secret directly since we know it is '800121' (numbers/lowercase)
+          tags: ${{ secrets.DOCKER_USERNAME }}/westbudget:latest

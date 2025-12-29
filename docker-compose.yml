@@ -3,7 +3,7 @@ version: '3.8'
 services:
   westbudget:
     # Byt ut 'ditt_anvandrnamn' mot ditt Docker Hub-användarnamn
-    image: ditt_anvandarnamn/westbudget:latest
+    image: 800121/westbudget:latest
     container_name: westbudget
     restart: unless-stopped
     ports:

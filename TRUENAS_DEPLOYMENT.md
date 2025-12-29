@@ -4,7 +4,7 @@ Absolut! Dockage (eller Portainer) gör det mycket smidigare eftersom du kan anv
 
 ## Steg 1: GitHub & Docker Hub (Samma som förut)
 
-Vi använder fortfarande GitHub Actions för att bygga koden automatiskt.
+Wait for the GitHub Action to build the image (e.g., `800121/westbudget:latest`).
 Se till att du har gjort **Steg 1** i den förra guiden (skaffat Docker Token och lagt in på GitHub).
 
 ## Steg 2: Installera i Dockage
@@ -15,7 +15,7 @@ Se till att du har gjort **Steg 1** i den förra guiden (skaffat Docker Token oc
 4.  I den stora textrutan, klistra in innehållet från filen `docker-compose.yml` som jag skapat i din mapp.
 
     **VIKTIGT - Ändra följande i texten du klistrar in:**
-    *   `image`: Ändra `ditt_anvandarnamn` till ditt Docker Hub-namn.
+    *   `image`: Ändra `ditt_anvandarnamn` till `800121` (eller ditt Docker Hub-namn om du har ett annat).
     *   `environment`: Fyll i dina riktiga nycklar istället för `din_url`, `din_nyckel` osv. (Du hittar dem i din `.env` fil på datorn).
     *   `volumes`: Ändra `/mnt/pool/data/...` till en mapp som faktiskt finns på din NAS där du vill spara kvitton.
 
