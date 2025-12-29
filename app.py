@@ -61,7 +61,7 @@ app = Flask(__name__)
 # Enable CORS for frontend with credentials support
 CORS(app, resources={
     r"/*": {
-        "origins": ["http://localhost:5100", "http://localhost:3000", "https://westbudget.netlify.app"],
+        "origins": ["http://localhost:5100", "http://localhost:3000", "https://westbudget.netlify.app", "http://192.168.1.240:5000", "http://192.168.1.240"],
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
         "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
         "supports_credentials": True,
