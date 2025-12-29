@@ -7,7 +7,7 @@ const getApiBaseUrl = () => {
   }
   // In browser, use the configured IP or localhost
   // Note: Vite proxy handles /api -> localhost:5000 in dev
-  return import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  return import.meta.env.VITE_API_URL || '';
 };
 
 const API_BASE_URL = getApiBaseUrl();
