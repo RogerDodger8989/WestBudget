@@ -9,8 +9,8 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      # Ändra sökvägen till vänster om kolon till där du vill spara kvitton på din NAS
-      - /mnt/pool/data/westbudget_uploads:/app/WestBudget/uploads
+      # Du ville spara bilderna här:
+      - /mnt/data/media/apps/trunas-server/WestBudget/uploads:/app/WestBudget/uploads
     environment:
       - DATABASE_URL=postgresql://user:pass@host:5432/db  # Din Supabase/Postgres URL
       - SUPABASE_URL=din_url
