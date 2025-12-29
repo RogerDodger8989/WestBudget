@@ -11,6 +11,7 @@ const getApiBaseUrl = () => {
 };
 
 const API_BASE_URL = getApiBaseUrl();
+console.log("🚀 WestBudget API Config Loaded. URL:", API_BASE_URL, "| Version: FIX-REL-PATH-2");
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem('token');
