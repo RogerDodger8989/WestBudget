@@ -56,7 +56,7 @@ print(f"DEBUG: JWT_SECRET_KEY loaded: {'Yes' if os.environ.get('JWT_SECRET_KEY')
 print(f"DEBUG: DATABASE_URL is: {os.environ.get('DATABASE_URL')}")
 print(f"DEBUG: STRIPE_SECRET_KEY present: {'Yes' if os.environ.get('STRIPE_SECRET_KEY') else 'No'}")
 print(f"DEBUG: SENDGRID_API_KEY present: {'Yes' if os.environ.get('SENDGRID_API_KEY') else 'No'}")
-print("🚀 VERSION CHECK: V5 (FOUND DUPLICATE ENDPOINT) 🚀")
+print("🚀 VERSION CHECK: V6 (DATE FIXES) 🚀")
 
 app = Flask(__name__)
 # Enable CORS for frontend with credentials support
@@ -727,15 +727,19 @@ def create_agreement():
         # Handle images list -> JSON
         images = json.dumps(data.get('images', []))
         
+        # Helper to strict parse dates
+        def parse_date(v):
+            return v if v else None
+
         cursor.execute("""
             INSERT INTO agreements (name, provider, cost, frequency, next_payment, status, category, icon, notice, images, start_date, end_date)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING *
         """, (
             data.get('name'), data.get('provider'), data.get('cost'), data.get('frequency'),
-            data.get('next_payment'), data.get('status', 'Aktiv'), data.get('category'),
+            parse_date(data.get('next_payment')), data.get('status', 'Aktiv'), data.get('category'),
             data.get('icon', '📄'), data.get('notice', ''), images,
-            data.get('start_date'), data.get('end_date')
+            parse_date(data.get('start_date')), parse_date(data.get('end_date'))
         ))
         new_agreement = cursor.fetchone()
         conn.commit()
