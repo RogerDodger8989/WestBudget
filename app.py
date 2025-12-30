@@ -517,6 +517,13 @@ def handle_dashboard_layout():
         print(f"Error in dashboard-layout: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/saved-searches', methods=['GET', 'POST'])
+@require_auth
+def handle_saved_searches():
+    if request.method == 'GET':
+        return jsonify([]), 200
+    return jsonify({'status': 'success'}), 200
+
 # --- Transactions ---
 
 @app.route('/transactions', methods=['GET'])
