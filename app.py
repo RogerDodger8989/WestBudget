@@ -809,6 +809,52 @@ def update_agreement(id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/agreements/<int:id>/upload-image', methods=['POST'])
+@require_auth
+def upload_agreement_image(id):
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file part'}), 400
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'No selected file'}), 400
+        
+        if file:
+            filename = secure_filename(f"agreement_{id}_{int(time.time())}_{file.filename}")
+            file_path = os.path.join(UPLOAD_FOLDER, filename)
+            file.save(file_path)
+            
+            # Update DB (append to images JSON array)
+            conn = get_db()
+            cursor = conn.cursor()
+            
+            # Fetch current images
+            cursor.execute("SELECT images FROM agreements WHERE id = %s", (id,))
+            row = cursor.fetchone()
+            if not row:
+                conn.close()
+                return jsonify({'error': 'Agreement not found'}), 404
+                
+            current_images = row['images']
+            # Handle if images is string (from partial migration) or list
+            if isinstance(current_images, str):
+                try: current_images = json.loads(current_images)
+                except: current_images = []
+            elif current_images is None:
+                current_images = []
+                
+            current_images.append(filename)
+            
+            cursor.execute("UPDATE agreements SET images = %s, updated_at = NOW() WHERE id = %s", (json.dumps(current_images), id))
+            conn.commit()
+            conn.close()
+            
+            return jsonify({'message': 'File uploaded', 'image_path': filename}), 201
+            
+    except Exception as e:
+        print(f"Error uploading agreement image: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/agreements/<int:id>', methods=['DELETE'])
 @require_auth
 def delete_agreement(id):
