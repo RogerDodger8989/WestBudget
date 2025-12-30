@@ -45,7 +45,7 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
 
   // Hitta kopplat fordon (om det finns)
   const linkedVehicle = vehicles.find(v => v.agreement_id === agreement.id);
-  
+
   // Uppdatera state när agreement ändras
   useEffect(() => {
     setFormData({
@@ -65,7 +65,7 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
     const parsedImages = parseImages(agreement.images);
     console.log('🖼️ [AgreementDrawer] useEffect - Parsed images:', parsedImages, 'from agreement.images:', agreement.images);
     setImages(parsedImages);
-    
+
     // Uppdatera linkedVehicleId
     if (linkedVehicle) {
       setLinkedVehicleId(linkedVehicle.id);
@@ -77,9 +77,9 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
   // Beräkna nästa betalning vid ändring av startdatum eller frekvens
   const calculateNextPayment = (currentDate, frequency) => {
     if (!currentDate) return '';
-    
+
     const date = new Date(currentDate);
-    
+
     switch (frequency) {
       case 'Månadsvis':
         date.setMonth(date.getMonth() + 1);
@@ -93,21 +93,21 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
       default:
         return '';
     }
-    
+
     return date.toISOString().split('T')[0];
   };
 
   const handleChange = (field, value) => {
     setFormData(prev => {
       const updated = { ...prev, [field]: value };
-      
+
       // Om frekvens eller next_payment ändras, beräkna nytt next_payment
       if (field === 'frequency' || field === 'next_payment') {
         if (field === 'frequency' && prev.next_payment) {
           updated.next_payment = calculateNextPayment(prev.next_payment, value);
         }
       }
-      
+
       return updated;
     });
   };
@@ -120,7 +120,7 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
           console.log('📤 Försöker ladda upp bild:', file.name, 'för avtal:', agreement.id);
           const result = await onImageUpload(agreement.id, file);
           console.log('✅ Bild uppladdad, resultat:', result);
-          
+
           // Lägg till den nya bilden i listan
           if (result && result.image_path) {
             setImages(prev => {
@@ -160,11 +160,11 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
 
   const handleDelete = async () => {
     if (!onDelete) return;
-    
+
     // Bekräfta radering
     const confirmed = window.confirm(`Är du säker på att du vill radera "${agreement.name}"? Detta kan inte ångras.`);
     if (!confirmed) return;
-    
+
     setIsDeleting(true);
     try {
       await onDelete(agreement.id);
@@ -176,7 +176,7 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
   const handleRemoveImage = async (imagePath) => {
     const updatedImages = images.filter(img => img !== imagePath);
     setImages(updatedImages);
-    
+
     // Uppdatera direkt i backend
     try {
       await onSave(agreement.id, {
@@ -191,7 +191,7 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
   };
 
   const iconOptions = [
-    '🏠', '🚗', '📱', '💻', '🎵', '💪', '🏢', '📊', 
+    '🏠', '🚗', '📱', '💻', '🎵', '💪', '🏢', '📊',
     '🔒', '🌐', '📺', '☕', '🍔', '✈️', '🏥', '🎓'
   ];
 
@@ -202,8 +202,8 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
           <h2 className="text-lg font-bold text-zinc-900 dark:text-white mb-1">{agreement.name}</h2>
           <p className="text-sm text-zinc-500">{agreement.provider}</p>
         </div>
-        <button 
-          onClick={onClose} 
+        <button
+          onClick={onClose}
           className="p-2 text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-full transition-colors"
         >
           <X size={20} />
@@ -211,20 +211,19 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
       </div>
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
-        
+
         {/* Kostnad */}
         <div className="text-center py-4">
           <span className="text-4xl font-bold tracking-tight text-zinc-900 dark:text-white">
             {formatAmount(formData.cost)}
           </span>
           <div className="mt-2 flex items-center justify-center gap-2">
-            <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${
-              formData.status === 'Aktiv' 
-                ? 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20' 
+            <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${formData.status === 'Aktiv'
+                ? 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20'
                 : formData.status === 'Uppsagd'
-                ? 'bg-zinc-100 text-zinc-500 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-500 dark:border-zinc-700'
-                : 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20'
-            }`}>
+                  ? 'bg-zinc-100 text-zinc-500 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-500 dark:border-zinc-700'
+                  : 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20'
+              }`}>
               {formData.status}
             </span>
           </div>
@@ -303,10 +302,10 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
                 value={formData.start_date || ''}
                 onChange={(e) => {
                   let value = e.target.value.replace(/\D/g, ''); // Only numbers
-                  
+
                   // Limit: 4 digits for year, 2 for month, 2 for day
                   if (value.length > 8) value = value.slice(0, 8);
-                  
+
                   // Format as YYYY-MM-DD while typing
                   let formatted = '';
                   if (value.length <= 4) {
@@ -316,7 +315,7 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
                   } else {
                     formatted = value.slice(0, 4) + '-' + value.slice(4, 6) + '-' + value.slice(6, 8);
                   }
-                  
+
                   handleChange('start_date', formatted);
                 }}
                 placeholder="ÅÅÅÅ-MM-DD"
@@ -351,10 +350,10 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
                 value={formData.end_date || ''}
                 onChange={(e) => {
                   let value = e.target.value.replace(/\D/g, ''); // Only numbers
-                  
+
                   // Limit: 4 digits for year, 2 for month, 2 for day
                   if (value.length > 8) value = value.slice(0, 8);
-                  
+
                   // Format as YYYY-MM-DD while typing
                   let formatted = '';
                   if (value.length <= 4) {
@@ -364,7 +363,7 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
                   } else {
                     formatted = value.slice(0, 4) + '-' + value.slice(4, 6) + '-' + value.slice(6, 8);
                   }
-                  
+
                   handleChange('end_date', formatted);
                 }}
                 placeholder="ÅÅÅÅ-MM-DD"
@@ -402,10 +401,10 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
                 value={formData.next_payment || ''}
                 onChange={(e) => {
                   let value = e.target.value.replace(/\D/g, ''); // Only numbers
-                  
+
                   // Limit: 4 digits for year, 2 for month, 2 for day
                   if (value.length > 8) value = value.slice(0, 8);
-                  
+
                   // Format as YYYY-MM-DD while typing
                   let formatted = '';
                   if (value.length <= 4) {
@@ -415,7 +414,7 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
                   } else {
                     formatted = value.slice(0, 4) + '-' + value.slice(4, 6) + '-' + value.slice(6, 8);
                   }
-                  
+
                   handleChange('next_payment', formatted);
                 }}
                 placeholder="ÅÅÅÅ-MM-DD"
@@ -531,18 +530,16 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
                   key={icon}
                   type="button"
                   onClick={() => handleChange('icon', icon)}
-                  className={`w-8 h-8 rounded-lg flex items-center justify-center text-lg transition-all ${
-                    formData.icon === icon
+                  className={`w-8 h-8 rounded-lg flex items-center justify-center text-lg transition-all ${formData.icon === icon
                       ? `${getThemeBgClass(colorTheme, isDarkMode)} border-2 ${getThemeBorderClass(colorTheme)}`
-                      : `bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 ${
-                        colorTheme === 'indigo' ? 'hover:border-indigo-500' :
+                      : `bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 ${colorTheme === 'indigo' ? 'hover:border-indigo-500' :
                         colorTheme === 'blue' ? 'hover:border-blue-500' :
-                        colorTheme === 'emerald' ? 'hover:border-emerald-500' :
-                        colorTheme === 'purple' ? 'hover:border-purple-500' :
-                        colorTheme === 'rose' ? 'hover:border-rose-500' :
-                        'hover:border-amber-500'
+                          colorTheme === 'emerald' ? 'hover:border-emerald-500' :
+                            colorTheme === 'purple' ? 'hover:border-purple-500' :
+                              colorTheme === 'rose' ? 'hover:border-rose-500' :
+                                'hover:border-amber-500'
                       }`
-                  }`}
+                    }`}
                 >
                   {icon}
                 </button>
@@ -576,26 +573,25 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
               </span>
             )}
           </div>
-          
-          <input 
+
+          <input
             ref={fileInputRef}
-            type="file" 
+            type="file"
             accept="image/*"
             multiple
             onChange={handleFileSelect}
             className="hidden"
           />
-          
-          <div 
+
+          <div
             onClick={() => fileInputRef.current?.click()}
-            className={`border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-xl p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-colors bg-zinc-50 dark:bg-zinc-800/30 group ${
-              colorTheme === 'indigo' ? 'hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10' :
-              colorTheme === 'blue' ? 'hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10' :
-              colorTheme === 'emerald' ? 'hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10' :
-              colorTheme === 'purple' ? 'hover:border-purple-500 hover:bg-purple-50 dark:hover:bg-purple-500/10' :
-              colorTheme === 'rose' ? 'hover:border-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10' :
-              'hover:border-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10'
-            }`}
+            className={`border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-xl p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-colors bg-zinc-50 dark:bg-zinc-800/30 group ${colorTheme === 'indigo' ? 'hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10' :
+                colorTheme === 'blue' ? 'hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10' :
+                  colorTheme === 'emerald' ? 'hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10' :
+                    colorTheme === 'purple' ? 'hover:border-purple-500 hover:bg-purple-50 dark:hover:bg-purple-500/10' :
+                      colorTheme === 'rose' ? 'hover:border-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10' :
+                        'hover:border-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10'
+              }`}
           >
             <div className="w-12 h-12 bg-white dark:bg-zinc-800 rounded-full flex items-center justify-center mb-3 shadow-sm group-hover:scale-110 transition-transform">
               <UploadCloud className="w-6 h-6 text-zinc-400 group-hover:text-indigo-500" />
@@ -611,95 +607,95 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
                 // Hantera både relativa och absoluta sökvägar
                 let imageUrl;
                 const normalizedPath = imagePath.replace(/\\/g, '/');
-                
+
                 console.log(`🖼️ [AgreementDrawer] Bild ${index + 1}:`, imagePath, 'Normaliserad:', normalizedPath);
-                
+
                 if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
                   // Fullständig URL
                   imageUrl = imagePath;
-                } else if (imagePath.includes(':\\') || (imagePath.startsWith('/') && !imagePath.startsWith('/uploads'))) {
-                  // Absolut sökväg (Windows eller Unix absolut) - använd custom file endpoint
-                  imageUrl = `http://192.168.1.232:5000/api/files/${encodeURIComponent(normalizedPath)}`;
-                } else {
-                  // Relativ sökväg - använd uploads endpoint
-                  // Om sökvägen redan börjar med "uploads/", ta bort det
-                  let pathToUse = normalizedPath;
-                  if (pathToUse.startsWith('uploads/')) {
-                    pathToUse = pathToUse.replace('uploads/', '');
-                  }
-                  // Om sökvägen börjar med "avtal/", använd den direkt
-                  if (pathToUse.startsWith('avtal/')) {
-                    imageUrl = `http://192.168.1.232:5000/uploads/${pathToUse}`;
+                  // Check for absolute paths typical in local dev
+                  if (imagePath.includes(':') || (imagePath.startsWith('/') && !imagePath.startsWith('/uploads'))) {
+                    // For WestBudget specific absolute paths, try to extract just filename if possible or use relative API
+                    const filename = normalizedPath.split(/[/\\]/).pop();
+                    imageUrl = `/uploads/${filename}`;
                   } else {
-                    // Annars, försök med avtal/ prefix
-                    imageUrl = `http://192.168.1.232:5000/uploads/avtal/${pathToUse}`;
+                    // Standard relative path
+                    const pathToUse = normalizedPath.startsWith('uploads/') ? normalizedPath.replace('uploads/', '') : normalizedPath;
+                    // Use generic uploads endpoint
+                    // Om sökvägen börjar med "avtal/", använd den direkt
+                    if (pathToUse.startsWith('avtal/')) {
+                      imageUrl = `/uploads/${pathToUse}`;
+                    } else {
+                      // Annars, försök med avtal/ prefix
+                      imageUrl = `/uploads/avtal/${pathToUse}`;
+                    }
                   }
-                }
-                
-                console.log(`🖼️ [AgreementDrawer] Bild URL:`, imageUrl);
-                
-                return (
-                  <div key={index} className="relative group">
-                    <img 
-                      src={imageUrl}
-                      alt={`Avtalsbild ${index + 1}`}
-                      className="w-full h-32 object-cover rounded-lg border border-zinc-200 dark:border-zinc-700 cursor-pointer hover:opacity-90 transition-opacity"
-                      onDoubleClick={() => {
-                        openLightbox(images, index);
-                      }}
-                      onLoad={() => {
-                        console.log(`✅ [AgreementDrawer] Bild ${index + 1} laddad:`, imageUrl);
-                      }}
-                      onError={(e) => {
-                        console.error('❌ [AgreementDrawer] Kunde inte ladda bild:', imageUrl, 'Original sökväg:', imagePath);
-                        
-                        // Försök alternativa sökvägar
-                        const alternatives = [];
-                        
-                        // Om det är en relativ sökväg, försök olika varianter
-                        if (!imagePath.includes(':\\') && !imagePath.startsWith('/')) {
-                          const basePath = normalizedPath.replace('avtal/', '');
-                          alternatives.push(
-                            `http://192.168.1.232:5000/api/files/${encodeURIComponent(normalizedPath)}`,
-                            `http://192.168.1.232:5000/uploads/${normalizedPath}`,
-                            `http://192.168.1.232:5000/uploads/avtal/${basePath}`,
-                            `http://192.168.1.232:5000/api/files/${encodeURIComponent(basePath)}`
-                          );
-                        } else {
-                          // För absoluta sökvägar, försök med olika encoding
-                          alternatives.push(
-                            `http://192.168.1.232:5000/api/files/${normalizedPath}`,
-                            `http://192.168.1.232:5000/api/files/${encodeURIComponent(normalizedPath)}`
-                          );
-                        }
-                        
-                        // Försök nästa alternativ
-                        let altIndex = 0;
-                        const tryNext = () => {
-                          if (altIndex < alternatives.length) {
-                            console.log(`🔄 [AgreementDrawer] Försöker alternativ ${altIndex + 1}:`, alternatives[altIndex]);
-                            e.target.src = alternatives[altIndex];
-                            altIndex++;
-                            e.target.onerror = tryNext;
+
+                  console.log(`🖼️ [AgreementDrawer] Bild URL:`, imageUrl);
+
+                  return (
+                    <div key={index} className="relative group">
+                      <img
+                        src={imageUrl}
+                        alt={`Avtalsbild ${index + 1}`}
+                        className="w-full h-32 object-cover rounded-lg border border-zinc-200 dark:border-zinc-700 cursor-pointer hover:opacity-90 transition-opacity"
+                        onDoubleClick={() => {
+                          openLightbox(images, index);
+                        }}
+                        onLoad={() => {
+                          console.log(`✅ [AgreementDrawer] Bild ${index + 1} laddad:`, imageUrl);
+                        }}
+                        onError={(e) => {
+                          console.error('❌ [AgreementDrawer] Kunde inte ladda bild:', imageUrl, 'Original sökväg:', imagePath);
+
+                          // Försök alternativa sökvägar
+                          const alternatives = [];
+
+                          // Om det är en relativ sökväg, försök olika varianter
+                          if (!imagePath.includes(':\\') && !imagePath.startsWith('/')) {
+                            const basePath = normalizedPath.replace('avtal/', '');
+                            alternatives.push(
+                              `/uploads/${normalizedPath}`,
+                              `/uploads/${normalizedPath}`,
+                              `/uploads/avtal/${basePath}`,
+                              `/uploads/${basePath}`
+                            );
                           } else {
-                            // Alla alternativ misslyckades
-                            e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23ccc" width="100" height="100"/%3E%3Ctext fill="%23999" x="50%" y="50%" text-anchor="middle" dy=".3em" font-size="12"%3EBild saknas%3C/text%3E%3C/svg%3E';
-                            e.target.onerror = null;
+                            // För absoluta sökvägar, försök med olika encoding
+                            const filename = normalizedPath.split(/[/\\]/).pop();
+                            alternatives.push(
+                              `/uploads/${normalizedPath}`,
+                              `/uploads/${filename}`
+                            );
                           }
-                        };
-                        tryNext();
-                      }}
-                    />
-                    <button
-                      onClick={() => handleRemoveImage(imagePath)}
-                      className="absolute top-2 right-2 p-1 bg-rose-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                      title="Ta bort bild"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                );
-              })}
+
+                          // Försök nästa alternativ
+                          let altIndex = 0;
+                          const tryNext = () => {
+                            if (altIndex < alternatives.length) {
+                              console.log(`🔄 [AgreementDrawer] Försöker alternativ ${altIndex + 1}:`, alternatives[altIndex]);
+                              e.target.src = alternatives[altIndex];
+                              altIndex++;
+                              e.target.onerror = tryNext;
+                            } else {
+                              // Alla alternativ misslyckades
+                              e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23ccc" width="100" height="100"/%3E%3Ctext fill="%23999" x="50%" y="50%" text-anchor="middle" dy=".3em" font-size="12"%3EBild saknas%3C/text%3E%3C/svg%3E';
+                              e.target.onerror = null;
+                            }
+                          };
+                          tryNext();
+                        }}
+                      />
+                      <button
+                        onClick={() => handleRemoveImage(imagePath)}
+                        className="absolute top-2 right-2 p-1 bg-rose-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Ta bort bild"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  );
+                })}
             </div>
           )}
         </div>
@@ -713,7 +709,7 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
         </div>
 
       </div>
-      
+
       {/* Image Lightbox */}
       {lightboxImages && lightboxImages.length > 0 && (
         <ImageLightbox
@@ -724,14 +720,14 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
       )}
 
       <div className="p-6 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 flex gap-3">
-        <button 
+        <button
           onClick={handleSave}
           disabled={isSaving || isDeleting}
           className={`flex-1 ${getThemeButtonClass(colorTheme, 'primary')} font-semibold py-3 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed`}
         >
           {isSaving ? 'Sparar...' : 'Spara Ändringar'}
         </button>
-        <button 
+        <button
           onClick={handleDelete}
           disabled={isSaving || isDeleting}
           className="p-3 bg-rose-100 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 rounded-xl hover:bg-rose-200 dark:hover:bg-rose-900/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"

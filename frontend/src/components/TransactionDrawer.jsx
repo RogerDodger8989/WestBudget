@@ -26,7 +26,7 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
   const [lightboxImages, setLightboxImages] = useState(null);
   const [lightboxIndex, setLightboxIndex] = useState(0);
-  
+
   // Parse receipt paths (support both old single path and new JSON array)
   const parseReceiptPaths = (receiptPathData) => {
     if (!receiptPathData) return [];
@@ -37,12 +37,12 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
       return [receiptPathData];
     }
   };
-  
+
   const receiptPaths = parseReceiptPaths(transaction.receipt_path);
-  
+
   // Parse amount to determine formatting
-  const amountValue = typeof transaction.amount === 'string' 
-    ? parseFloat(transaction.amount.replace(/[^\d.-]/g, '')) 
+  const amountValue = typeof transaction.amount === 'string'
+    ? parseFloat(transaction.amount.replace(/[^\d.-]/g, ''))
     : transaction.amount;
   const formattedAmount = formatAmount(amountValue);
   const amountClass = getAmountClassName(amountValue);
@@ -143,7 +143,7 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
       });
 
       showToast('Transaktion kopplad till fordon!', { type: 'success' });
-      
+
       if (reloadData) {
         await reloadData();
       }
@@ -171,13 +171,13 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
 
     // Validate balance if withdrawal
     if (isWithdrawal) {
-      const selectedAccount = selectedSavings.type === 'account' 
-        ? savingsAccounts.find(acc => Number(acc.id) === Number(selectedSavings.id)) 
+      const selectedAccount = selectedSavings.type === 'account'
+        ? savingsAccounts.find(acc => Number(acc.id) === Number(selectedSavings.id))
         : null;
-      const selectedGoal = selectedSavings.type === 'goal' 
-        ? savingsGoals.find(goal => Number(goal.id) === Number(selectedSavings.id)) 
+      const selectedGoal = selectedSavings.type === 'goal'
+        ? savingsGoals.find(goal => Number(goal.id) === Number(selectedSavings.id))
         : null;
-      
+
       if (selectedSavings.type === 'account') {
         if (!selectedAccount) {
           showToast('Kontot kunde inte hittas', { type: 'error' });
@@ -220,25 +220,25 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
       });
 
       showToast(
-        isWithdrawal 
-          ? 'Pengarna har tagits ut från sparande!' 
-          : 'Transaktion kopplad till sparande!', 
+        isWithdrawal
+          ? 'Pengarna har tagits ut från sparande!'
+          : 'Transaktion kopplad till sparande!',
         { type: 'success' }
       );
-      
+
       // Reload data if callback provided
       if (reloadData) {
         await reloadData();
       }
     } catch (error) {
       console.error('Error linking to savings:', error);
-      
+
       // Better error messages - use the message from backend if available
       let errorMessage = error.message || 'Kunde inte koppla till sparande';
       let errorDescription = isWithdrawal
         ? 'Kontot eller målet har inte tillräckligt med pengar.'
         : 'Ett fel uppstod vid koppling till sparande.';
-      
+
       // If backend provided a detailed message, use it
       if (error.originalError && error.originalError.message) {
         errorMessage = error.originalError.message;
@@ -247,8 +247,8 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
       } else if (error.message.includes('Insufficient amount')) {
         errorMessage = 'Otillräckligt belopp i målet';
       }
-      
-      showToast(errorMessage, { 
+
+      showToast(errorMessage, {
         type: 'error',
         description: errorDescription
       });
@@ -259,7 +259,7 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
 
   const handleCreateCategory = async () => {
     const trimmedName = newCategoryName.trim();
-    
+
     if (!trimmedName) {
       showToast('Kategorinamn kan inte vara tomt', { type: 'error' });
       return;
@@ -276,15 +276,15 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
     try {
       await api.createCategory(trimmedName);
       showToast('Kategori skapad!', { type: 'success' });
-      
+
       // Uppdatera transaktionen med den nya kategorin
       onCategoryChange(transaction.id, trimmedName);
-      
+
       // Reload data för att få uppdaterad kategorilista
       if (reloadData) {
         await reloadData();
       }
-      
+
       setIsAddingCategory(false);
       setNewCategoryName('');
     } catch (error) {
@@ -302,8 +302,8 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
           <h2 className="text-lg font-bold text-zinc-900 dark:text-white mb-1">{transaction.title}</h2>
           <p className="text-sm text-zinc-500">{transaction.date}</p>
         </div>
-        <button 
-          onClick={onClose} 
+        <button
+          onClick={onClose}
           className="p-2 text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-full transition-colors"
         >
           <X size={20} />
@@ -311,17 +311,16 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
       </div>
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 space-y-6">
-        
+
         <div className="text-center py-4">
           <span className={`text-4xl font-bold tracking-tight ${amountClass}`}>
             {formattedAmount}
           </span>
           <div className="mt-2 flex items-center justify-center gap-2">
-            <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${
-              transaction.status === 'Bokförd' 
-                ? 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20' 
+            <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${transaction.status === 'Bokförd'
+                ? 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20'
                 : 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20'
-            }`}>
+              }`}>
               {transaction.status}
             </span>
           </div>
@@ -342,7 +341,7 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
               </button>
             )}
           </div>
-          
+
           {isAddingCategory ? (
             <div className="space-y-2">
               <div className="flex gap-2">
@@ -382,7 +381,7 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
             </div>
           ) : (
             <div className="relative">
-              <select 
+              <select
                 value={transaction.category}
                 onChange={(e) => onCategoryChange(transaction.id, e.target.value)}
                 className={`w-full appearance-none bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 ${getThemeRingClass(colorTheme)} focus:border-transparent outline-none transition-all cursor-pointer`}
@@ -407,15 +406,15 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
               </span>
             )}
           </div>
-          
-          <input 
+
+          <input
             ref={fileInputRef}
-            type="file" 
+            type="file"
             accept=".pdf,.png,.jpg,.jpeg,.gif"
             onChange={handleFileSelect}
             className="hidden"
           />
-          
+
           {/* Visa alla kvitton som thumbnails */}
           {receiptPaths.length > 0 && (
             <div className="grid grid-cols-2 gap-3">
@@ -423,30 +422,31 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
                 // Konstruera bild-URL
                 let imageUrl;
                 const normalizedPath = receiptPath.replace(/\\/g, '/');
-                
+
                 if (receiptPath.startsWith('http://') || receiptPath.startsWith('https://')) {
                   imageUrl = receiptPath;
                 } else if (receiptPath.includes(':\\') || (receiptPath.startsWith('/') && !receiptPath.startsWith('/uploads'))) {
-                  imageUrl = `http://192.168.1.232:5000/api/files/${encodeURIComponent(normalizedPath)}`;
+                  const filename = normalizedPath.split(/[/\\]/).pop();
+                  imageUrl = `/uploads/${filename}`;
                 } else {
                   let pathToUse = normalizedPath;
                   if (pathToUse.startsWith('uploads/')) {
                     pathToUse = pathToUse.replace('uploads/', '');
                   }
                   if (pathToUse.startsWith('kvitto/')) {
-                    imageUrl = `http://192.168.1.232:5000/uploads/${pathToUse}`;
+                    imageUrl = `/uploads/${pathToUse}`;
                   } else {
-                    imageUrl = `http://192.168.1.232:5000/uploads/kvitto/${pathToUse}`;
+                    imageUrl = `/uploads/kvitto/${pathToUse}`;
                   }
                 }
-                
+
                 const isImage = /\.(png|jpg|jpeg|gif|webp)$/i.test(receiptPath);
                 const isPdf = /\.pdf$/i.test(receiptPath);
-                
+
                 return (
                   <div key={index} className="relative group">
                     {isImage ? (
-                      <img 
+                      <img
                         src={imageUrl}
                         alt={`Kvitto ${index + 1}`}
                         className="w-full h-32 object-cover rounded-lg border border-zinc-200 dark:border-zinc-700 cursor-pointer hover:opacity-90 transition-opacity"
@@ -467,9 +467,9 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
                       <div className="w-full h-32 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 flex flex-col items-center justify-center">
                         <FileText size={32} className="text-zinc-400 mb-1" />
                         <p className="text-xs text-zinc-600 dark:text-zinc-400">PDF</p>
-                        <a 
-                          href={imageUrl} 
-                          target="_blank" 
+                        <a
+                          href={imageUrl}
+                          target="_blank"
                           rel="noopener noreferrer"
                           className="mt-1 text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
                           onClick={(e) => e.stopPropagation()}
@@ -481,9 +481,9 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
                       <div className="w-full h-32 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 flex flex-col items-center justify-center">
                         <FileText size={32} className="text-zinc-400 mb-1" />
                         <p className="text-xs text-zinc-600 dark:text-zinc-400">Fil</p>
-                        <a 
-                          href={imageUrl} 
-                          target="_blank" 
+                        <a
+                          href={imageUrl}
+                          target="_blank"
                           rel="noopener noreferrer"
                           className="mt-1 text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
                           onClick={(e) => e.stopPropagation()}
@@ -492,7 +492,7 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
                         </a>
                       </div>
                     )}
-                    
+
                     {/* Ta bort-knapp */}
                     <button
                       onClick={async (e) => {
@@ -519,28 +519,26 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
               })}
             </div>
           )}
-          
+
           {/* Upload-område (visas alltid så man kan lägga till fler) */}
-          <div 
+          <div
             onClick={() => fileInputRef.current?.click()}
-            className={`border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-xl p-4 sm:p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-colors bg-zinc-50 dark:bg-zinc-800/30 group ${
-              colorTheme === 'indigo' ? 'hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10' :
-              colorTheme === 'blue' ? 'hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10' :
-              colorTheme === 'emerald' ? 'hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10' :
-              colorTheme === 'purple' ? 'hover:border-purple-500 hover:bg-purple-50 dark:hover:bg-purple-500/10' :
-              colorTheme === 'rose' ? 'hover:border-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10' :
-              'hover:border-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10'
-            }`}
+            className={`border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-xl p-4 sm:p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-colors bg-zinc-50 dark:bg-zinc-800/30 group ${colorTheme === 'indigo' ? 'hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10' :
+                colorTheme === 'blue' ? 'hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10' :
+                  colorTheme === 'emerald' ? 'hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10' :
+                    colorTheme === 'purple' ? 'hover:border-purple-500 hover:bg-purple-50 dark:hover:bg-purple-500/10' :
+                      colorTheme === 'rose' ? 'hover:border-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10' :
+                        'hover:border-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10'
+              }`}
           >
             <div className={`w-12 h-12 bg-white dark:bg-zinc-800 rounded-full flex items-center justify-center mb-3 shadow-sm group-hover:scale-110 transition-transform`}>
-              <UploadCloud className={`w-6 h-6 text-zinc-400 ${
-                colorTheme === 'indigo' ? 'group-hover:text-indigo-500' :
-                colorTheme === 'blue' ? 'group-hover:text-blue-500' :
-                colorTheme === 'emerald' ? 'group-hover:text-emerald-500' :
-                colorTheme === 'purple' ? 'group-hover:text-purple-500' :
-                colorTheme === 'rose' ? 'group-hover:text-rose-500' :
-                'group-hover:text-amber-500'
-              }`} />
+              <UploadCloud className={`w-6 h-6 text-zinc-400 ${colorTheme === 'indigo' ? 'group-hover:text-indigo-500' :
+                  colorTheme === 'blue' ? 'group-hover:text-blue-500' :
+                    colorTheme === 'emerald' ? 'group-hover:text-emerald-500' :
+                      colorTheme === 'purple' ? 'group-hover:text-purple-500' :
+                        colorTheme === 'rose' ? 'group-hover:text-rose-500' :
+                          'group-hover:text-amber-500'
+                }`} />
             </div>
             <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300 text-center px-2">
               {receiptPaths.length > 0 ? 'Lägg till ytterligare kvitto' : 'Klicka för att ladda upp'}
@@ -556,7 +554,7 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
               <PiggyBank size={14} /> Koppla till Sparande
             </label>
             <div className="relative">
-              <select 
+              <select
                 value={selectedSavings.type && selectedSavings.id ? `${selectedSavings.type}_${selectedSavings.id}` : ''}
                 onChange={(e) => {
                   const value = e.target.value;
@@ -611,7 +609,7 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
             )}
             {selectedSavings.type && selectedSavings.id && (
               <p className="text-xs text-zinc-400 mt-1">
-                {transaction.type === 'income' 
+                {transaction.type === 'income'
                   ? 'Inkomsten kan sättas in i eller tas ut från valt spar-mål eller konto'
                   : 'Utgiften kan kopplas till sparande för att spara eller ta ut motsvarande belopp'}
               </p>
@@ -626,7 +624,7 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
               <Car size={14} /> Koppla till Fordon
             </label>
             <div className="relative">
-              <select 
+              <select
                 value={selectedVehicle || ''}
                 onChange={(e) => setSelectedVehicle(e.target.value ? parseInt(e.target.value) : null)}
                 className={`w-full appearance-none bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 ${getThemeRingClass(colorTheme)} focus:border-transparent outline-none transition-all cursor-pointer`}
@@ -661,10 +659,10 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
             <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
               <Receipt size={14} /> Koppla till Lån
             </label>
-            
+
             <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-3 mb-2 border border-zinc-200 dark:border-zinc-700">
               <p className="text-xs text-zinc-600 dark:text-zinc-400">
-                <strong>💡 Tips:</strong> Koppla en utgiftstransaktion till ett lån för att registrera en lånebetalning. 
+                <strong>💡 Tips:</strong> Koppla en utgiftstransaktion till ett lån för att registrera en lånebetalning.
                 Lånets skuld uppdateras automatiskt.
               </p>
             </div>
@@ -672,13 +670,13 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
             {loans.length === 0 ? (
               <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-3 border border-amber-200 dark:border-amber-800">
                 <p className="text-xs text-amber-700 dark:text-amber-300">
-                  <strong>ℹ️ Ingen koppling möjlig:</strong> Du har inga aktiva lån ännu. 
+                  <strong>ℹ️ Ingen koppling möjlig:</strong> Du har inga aktiva lån ännu.
                   Skapa ett lån i fliken "Lån" först.
                 </p>
               </div>
             ) : (
               <div className="relative">
-                <select 
+                <select
                   value={selectedLoan || ''}
                   onChange={(e) => setSelectedLoan(e.target.value ? parseInt(e.target.value) : null)}
                   className={`w-full appearance-none bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 pr-10 text-zinc-900 dark:text-white focus:ring-2 ${getThemeRingClass(colorTheme)} focus:border-transparent outline-none transition-all cursor-pointer`}
@@ -775,7 +773,7 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
 
       <div className="p-4 sm:p-6 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 flex gap-2 sm:gap-3">
         {onSave ? (
-          <button 
+          <button
             onClick={async (e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -791,7 +789,7 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
             Spara Ändringar
           </button>
         ) : (
-          <button 
+          <button
             onClick={async (e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -809,11 +807,11 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
             </span>
           </button>
         )}
-        <button 
+        <button
           onClick={async (e) => {
             e.preventDefault();
             e.stopPropagation();
-            
+
             if (!transaction || !transaction.id) {
               showToast('Kunde inte radera: Transaktion saknar ID', { type: 'error' });
               return;
@@ -821,21 +819,21 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
 
             // Save transaction data for undo
             const transactionData = { ...transaction };
-            
+
             try {
               // Delete transaction (backend will move receipt file to deleted folder)
               await api.deleteTransaction(transaction.id);
-              
+
               // Close drawer
               if (onClose) {
                 onClose();
               }
-              
+
               // Reload data
               if (reloadData) {
                 await reloadData();
               }
-              
+
               // Show toast with undo
               showToast('Transaktion raderad!', {
                 type: 'success',
@@ -849,11 +847,11 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
                       amountValue = amountValue.replace(/[^\d.,-]/g, '').replace(',', '.');
                     }
                     const numericAmount = parseFloat(amountValue);
-                    
+
                     if (isNaN(numericAmount)) {
                       throw new Error(`Ogiltigt belopp för transaktion "${transactionData.title}"`);
                     }
-                    
+
                     // Recreate transaction with original data (backend will restore receipt file)
                     await api.createTransaction({
                       title: transactionData.title,
@@ -866,11 +864,11 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
                       receipt: transactionData.receipt || false,
                       receipt_path: transactionData.receipt_path || null
                     });
-                    
+
                     if (reloadData) {
                       await reloadData();
                     }
-                    
+
                     showToast('Transaktion återställd!', { type: 'success' });
                   } catch (err) {
                     console.error('Kunde inte återställa transaktion:', err);
@@ -894,7 +892,7 @@ const TransactionDrawer = ({ transaction, onClose, onCategoryChange, onReceiptUp
           <Trash2 size={20} />
         </button>
       </div>
-      
+
       {/* Image Lightbox */}
       {lightboxImages && lightboxImages.length > 0 && (
         <ImageLightbox
