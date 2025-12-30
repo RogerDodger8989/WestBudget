@@ -42,7 +42,7 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
   const [newRulePatterns, setNewRulePatterns] = useState(['']); // Array of patterns
   const [newRuleCategory, setNewRuleCategory] = useState('');
   const [activeCategoryTab, setActiveCategoryTab] = useState('categories'); // 'categories' or 'rules'
-  
+
   // Media library states
   const [mediaFiles, setMediaFiles] = useState([]);
   const [mediaSearchQuery, setMediaSearchQuery] = useState('');
@@ -52,7 +52,7 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
   const [mediaViewMode, setMediaViewMode] = useState('grid'); // 'grid', 'list'
   const [loadingMedia, setLoadingMedia] = useState(false);
   const [selectedMediaFiles, setSelectedMediaFiles] = useState(new Set());
-  
+
   // Inline editing states for category rules
   const [editingRuleId, setEditingRuleId] = useState(null);
   const [editingPatterns, setEditingPatterns] = useState([]);
@@ -60,7 +60,7 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
   const [isSavingRule, setIsSavingRule] = useState(null);
   const editingPatternsRef = useRef([]);
   const editingCategoryRef = useRef('');
-  
+
   // Hitta dubletter (kategorier med samma namn, case-insensitive)
   const duplicates = useMemo(() => {
     const nameMap = {};
@@ -71,7 +71,7 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
       }
       nameMap[lowerName].push(cat);
     });
-    
+
     return Object.values(nameMap).filter(group => group.length > 1);
   }, [categories]);
 
@@ -102,15 +102,15 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
     try {
       setLoading(true);
       const settings = await api.getSettings();
-      
+
       if (settings.receipt_storage_path) {
         setReceiptPath(settings.receipt_storage_path);
       }
-      
+
       if (settings.agreement_images_path) {
         setAgreementImagesPath(settings.agreement_images_path);
       }
-      
+
       if (settings.default_theme) {
         setDefaultTheme(settings.default_theme);
       } else {
@@ -118,7 +118,7 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
         const currentTheme = isDarkMode ? 'dark' : 'light';
         setDefaultTheme(currentTheme);
       }
-      
+
       // Load color theme
       if (settings.color_theme) {
         setLocalColorTheme(settings.color_theme);
@@ -126,7 +126,7 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
       } else if (colorTheme) {
         setLocalColorTheme(colorTheme);
       }
-      
+
       // Load user information
       if (settings.user_name) {
         setUserName(settings.user_name);
@@ -150,7 +150,7 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
       setLoading(false);
     }
   };
-  
+
   // Uppdatera defaultTheme när isDarkMode ändras (om det ändras via sidofältet)
   useEffect(() => {
     if (!loading) {
@@ -173,7 +173,7 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
 
   const handleAddCategory = async () => {
     const trimmedName = newCategoryName.trim();
-    
+
     if (!trimmedName) {
       showToast('Kategorinamn kan inte vara tomt', { type: 'error' });
       return;
@@ -203,14 +203,14 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
 
   const handleUpdateCategory = async (id, newName) => {
     const trimmedName = newName.trim();
-    
+
     if (!trimmedName) {
       showToast('Kategorinamn kan inte vara tomt', { type: 'error' });
       return;
     }
 
     // Kontrollera om kategori redan finns (case-insensitive, exkludera aktuell kategori)
-    const exists = categories.some(cat => 
+    const exists = categories.some(cat =>
       cat.id !== id && cat.name.toLowerCase() === trimmedName.toLowerCase()
     );
     if (exists) {
@@ -229,7 +229,7 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
       if (reloadData) {
         await reloadData();
       }
-      showToast('Kategori uppdaterad!', { 
+      showToast('Kategori uppdaterad!', {
         type: 'success',
         undo: true,
         undoAction: async () => {
@@ -255,7 +255,7 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
       if (reloadData) {
         await reloadData();
       }
-      showToast(`Kategorier mergade! ${result.transactions_updated || 0} transaktioner och ${result.agreements_updated || 0} avtal uppdaterade.`, { 
+      showToast(`Kategorier mergade! ${result.transactions_updated || 0} transaktioner och ${result.agreements_updated || 0} avtal uppdaterade.`, {
         type: 'success',
         undo: true,
         undoAction: async () => {
@@ -272,7 +272,7 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
   // Save category rule (inline editing)
   const saveRule = useCallback(async (ruleId, patterns, category) => {
     const validPatterns = patterns.map(p => p.trim()).filter(p => p);
-    
+
     if (validPatterns.length === 0) {
       return; // Don't save if no valid patterns
     }
@@ -287,33 +287,33 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
         description_patterns: validPatterns,
         category: category
       });
-      
+
       // Parse the saved rule to get the correct format
       const savedPatterns = savedRule.description_patterns || [savedRule.description_pattern].filter(p => p);
-      
+
       // Update local rules
-      setCategoryRules(prevRules => 
-        prevRules.map(r => 
-          r.id === ruleId 
+      setCategoryRules(prevRules =>
+        prevRules.map(r =>
+          r.id === ruleId
             ? { ...r, description_patterns: savedPatterns, category: savedRule.category }
             : r
         )
       );
-      
+
       // Update editing state - keep empty patterns for adding more
       const currentPatterns = editingPatternsRef.current;
       const emptyPatterns = currentPatterns.filter(p => !p.trim());
       const savedPatternsArray = savedPatterns.length > 0 ? [...savedPatterns, ...emptyPatterns] : [...emptyPatterns];
-      
+
       if (savedPatternsArray.length === 0) {
         savedPatternsArray.push(''); // Always have at least one empty field
       }
-      
+
       setEditingPatterns(savedPatternsArray);
       editingPatternsRef.current = savedPatternsArray;
       setEditingRuleCategory(savedRule.category);
       editingCategoryRef.current = savedRule.category;
-      
+
       showToast('Regel uppdaterad!', { type: 'success' });
     } catch (err) {
       console.error('Kunde inte spara regel:', err);
@@ -338,7 +338,7 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
       if (reloadData) {
         await reloadData();
       }
-      showToast('Kategori borttagen!', { 
+      showToast('Kategori borttagen!', {
         type: 'success',
         undo: true,
         undoAction: async () => {
@@ -396,12 +396,12 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
         user_phone: userPhone,
         user_email: userEmail
       });
-      
+
       // Update external userName if setter is provided
       if (setExternalUserName) {
         setExternalUserName(userName);
       }
-      
+
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
       showToast('Inställningar sparade!', { type: 'success' });
@@ -450,7 +450,7 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
     // Filter by search query
     if (mediaSearchQuery) {
       const query = mediaSearchQuery.toLowerCase();
-      filtered = filtered.filter(file => 
+      filtered = filtered.filter(file =>
         file.filename.toLowerCase().includes(query) ||
         file.path.toLowerCase().includes(query) ||
         (file.transaction_title && file.transaction_title.toLowerCase().includes(query)) ||
@@ -497,7 +497,7 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
   const handleDeleteSelectedMedia = async () => {
     const filesToDelete = filteredAndSortedMedia.filter(f => selectedMediaFiles.has(f.path));
     const deletedFiles = [];
-    
+
     try {
       for (const file of filesToDelete) {
         if (file.transaction_id) {
@@ -530,34 +530,34 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
           }
         }
       }
-      
+
       await loadMediaFiles();
       if (reloadData) await reloadData();
       setSelectedMediaFiles(new Set());
-      
-      showToast(`${filesToDelete.length} fil(er) raderade!`, { 
+
+      showToast(`${filesToDelete.length} fil(er) raderade!`, {
         type: 'success',
         undo: true,
         undoAction: async () => {
           try {
             for (const deletedFile of deletedFiles) {
               if (!deletedFile.deletedPath) continue;
-              
-              const deletedFileUrl = `http://192.168.1.232:5000/api/files/${encodeURIComponent(deletedFile.deletedPath.replace(/\\/g, '/'))}`;
+
+              const deletedFileUrl = `/uploads/${deletedFile.deletedPath.replace(/\\/g, '/').split(/[/\\]/).pop()}`;
               const response = await fetch(deletedFileUrl);
               if (!response.ok) continue;
-              
+
               const blob = await response.blob();
               const filename = deletedFile.deletedPath.split(/[/\\]/).pop();
               const fileToUpload = new File([blob], filename, { type: blob.type });
-              
+
               if (deletedFile.type === 'receipt') {
                 await api.uploadReceipt(fileToUpload, deletedFile.transactionId);
               } else if (deletedFile.type === 'agreement') {
                 await api.uploadAgreementImage(deletedFile.agreementId, fileToUpload);
               }
             }
-            
+
             await loadMediaFiles();
             if (reloadData) await reloadData();
             showToast('Filer återställda!', { type: 'success' });
@@ -591,44 +591,40 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
       <div className="flex items-center gap-1 bg-zinc-200 dark:bg-zinc-900/50 p-1 rounded-xl w-fit">
         <button
           onClick={() => setActiveSubTab('general')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
-            activeSubTab === 'general'
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeSubTab === 'general'
               ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
               : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
-          }`}
+            }`}
         >
           <Settings size={16} />
           Allmänna inställningar
         </button>
         <button
           onClick={() => setActiveSubTab('categories')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
-            activeSubTab === 'categories'
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeSubTab === 'categories'
               ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
               : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
-          }`}
+            }`}
         >
           <Tag size={16} />
           Kategorier & Regler
         </button>
         <button
           onClick={() => setActiveSubTab('images')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
-            activeSubTab === 'images'
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeSubTab === 'images'
               ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
               : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
-          }`}
+            }`}
         >
           <ImageIcon size={16} />
           Bilder
         </button>
         <button
           onClick={() => setActiveSubTab('history')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
-            activeSubTab === 'history'
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeSubTab === 'history'
               ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
               : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
-          }`}
+            }`}
         >
           <History size={16} />
           Historik
@@ -636,11 +632,10 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
         {user?.role === 'admin' && (
           <button
             onClick={() => setActiveSubTab('admin')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
-              activeSubTab === 'admin'
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeSubTab === 'admin'
                 ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
                 : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
-            }`}
+              }`}
           >
             <Settings size={16} />
             Admin
@@ -650,1257 +645,1077 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
 
       {/* Settings Sections */}
       <div className="grid grid-cols-1 gap-6">
-        
+
         {/* Allmänna inställningar Tab */}
         {activeSubTab === 'general' && (
           <>
-        
-        {/* License Status */}
-        <LicenseStatus />
-        
-        {/* Subscription Management */}
-        <SubscriptionManagement />
-        
-        {/* User Information */}
-        <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-2.5 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl">
-              <User className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Personlig information</h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">Uppdatera din kontaktinformation</p>
-            </div>
-          </div>
 
-          <div className="space-y-4">
-            {/* Name */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
-                <User size={16} />
-                Namn
-              </label>
-              <input
-                type="text"
-                value={userName}
-                onChange={(e) => setUserName(e.target.value)}
-                placeholder="Ditt namn"
-                disabled={loading}
-                className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
-              />
-            </div>
+            {/* License Status */}
+            <LicenseStatus />
 
-            {/* Address */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
-                <MapPin size={16} />
-                Adress
-              </label>
-              <input
-                type="text"
-                value={userAddress}
-                onChange={(e) => setUserAddress(e.target.value)}
-                placeholder="Din adress"
-                disabled={loading}
-                className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
-              />
-            </div>
+            {/* Subscription Management */}
+            <SubscriptionManagement />
 
-            {/* Phone */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
-                <Phone size={16} />
-                Telefon
-              </label>
-              <input
-                type="tel"
-                value={userPhone}
-                onChange={(e) => setUserPhone(e.target.value)}
-                placeholder="Ditt telefonnummer"
-                disabled={loading}
-                className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
-              />
-            </div>
-
-            {/* Email */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
-                <Mail size={16} />
-                E-post
-              </label>
-              <input
-                type="email"
-                value={userEmail}
-                onChange={(e) => setUserEmail(e.target.value)}
-                placeholder="din@epost.se"
-                disabled={loading}
-                className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
-              />
-            </div>
-
-            {/* Save Button */}
-            <div className="pt-2">
-              <button 
-                onClick={handleSave}
-                disabled={loading}
-                className={`w-full px-6 py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2 ${
-                  saved 
-                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' 
-                    : `${getThemeButtonClass(colorTheme, 'primary')} disabled:opacity-50 disabled:cursor-not-allowed`
-                }`}
-              >
-                {saved ? (
-                  <>
-                    <CheckCircle size={18} />
-                    Sparad
-                  </>
-                ) : (
-                  <>
-                    <Save size={18} />
-                    Spara ändringar
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Application Settings */}
-        <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-2.5 bg-zinc-100 dark:bg-zinc-800 rounded-xl">
-              <Settings className="w-5 h-5 text-zinc-600 dark:text-zinc-400" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Applikationsinställningar</h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">Systeminställningar</p>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            {/* Color Theme */}
-            <div className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl">
-              <div>
-                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Färgtema</p>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">Välj primärfärg för applikationen</p>
+            {/* User Information */}
+            <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-2.5 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl">
+                  <User className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Personlig information</h3>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">Uppdatera din kontaktinformation</p>
+                </div>
               </div>
-              <button
-                onClick={() => setIsThemeCustomizerOpen(true)}
-                className={`px-4 py-2 rounded-lg transition-colors text-sm font-medium flex items-center gap-2 ${getThemeButtonClass(colorTheme, 'primary')}`}
-              >
-                <Palette size={16} />
-                Anpassa
-              </button>
-            </div>
 
-            {/* Language */}
-            <div className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl">
-              <div>
-                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Språk</p>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">Applikationens språk</p>
+              <div className="space-y-4">
+                {/* Name */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
+                    <User size={16} />
+                    Namn
+                  </label>
+                  <input
+                    type="text"
+                    value={userName}
+                    onChange={(e) => setUserName(e.target.value)}
+                    placeholder="Ditt namn"
+                    disabled={loading}
+                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
+                  />
+                </div>
+
+                {/* Address */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
+                    <MapPin size={16} />
+                    Adress
+                  </label>
+                  <input
+                    type="text"
+                    value={userAddress}
+                    onChange={(e) => setUserAddress(e.target.value)}
+                    placeholder="Din adress"
+                    disabled={loading}
+                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
+                  />
+                </div>
+
+                {/* Phone */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
+                    <Phone size={16} />
+                    Telefon
+                  </label>
+                  <input
+                    type="tel"
+                    value={userPhone}
+                    onChange={(e) => setUserPhone(e.target.value)}
+                    placeholder="Ditt telefonnummer"
+                    disabled={loading}
+                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
+                  />
+                </div>
+
+                {/* Email */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
+                    <Mail size={16} />
+                    E-post
+                  </label>
+                  <input
+                    type="email"
+                    value={userEmail}
+                    onChange={(e) => setUserEmail(e.target.value)}
+                    placeholder="din@epost.se"
+                    disabled={loading}
+                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
+                  />
+                </div>
+
+                {/* Save Button */}
+                <div className="pt-2">
+                  <button
+                    onClick={handleSave}
+                    disabled={loading}
+                    className={`w-full px-6 py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2 ${saved
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                        : `${getThemeButtonClass(colorTheme, 'primary')} disabled:opacity-50 disabled:cursor-not-allowed`
+                      }`}
+                  >
+                    {saved ? (
+                      <>
+                        <CheckCircle size={18} />
+                        Sparad
+                      </>
+                    ) : (
+                      <>
+                        <Save size={18} />
+                        Spara ändringar
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
-              <span className="px-3 py-1 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 rounded-lg text-xs font-medium">
-                Svenska
-              </span>
             </div>
 
-            {/* Currency */}
-            <div className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl">
-              <div>
-                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Valuta</p>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">Standard valuta för transaktioner</p>
+            {/* Application Settings */}
+            <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-2.5 bg-zinc-100 dark:bg-zinc-800 rounded-xl">
+                  <Settings className="w-5 h-5 text-zinc-600 dark:text-zinc-400" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Applikationsinställningar</h3>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">Systeminställningar</p>
+                </div>
               </div>
-              <span className="px-3 py-1 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-lg text-xs font-medium border border-zinc-200 dark:border-zinc-700">
-                SEK (kr)
-              </span>
+
+              <div className="space-y-4">
+                {/* Color Theme */}
+                <div className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl">
+                  <div>
+                    <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Färgtema</p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Välj primärfärg för applikationen</p>
+                  </div>
+                  <button
+                    onClick={() => setIsThemeCustomizerOpen(true)}
+                    className={`px-4 py-2 rounded-lg transition-colors text-sm font-medium flex items-center gap-2 ${getThemeButtonClass(colorTheme, 'primary')}`}
+                  >
+                    <Palette size={16} />
+                    Anpassa
+                  </button>
+                </div>
+
+                {/* Language */}
+                <div className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl">
+                  <div>
+                    <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Språk</p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Applikationens språk</p>
+                  </div>
+                  <span className="px-3 py-1 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 rounded-lg text-xs font-medium">
+                    Svenska
+                  </span>
+                </div>
+
+                {/* Currency */}
+                <div className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl">
+                  <div>
+                    <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Valuta</p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Standard valuta för transaktioner</p>
+                  </div>
+                  <span className="px-3 py-1 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-lg text-xs font-medium border border-zinc-200 dark:border-zinc-700">
+                    SEK (kr)
+                  </span>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
 
-        {/* Backup & Restore Section */}
-        <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
-          <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-4 flex items-center gap-2">
-            <Database size={18} className="text-indigo-500 dark:text-indigo-400" />
-            Backup & Återställning
-          </h3>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
-            Skapa en säkerhetskopia av all din data inklusive transaktioner, avtal, fordon och bilder.
-          </p>
-          
-          <div className="space-y-3">
-            <button
-              onClick={async () => {
-                try {
-                  showToast('Skapar backup...', { type: 'info' });
-                  await api.createBackup();
-                  showToast('Backup skapad och nedladdad!', { type: 'success' });
-                } catch (error) {
-                  console.error('Backup error:', error);
-                  showToast(`Kunde inte skapa backup: ${error.message}`, { type: 'error' });
-                }
-              }}
-              className={`w-full flex items-center justify-center gap-2 text-white px-4 py-3 rounded-xl text-sm font-medium transition-all shadow-sm ${getThemeButtonClass(colorTheme, 'primary')}`}
-            >
-              <Download size={16} />
-              Skapa Backup
-            </button>
+            {/* Backup & Restore Section */}
+            <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
+              <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-4 flex items-center gap-2">
+                <Database size={18} className="text-indigo-500 dark:text-indigo-400" />
+                Backup & Återställning
+              </h3>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
+                Skapa en säkerhetskopia av all din data inklusive transaktioner, avtal, fordon och bilder.
+              </p>
 
-            <div className="relative">
-              <input
-                type="file"
-                accept=".zip"
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
+              <div className="space-y-3">
+                <button
+                  onClick={async () => {
+                    try {
+                      showToast('Skapar backup...', { type: 'info' });
+                      await api.createBackup();
+                      showToast('Backup skapad och nedladdad!', { type: 'success' });
+                    } catch (error) {
+                      console.error('Backup error:', error);
+                      showToast(`Kunde inte skapa backup: ${error.message}`, { type: 'error' });
+                    }
+                  }}
+                  className={`w-full flex items-center justify-center gap-2 text-white px-4 py-3 rounded-xl text-sm font-medium transition-all shadow-sm ${getThemeButtonClass(colorTheme, 'primary')}`}
+                >
+                  <Download size={16} />
+                  Skapa Backup
+                </button>
 
-                  if (!file.name.endsWith('.zip')) {
-                    showToast('Ogiltig fil. Välj en ZIP-fil.', { type: 'error' });
-                    return;
-                  }
+                <div className="relative">
+                  <input
+                    type="file"
+                    accept=".zip"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
 
-                  if (!confirm('VARNING: Detta kommer att ersätta all nuvarande data med data från backup-filen. Är du säker?')) {
-                    e.target.value = '';
-                    return;
-                  }
+                      if (!file.name.endsWith('.zip')) {
+                        showToast('Ogiltig fil. Välj en ZIP-fil.', { type: 'error' });
+                        return;
+                      }
 
-                  try {
-                    showToast('Återställer backup...', { type: 'info' });
-                    const result = await api.restoreBackup(file);
-                    showToast('Backup återställd! Ladda om sidan för att se ändringarna.', { 
-                      type: 'success',
-                      description: result.warning
-                    });
-                    // Reload data after restore
-                    setTimeout(() => {
-                      window.location.reload();
-                    }, 2000);
-                  } catch (error) {
-                    console.error('Restore error:', error);
-                    showToast(`Kunde inte återställa backup: ${error.message}`, { type: 'error' });
-                  } finally {
-                    e.target.value = '';
-                  }
-                }}
-                className="hidden"
-                id="restore-backup-input"
-              />
-              <label
-                htmlFor="restore-backup-input"
-                className="w-full flex items-center justify-center gap-2 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 px-4 py-3 rounded-xl text-sm font-medium transition-all shadow-sm cursor-pointer"
-              >
-                <Upload size={16} />
-                Återställ från Backup
-              </label>
+                      if (!confirm('VARNING: Detta kommer att ersätta all nuvarande data med data från backup-filen. Är du säker?')) {
+                        e.target.value = '';
+                        return;
+                      }
+
+                      try {
+                        showToast('Återställer backup...', { type: 'info' });
+                        const result = await api.restoreBackup(file);
+                        showToast('Backup återställd! Ladda om sidan för att se ändringarna.', {
+                          type: 'success',
+                          description: result.warning
+                        });
+                        // Reload data after restore
+                        setTimeout(() => {
+                          window.location.reload();
+                        }, 2000);
+                      } catch (error) {
+                        console.error('Restore error:', error);
+                        showToast(`Kunde inte återställa backup: ${error.message}`, { type: 'error' });
+                      } finally {
+                        e.target.value = '';
+                      }
+                    }}
+                    className="hidden"
+                    id="restore-backup-input"
+                  />
+                  <label
+                    htmlFor="restore-backup-input"
+                    className="w-full flex items-center justify-center gap-2 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 px-4 py-3 rounded-xl text-sm font-medium transition-all shadow-sm cursor-pointer"
+                  >
+                    <Upload size={16} />
+                    Återställ från Backup
+                  </label>
+                </div>
+              </div>
+
+              <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
+                <p className="text-xs text-amber-800 dark:text-amber-300">
+                  <strong>Tips:</strong> Backup-filen innehåller databasen och alla bilder. Spara den på en säker plats.
+                </p>
+              </div>
             </div>
-          </div>
 
-          <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
-            <p className="text-xs text-amber-800 dark:text-amber-300">
-              <strong>Tips:</strong> Backup-filen innehåller databasen och alla bilder. Spara den på en säker plats.
-            </p>
-          </div>
-        </div>
-
-        {/* About Section */}
-        <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
-          <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-4">Om WestBudget</h3>
-          <div className="space-y-2 text-sm text-zinc-600 dark:text-zinc-400">
-            <div className="flex justify-between">
-              <span>Version:</span>
-              <span className="font-mono text-zinc-900 dark:text-white">1.0.0</span>
+            {/* About Section */}
+            <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
+              <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-4">Om WestBudget</h3>
+              <div className="space-y-2 text-sm text-zinc-600 dark:text-zinc-400">
+                <div className="flex justify-between">
+                  <span>Version:</span>
+                  <span className="font-mono text-zinc-900 dark:text-white">1.0.0</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Byggd med:</span>
+                  <span className="text-zinc-900 dark:text-white">React + Flask</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Licens:</span>
+                  <span className="text-zinc-900 dark:text-white">Premium</span>
+                </div>
+              </div>
             </div>
-            <div className="flex justify-between">
-              <span>Byggd med:</span>
-              <span className="text-zinc-900 dark:text-white">React + Flask</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Licens:</span>
-              <span className="text-zinc-900 dark:text-white">Premium</span>
-            </div>
-          </div>
-        </div>
           </>
         )}
 
         {/* Categories Management Tab */}
         {activeSubTab === 'categories' && (
           <>
-        {/* Categories Management */}
-        <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl">
-                <Tag className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Kategorier & Regler</h3>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">Hantera transaktions- och avtalskategorier</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Tabs */}
-          <div className="flex items-center gap-1 mb-6 bg-zinc-200 dark:bg-zinc-900/50 p-1 rounded-xl w-fit">
-            <button
-              onClick={() => setActiveCategoryTab('categories')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                activeCategoryTab === 'categories'
-                  ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm'
-                  : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
-              }`}
-            >
-              Kategorier
-            </button>
-            <button
-              onClick={() => setActiveCategoryTab('rules')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                activeCategoryTab === 'rules'
-                  ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm'
-                  : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
-              }`}
-            >
-              Kategoriregler
-            </button>
-          </div>
-
-          {/* Categories Tab Content */}
-          {activeCategoryTab === 'categories' && (
-            <>
-              <div className="flex items-center justify-end mb-4">
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setIsMergeModalOpen(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-sm font-medium transition-all"
-                  >
-                    <Merge size={16} />
-                    Merga
-                  </button>
-                  <button
-                    onClick={() => setIsAddingCategory(true)}
-                    className={`flex items-center gap-2 px-4 py-2 text-white rounded-lg text-sm font-medium transition-all ${getThemeButtonClass(colorTheme, 'primary')}`}
-                  >
-                    <Plus size={16} />
-                    Lägg till
-                  </button>
-                </div>
-              </div>
-
-              {/* Duplicate Warning */}
-              {duplicates.length > 0 && (
-                <div className="mb-4 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
-                  <div className="flex items-start gap-3">
-                    <AlertCircle size={18} className="text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-amber-800 dark:text-amber-300 mb-2">
-                        Dubletter hittade ({duplicates.length} grupper)
-                      </p>
-                      <div className="space-y-1">
-                        {duplicates.map((group, idx) => (
-                          <p key={idx} className="text-xs text-amber-700 dark:text-amber-400">
-                            • {group.map(c => c.name).join(', ')} - Använd "Merga" för att slå ihop dem
-                          </p>
-                        ))}
-                      </div>
-                    </div>
+            {/* Categories Management */}
+            <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl">
+                    <Tag className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Kategorier & Regler</h3>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Hantera transaktions- och avtalskategorier</p>
                   </div>
                 </div>
-              )}
-
-          <div className="space-y-3">
-            {/* Add Category Form */}
-            {isAddingCategory && (
-              <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700">
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newCategoryName}
-                    onChange={(e) => setNewCategoryName(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && handleAddCategory()}
-                    placeholder="Kategorinamn"
-                    autoFocus
-                    className="flex-1 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-4 py-2 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                  <button
-                    onClick={handleAddCategory}
-                    className={`px-4 py-2 text-white rounded-lg text-sm font-medium transition-all ${getThemeButtonClass(colorTheme, 'primary')}`}
-                  >
-                    Spara
-                  </button>
-                  <button
-                    onClick={() => {
-                      setIsAddingCategory(false);
-                      setNewCategoryName('');
-                    }}
-                    className="px-4 py-2 bg-zinc-200 dark:bg-zinc-700 hover:bg-zinc-300 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-300 rounded-lg text-sm font-medium transition-all"
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
               </div>
-            )}
 
-            {/* Categories List */}
-            {categories.length === 0 ? (
-              <div className="text-center py-8 text-zinc-500">
-                Inga kategorier hittades
-              </div>
-            ) : (
-              categories.map((category) => (
-                <div
-                  key={category.id}
-                  className="flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              {/* Tabs */}
+              <div className="flex items-center gap-1 mb-6 bg-zinc-200 dark:bg-zinc-900/50 p-1 rounded-xl w-fit">
+                <button
+                  onClick={() => setActiveCategoryTab('categories')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeCategoryTab === 'categories'
+                      ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm'
+                      : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+                    }`}
                 >
-                  {editingCategory === category.id ? (
-                    <CategoryEditForm
-                      category={category}
-                      onSave={(newName) => {
-                        handleUpdateCategory(category.id, newName);
-                      }}
-                      onCancel={() => setEditingCategory(null)}
-                    />
-                  ) : (
-                    <>
-                      <div 
-                        className="flex-1 cursor-pointer"
-                        onClick={() => setEditingCategory(category.id)}
+                  Kategorier
+                </button>
+                <button
+                  onClick={() => setActiveCategoryTab('rules')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeCategoryTab === 'rules'
+                      ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm'
+                      : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+                    }`}
+                >
+                  Kategoriregler
+                </button>
+              </div>
+
+              {/* Categories Tab Content */}
+              {activeCategoryTab === 'categories' && (
+                <>
+                  <div className="flex items-center justify-end mb-4">
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setIsMergeModalOpen(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-sm font-medium transition-all"
                       >
-                        <span className="text-zinc-900 dark:text-white font-medium hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">{category.name}</span>
-                        <div className="flex items-center gap-3 mt-1">
-                          <span className="text-xs text-zinc-500">
-                            {category.transaction_count || 0} transaktioner
-                          </span>
-                          <span className="text-xs text-zinc-400">•</span>
-                          <span className="text-xs text-zinc-500">
-                            {category.agreement_count || 0} avtal
-                          </span>
-                          {(category.total_usage || 0) > 0 && (
+                        <Merge size={16} />
+                        Merga
+                      </button>
+                      <button
+                        onClick={() => setIsAddingCategory(true)}
+                        className={`flex items-center gap-2 px-4 py-2 text-white rounded-lg text-sm font-medium transition-all ${getThemeButtonClass(colorTheme, 'primary')}`}
+                      >
+                        <Plus size={16} />
+                        Lägg till
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Duplicate Warning */}
+                  {duplicates.length > 0 && (
+                    <div className="mb-4 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
+                      <div className="flex items-start gap-3">
+                        <AlertCircle size={18} className="text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-amber-800 dark:text-amber-300 mb-2">
+                            Dubletter hittade ({duplicates.length} grupper)
+                          </p>
+                          <div className="space-y-1">
+                            {duplicates.map((group, idx) => (
+                              <p key={idx} className="text-xs text-amber-700 dark:text-amber-400">
+                                • {group.map(c => c.name).join(', ')} - Använd "Merga" för att slå ihop dem
+                              </p>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-3">
+                    {/* Add Category Form */}
+                    {isAddingCategory && (
+                      <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700">
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={newCategoryName}
+                            onChange={(e) => setNewCategoryName(e.target.value)}
+                            onKeyPress={(e) => e.key === 'Enter' && handleAddCategory()}
+                            placeholder="Kategorinamn"
+                            autoFocus
+                            className="flex-1 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-4 py-2 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                          <button
+                            onClick={handleAddCategory}
+                            className={`px-4 py-2 text-white rounded-lg text-sm font-medium transition-all ${getThemeButtonClass(colorTheme, 'primary')}`}
+                          >
+                            Spara
+                          </button>
+                          <button
+                            onClick={() => {
+                              setIsAddingCategory(false);
+                              setNewCategoryName('');
+                            }}
+                            className="px-4 py-2 bg-zinc-200 dark:bg-zinc-700 hover:bg-zinc-300 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-300 rounded-lg text-sm font-medium transition-all"
+                          >
+                            <X size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Categories List */}
+                    {categories.length === 0 ? (
+                      <div className="text-center py-8 text-zinc-500">
+                        Inga kategorier hittades
+                      </div>
+                    ) : (
+                      categories.map((category) => (
+                        <div
+                          key={category.id}
+                          className="flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                        >
+                          {editingCategory === category.id ? (
+                            <CategoryEditForm
+                              category={category}
+                              onSave={(newName) => {
+                                handleUpdateCategory(category.id, newName);
+                              }}
+                              onCancel={() => setEditingCategory(null)}
+                            />
+                          ) : (
                             <>
-                              <span className="text-xs text-zinc-400">•</span>
-                              <span className="text-xs font-medium text-indigo-600 dark:text-indigo-400">
-                                {category.total_usage} totalt
-                              </span>
+                              <div
+                                className="flex-1 cursor-pointer"
+                                onClick={() => setEditingCategory(category.id)}
+                              >
+                                <span className="text-zinc-900 dark:text-white font-medium hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">{category.name}</span>
+                                <div className="flex items-center gap-3 mt-1">
+                                  <span className="text-xs text-zinc-500">
+                                    {category.transaction_count || 0} transaktioner
+                                  </span>
+                                  <span className="text-xs text-zinc-400">•</span>
+                                  <span className="text-xs text-zinc-500">
+                                    {category.agreement_count || 0} avtal
+                                  </span>
+                                  {(category.total_usage || 0) > 0 && (
+                                    <>
+                                      <span className="text-xs text-zinc-400">•</span>
+                                      <span className="text-xs font-medium text-indigo-600 dark:text-indigo-400">
+                                        {category.total_usage} totalt
+                                      </span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingCategory(category.id);
+                                  }}
+                                  className="p-2 text-zinc-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded-lg transition-all"
+                                  title="Redigera"
+                                >
+                                  <Edit2 size={16} />
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteCategory(category.id, category.name);
+                                  }}
+                                  className="p-2 text-zinc-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded-lg transition-all"
+                                  title="Ta bort"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
                             </>
                           )}
                         </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditingCategory(category.id);
-                          }}
-                          className="p-2 text-zinc-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded-lg transition-all"
-                          title="Redigera"
-                        >
-                          <Edit2 size={16} />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteCategory(category.id, category.name);
-                          }}
-                          className="p-2 text-zinc-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded-lg transition-all"
-                          title="Ta bort"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-            </>
-          )}
+                      ))
+                    )}
+                  </div>
+                </>
+              )}
 
-          {/* Category Rules Tab Content */}
-          {activeCategoryTab === 'rules' && (
-            <div className="space-y-4">
-              {/* Add new rule */}
-            <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700">
-              <h4 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-3">Lägg till ny regel</h4>
-              <div className="space-y-3">
-                {/* Multiple pattern fields */}
-                <div className="space-y-2">
-                  {newRulePatterns.map((pattern, index) => (
-                    <div key={index} className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={pattern}
-                        onChange={(e) => {
-                          const updated = [...newRulePatterns];
-                          updated[index] = e.target.value;
-                          setNewRulePatterns(updated);
-                        }}
-                        placeholder="Beskrivning innehåller..."
-                        className="flex-1 px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                      />
-                      {newRulePatterns.length > 1 && (
+              {/* Category Rules Tab Content */}
+              {activeCategoryTab === 'rules' && (
+                <div className="space-y-4">
+                  {/* Add new rule */}
+                  <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700">
+                    <h4 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-3">Lägg till ny regel</h4>
+                    <div className="space-y-3">
+                      {/* Multiple pattern fields */}
+                      <div className="space-y-2">
+                        {newRulePatterns.map((pattern, index) => (
+                          <div key={index} className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={pattern}
+                              onChange={(e) => {
+                                const updated = [...newRulePatterns];
+                                updated[index] = e.target.value;
+                                setNewRulePatterns(updated);
+                              }}
+                              placeholder="Beskrivning innehåller..."
+                              className="flex-1 px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                            />
+                            {newRulePatterns.length > 1 && (
+                              <button
+                                onClick={() => {
+                                  setNewRulePatterns(newRulePatterns.filter((_, i) => i !== index));
+                                }}
+                                className="p-2 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors"
+                                title="Ta bort mönster"
+                              >
+                                <X size={16} />
+                              </button>
+                            )}
+                          </div>
+                        ))}
                         <button
-                          onClick={() => {
-                            setNewRulePatterns(newRulePatterns.filter((_, i) => i !== index));
-                          }}
-                          className="p-2 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors"
-                          title="Ta bort mönster"
+                          onClick={() => setNewRulePatterns([...newRulePatterns, ''])}
+                          className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 flex items-center gap-1"
                         >
-                          <X size={16} />
+                          <Plus size={14} />
+                          Lägg till mönster
                         </button>
-                      )}
+                      </div>
+
+                      {/* Category select */}
+                      <select
+                        value={newRuleCategory}
+                        onChange={(e) => setNewRuleCategory(e.target.value)}
+                        className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                      >
+                        <option value="">Välj kategori...</option>
+                        {categories.map(cat => (
+                          <option key={cat.id} value={cat.name}>{cat.name}</option>
+                        ))}
+                      </select>
                     </div>
-                  ))}
-                  <button
-                    onClick={() => setNewRulePatterns([...newRulePatterns, ''])}
-                    className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 flex items-center gap-1"
-                  >
-                    <Plus size={14} />
-                    Lägg till mönster
-                  </button>
-                </div>
-                
-                {/* Category select */}
-                <select
-                  value={newRuleCategory}
-                  onChange={(e) => setNewRuleCategory(e.target.value)}
-                  className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                >
-                  <option value="">Välj kategori...</option>
-                  {categories.map(cat => (
-                    <option key={cat.id} value={cat.name}>{cat.name}</option>
-                  ))}
-                </select>
-              </div>
-              <button
-                onClick={async () => {
-                  const validPatterns = newRulePatterns.map(p => p.trim()).filter(p => p);
-                  if (validPatterns.length === 0 || !newRuleCategory) {
-                    showToast('Fyll i minst ett mönster och kategori', { type: 'error' });
-                    return;
-                  }
-                  try {
-                    await api.createCategoryRule({
-                      description_patterns: validPatterns,
-                      category: newRuleCategory,
-                      is_active: true
-                    });
-                    setNewRulePatterns(['']);
-                    setNewRuleCategory('');
-                    await loadCategoryRules();
-                    showToast('Regel skapad!', { type: 'success' });
-                  } catch (err) {
-                    showToast('Kunde inte skapa regel: ' + (err.message || 'Okänt fel'), { type: 'error' });
-                  }
-                }}
-                disabled={newRulePatterns.every(p => !p.trim()) || !newRuleCategory}
-                className={`mt-3 px-4 py-2 text-white text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${getThemeButtonClass(colorTheme, 'primary')}`}
-              >
-                Lägg till regel
-              </button>
-            </div>
-
-            {/* Existing rules */}
-            <div className="space-y-2">
-              {categoryRules.length === 0 ? (
-                <p className="text-sm text-zinc-500 text-center py-4">Inga regler skapade än</p>
-              ) : (
-                categoryRules.map(rule => {
-                  const isEditing = editingRuleId === rule.id;
-                  const patterns = rule.description_patterns || [rule.description_pattern].filter(p => p);
-                  
-                  return (
-                    <div
-                      key={rule.id}
-                      className={`p-3 rounded-lg border ${
-                        rule.is_active
-                          ? 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700'
-                          : 'bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 opacity-60'
-                      }`}
+                    <button
+                      onClick={async () => {
+                        const validPatterns = newRulePatterns.map(p => p.trim()).filter(p => p);
+                        if (validPatterns.length === 0 || !newRuleCategory) {
+                          showToast('Fyll i minst ett mönster och kategori', { type: 'error' });
+                          return;
+                        }
+                        try {
+                          await api.createCategoryRule({
+                            description_patterns: validPatterns,
+                            category: newRuleCategory,
+                            is_active: true
+                          });
+                          setNewRulePatterns(['']);
+                          setNewRuleCategory('');
+                          await loadCategoryRules();
+                          showToast('Regel skapad!', { type: 'success' });
+                        } catch (err) {
+                          showToast('Kunde inte skapa regel: ' + (err.message || 'Okänt fel'), { type: 'error' });
+                        }
+                      }}
+                      disabled={newRulePatterns.every(p => !p.trim()) || !newRuleCategory}
+                      className={`mt-3 px-4 py-2 text-white text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${getThemeButtonClass(colorTheme, 'primary')}`}
                     >
-                      {isEditing ? (
-                        <div className="space-y-3">
-                          {/* Patterns editing */}
-                          <div className="space-y-2">
-                            <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                              Mönster (beskrivning innehåller):
-                            </label>
-                            <div className="space-y-2">
-                              {editingPatterns.map((pattern, idx) => (
-                                <div key={`pattern-${rule.id}-${idx}`} className="flex gap-2">
-                                  <input
-                                    type="text"
-                                    value={pattern}
-                                    onChange={(e) => {
-                                      const updated = [...editingPatterns];
-                                      updated[idx] = e.target.value;
-                                      setEditingPatterns(updated);
-                                      editingPatternsRef.current = updated;
-                                    }}
-                                    onBlur={() => {
-                                      setTimeout(() => {
-                                        if (editingRuleId === rule.id) {
-                                          saveRule(rule.id, editingPatternsRef.current, editingCategoryRef.current);
-                                        }
-                                      }, 50);
-                                    }}
-                                    placeholder="Beskrivning innehåller..."
-                                    className="flex-1 px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                                  />
-                                  {editingPatterns.length > 1 && (
+                      Lägg till regel
+                    </button>
+                  </div>
+
+                  {/* Existing rules */}
+                  <div className="space-y-2">
+                    {categoryRules.length === 0 ? (
+                      <p className="text-sm text-zinc-500 text-center py-4">Inga regler skapade än</p>
+                    ) : (
+                      categoryRules.map(rule => {
+                        const isEditing = editingRuleId === rule.id;
+                        const patterns = rule.description_patterns || [rule.description_pattern].filter(p => p);
+
+                        return (
+                          <div
+                            key={rule.id}
+                            className={`p-3 rounded-lg border ${rule.is_active
+                                ? 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700'
+                                : 'bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 opacity-60'
+                              }`}
+                          >
+                            {isEditing ? (
+                              <div className="space-y-3">
+                                {/* Patterns editing */}
+                                <div className="space-y-2">
+                                  <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                                    Mönster (beskrivning innehåller):
+                                  </label>
+                                  <div className="space-y-2">
+                                    {editingPatterns.map((pattern, idx) => (
+                                      <div key={`pattern-${rule.id}-${idx}`} className="flex gap-2">
+                                        <input
+                                          type="text"
+                                          value={pattern}
+                                          onChange={(e) => {
+                                            const updated = [...editingPatterns];
+                                            updated[idx] = e.target.value;
+                                            setEditingPatterns(updated);
+                                            editingPatternsRef.current = updated;
+                                          }}
+                                          onBlur={() => {
+                                            setTimeout(() => {
+                                              if (editingRuleId === rule.id) {
+                                                saveRule(rule.id, editingPatternsRef.current, editingCategoryRef.current);
+                                              }
+                                            }, 50);
+                                          }}
+                                          placeholder="Beskrivning innehåller..."
+                                          className="flex-1 px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        />
+                                        {editingPatterns.length > 1 && (
+                                          <button
+                                            onClick={() => {
+                                              const updated = editingPatterns.filter((_, i) => i !== idx);
+                                              setEditingPatterns(updated);
+                                              editingPatternsRef.current = updated;
+                                            }}
+                                            className="px-2 py-2 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors"
+                                          >
+                                            <X size={16} />
+                                          </button>
+                                        )}
+                                      </div>
+                                    ))}
                                     <button
                                       onClick={() => {
-                                        const updated = editingPatterns.filter((_, i) => i !== idx);
+                                        const updated = [...editingPatterns, ''];
                                         setEditingPatterns(updated);
                                         editingPatternsRef.current = updated;
                                       }}
-                                      className="px-2 py-2 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors"
+                                      className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 flex items-center gap-1"
                                     >
-                                      <X size={16} />
+                                      <Plus size={14} />
+                                      Lägg till mönster
                                     </button>
-                                  )}
+                                  </div>
                                 </div>
-                              ))}
-                              <button
-                                onClick={() => {
-                                  const updated = [...editingPatterns, ''];
-                                  setEditingPatterns(updated);
-                                  editingPatternsRef.current = updated;
-                                }}
-                                className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 flex items-center gap-1"
-                              >
-                                <Plus size={14} />
-                                Lägg till mönster
-                              </button>
-                            </div>
-                          </div>
-                          
-                          {/* Category editing */}
-                          <div className="space-y-2">
-                            <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                              Kategori:
-                            </label>
-                            <select
-                              value={editingRuleCategory}
-                              onChange={(e) => {
-                                setEditingRuleCategory(e.target.value);
-                                editingCategoryRef.current = e.target.value;
-                              }}
-                              onBlur={() => {
-                                if (editingRuleId === rule.id) {
-                                  saveRule(rule.id, editingPatternsRef.current, editingCategoryRef.current);
-                                }
-                              }}
-                              className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                            >
-                              <option value="">Välj kategori...</option>
-                              {categories.map(cat => (
-                                <option key={cat.id} value={cat.name}>{cat.name}</option>
-                              ))}
-                            </select>
-                          </div>
-                          
-                          {/* Action buttons */}
-                          <div className="flex items-center gap-2 pt-2">
-                            {isSavingRule === rule.id && (
-                              <Loader2 size={16} className="animate-spin text-indigo-600 dark:text-indigo-400" />
+
+                                {/* Category editing */}
+                                <div className="space-y-2">
+                                  <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                                    Kategori:
+                                  </label>
+                                  <select
+                                    value={editingRuleCategory}
+                                    onChange={(e) => {
+                                      setEditingRuleCategory(e.target.value);
+                                      editingCategoryRef.current = e.target.value;
+                                    }}
+                                    onBlur={() => {
+                                      if (editingRuleId === rule.id) {
+                                        saveRule(rule.id, editingPatternsRef.current, editingCategoryRef.current);
+                                      }
+                                    }}
+                                    className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                  >
+                                    <option value="">Välj kategori...</option>
+                                    {categories.map(cat => (
+                                      <option key={cat.id} value={cat.name}>{cat.name}</option>
+                                    ))}
+                                  </select>
+                                </div>
+
+                                {/* Action buttons */}
+                                <div className="flex items-center gap-2 pt-2">
+                                  {isSavingRule === rule.id && (
+                                    <Loader2 size={16} className="animate-spin text-indigo-600 dark:text-indigo-400" />
+                                  )}
+                                  <button
+                                    onClick={() => {
+                                      setEditingRuleId(null);
+                                      setEditingPatterns([]);
+                                      setEditingRuleCategory('');
+                                      editingPatternsRef.current = [];
+                                      editingCategoryRef.current = '';
+                                    }}
+                                    className="text-xs px-3 py-1.5 bg-zinc-200 dark:bg-zinc-700 hover:bg-zinc-300 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-300 rounded-lg transition-colors"
+                                  >
+                                    Avbryt
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex items-center justify-between">
+                                <div
+                                  className="flex-1 cursor-pointer"
+                                  onClick={() => {
+                                    const patterns = rule.description_patterns || [rule.description_pattern].filter(p => p);
+                                    setEditingRuleId(rule.id);
+                                    setEditingPatterns(patterns.length > 0 ? [...patterns, ''] : ['']);
+                                    setEditingRuleCategory(rule.category || '');
+                                    editingPatternsRef.current = patterns.length > 0 ? [...patterns, ''] : [''];
+                                    editingCategoryRef.current = rule.category || '';
+                                  }}
+                                >
+                                  <p className="text-sm font-medium text-zinc-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
+                                    Om beskrivning innehåller{' '}
+                                    <span className="font-mono text-indigo-600 dark:text-indigo-400">
+                                      "{patterns.length > 0 ? patterns.join('", "') : rule.description_pattern}"
+                                    </span>
+                                  </p>
+                                  <p className="text-xs text-zinc-500 mt-1">
+                                    → Sätt kategori: <span className="font-semibold">{rule.category}</span>
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      try {
+                                        await api.updateCategoryRule(rule.id, { is_active: !rule.is_active });
+                                        await loadCategoryRules();
+                                      } catch (err) {
+                                        showToast('Kunde inte uppdatera regel', { type: 'error' });
+                                      }
+                                    }}
+                                    className={`px-3 py-1 text-xs rounded-lg transition-colors ${rule.is_active
+                                        ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                                        : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400'
+                                      }`}
+                                  >
+                                    {rule.is_active ? 'Aktiv' : 'Inaktiv'}
+                                  </button>
+                                  <button
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      if (!confirm(`Är du säker på att du vill ta bort regeln?\n\n"${patterns.join('", "') || rule.description_pattern}" → ${rule.category}`)) {
+                                        return;
+                                      }
+                                      try {
+                                        await api.deleteCategoryRule(rule.id);
+                                        await loadCategoryRules();
+                                        showToast('Regel borttagen', { type: 'success' });
+                                      } catch (err) {
+                                        showToast('Kunde inte ta bort regel', { type: 'error' });
+                                      }
+                                    }}
+                                    className="p-1.5 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded transition-colors"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </div>
+                              </div>
                             )}
-                            <button
-                              onClick={() => {
-                                setEditingRuleId(null);
-                                setEditingPatterns([]);
-                                setEditingRuleCategory('');
-                                editingPatternsRef.current = [];
-                                editingCategoryRef.current = '';
-                              }}
-                              className="text-xs px-3 py-1.5 bg-zinc-200 dark:bg-zinc-700 hover:bg-zinc-300 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-300 rounded-lg transition-colors"
-                            >
-                              Avbryt
-                            </button>
                           </div>
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-between">
-                          <div 
-                            className="flex-1 cursor-pointer"
-                            onClick={() => {
-                              const patterns = rule.description_patterns || [rule.description_pattern].filter(p => p);
-                              setEditingRuleId(rule.id);
-                              setEditingPatterns(patterns.length > 0 ? [...patterns, ''] : ['']);
-                              setEditingRuleCategory(rule.category || '');
-                              editingPatternsRef.current = patterns.length > 0 ? [...patterns, ''] : [''];
-                              editingCategoryRef.current = rule.category || '';
-                            }}
-                          >
-                            <p className="text-sm font-medium text-zinc-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
-                              Om beskrivning innehåller{' '}
-                              <span className="font-mono text-indigo-600 dark:text-indigo-400">
-                                "{patterns.length > 0 ? patterns.join('", "') : rule.description_pattern}"
-                              </span>
-                            </p>
-                            <p className="text-xs text-zinc-500 mt-1">
-                              → Sätt kategori: <span className="font-semibold">{rule.category}</span>
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                try {
-                                  await api.updateCategoryRule(rule.id, { is_active: !rule.is_active });
-                                  await loadCategoryRules();
-                                } catch (err) {
-                                  showToast('Kunde inte uppdatera regel', { type: 'error' });
-                                }
-                              }}
-                              className={`px-3 py-1 text-xs rounded-lg transition-colors ${
-                                rule.is_active
-                                  ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
-                                  : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400'
-                              }`}
-                            >
-                              {rule.is_active ? 'Aktiv' : 'Inaktiv'}
-                            </button>
-                            <button
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                if (!confirm(`Är du säker på att du vill ta bort regeln?\n\n"${patterns.join('", "') || rule.description_pattern}" → ${rule.category}`)) {
-                                  return;
-                                }
-                                try {
-                                  await api.deleteCategoryRule(rule.id);
-                                  await loadCategoryRules();
-                                  showToast('Regel borttagen', { type: 'success' });
-                                } catch (err) {
-                                  showToast('Kunde inte ta bort regel', { type: 'error' });
-                                }
-                              }}
-                              className="p-1.5 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded transition-colors"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
               )}
             </div>
-          </div>
-          )}
-        </div>
           </>
         )}
 
         {/* Bilder Tab */}
         {activeSubTab === 'images' && (
           <>
-        {/* Receipt Storage Section */}
-        <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-2.5 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl">
-              <FolderOpen className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Kvittolagring</h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">Välj var kvitton ska sparas</p>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                Sökväg för kvitton
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={receiptPath}
-                  onChange={(e) => setReceiptPath(e.target.value)}
-                  placeholder="C:\Dokument\Kvitton"
-                  disabled={loading}
-                  className="flex-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
-                />
-                <button 
-                  onClick={() => handleSelectFolder('receipt')}
-                  disabled={loading}
-                  className="px-6 py-3 rounded-xl font-medium transition-all flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Folder size={18} />
-                  Välj plats
-                </button>
-                <button 
-                  onClick={handleSave}
-                  disabled={loading}
-                  className={`px-6 py-3 rounded-xl font-medium transition-all flex items-center gap-2 ${
-                    saved 
-                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' 
-                      : 'bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed'
-                  }`}
-                >
-                  {saved ? (
-                    <>
-                      <CheckCircle size={18} />
-                      Sparad
-                    </>
-                  ) : (
-                    <>
-                      <Save size={18} />
-                      Spara
-                    </>
-                  )}
-                </button>
-              </div>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                Kvitton kommer automatiskt att sparas i denna mapp när de laddas upp.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Agreement Images Storage Section */}
-        <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-2.5 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl">
-              <ImageIcon className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Avtalsbilder</h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">Välj var avtalsbilder ska sparas</p>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                Sökväg för avtalsbilder
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={agreementImagesPath}
-                  onChange={(e) => setAgreementImagesPath(e.target.value)}
-                  placeholder="C:\Dokument\Avtal\Bilder"
-                  disabled={loading}
-                  className="flex-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
-                />
-                <button 
-                  onClick={() => handleSelectFolder('agreement')}
-                  disabled={loading}
-                  className="px-6 py-3 rounded-xl font-medium transition-all flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Folder size={18} />
-                  Välj plats
-                </button>
-                <button 
-                  onClick={handleSave}
-                  disabled={loading}
-                  className={`px-6 py-3 rounded-xl font-medium transition-all flex items-center gap-2 ${
-                    saved 
-                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' 
-                      : 'bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed'
-                  }`}
-                >
-                  {saved ? (
-                    <>
-                      <CheckCircle size={18} />
-                      Sparad
-                    </>
-                  ) : (
-                    <>
-                      <Save size={18} />
-                      Spara
-                    </>
-                  )}
-                </button>
-              </div>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                Avtalsbilder kommer automatiskt att sparas i denna mapp när de laddas upp.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Media Library */}
-        <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl">
-                <FileText className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Media Bibliotek</h3>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">Sök, sortera och filtrera alla kvitton och bilder</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setMediaViewMode(mediaViewMode === 'grid' ? 'list' : 'grid')}
-                className="p-2 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
-                title={mediaViewMode === 'grid' ? 'Listvy' : 'Rutnätsvy'}
-              >
-                {mediaViewMode === 'grid' ? <List size={18} /> : <Grid3x3 size={18} />}
-              </button>
-            </div>
-          </div>
-
-          {/* Search and Filters */}
-          <div className="space-y-4 mb-6">
-            <div className="flex gap-2">
-              <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-zinc-400" size={18} />
-                <input
-                  type="text"
-                  value={mediaSearchQuery}
-                  onChange={(e) => setMediaSearchQuery(e.target.value)}
-                  placeholder="Sök efter filnamn, transaktion eller avtal..."
-                  className="w-full pl-10 pr-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2">
-                <Filter size={16} className="text-zinc-500" />
-                <select
-                  value={mediaFilterType}
-                  onChange={(e) => setMediaFilterType(e.target.value)}
-                  className="px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="all">Alla filer</option>
-                  <option value="receipts">Kvitton</option>
-                  <option value="agreements">Avtalsbilder</option>
-                </select>
+            {/* Receipt Storage Section */}
+            <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-2.5 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl">
+                  <FolderOpen className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Kvittolagring</h3>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">Välj var kvitton ska sparas</p>
+                </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <Calendar size={16} className="text-zinc-500" />
-                <select
-                  value={mediaSortBy}
-                  onChange={(e) => setMediaSortBy(e.target.value)}
-                  className="px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="date">Datum</option>
-                  <option value="name">Namn</option>
-                  <option value="size">Storlek</option>
-                </select>
-                <button
-                  onClick={() => setMediaSortOrder(mediaSortOrder === 'asc' ? 'desc' : 'asc')}
-                  className="px-3 py-2 bg-zinc-100 dark:bg-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-600 rounded-lg text-sm text-zinc-700 dark:text-zinc-300 transition-colors"
-                  title={mediaSortOrder === 'asc' ? 'Stigande' : 'Fallande'}
-                >
-                  {mediaSortOrder === 'asc' ? '↑' : '↓'}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Media Files Display */}
-          {loadingMedia ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="animate-spin text-indigo-600 dark:text-indigo-400" size={24} />
-            </div>
-          ) : filteredAndSortedMedia.length === 0 ? (
-            <div className="text-center py-12 text-zinc-500">
-              <FileText size={48} className="mx-auto mb-4 text-zinc-400" />
-              <p>Inga filer hittades</p>
-              {mediaSearchQuery && (
-                <p className="text-sm mt-2">Försök med en annan sökterm</p>
-              )}
-            </div>
-          ) : mediaViewMode === 'grid' ? (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {filteredAndSortedMedia.map((file, idx) => (
-                <div
-                  key={idx}
-                  className="bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl p-3 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer group"
-                  onClick={(e) => {
-                    // Only open in new tab if not double-clicking on image
-                    if (e.detail === 1 && !e.target.closest('img')) {
-                      window.open(`http://192.168.1.232:5000/api/files/${encodeURIComponent(file.path)}`, '_blank');
-                    }
-                  }}
-                >
-                  <div className="aspect-square bg-white dark:bg-zinc-900 rounded-lg mb-2 flex items-center justify-center overflow-hidden relative">
-                    {file.filename.match(/\.(jpg|jpeg|png|gif)$/i) ? (
-                      <>
-                        <img
-                          src={`http://192.168.1.232:5000/api/files/${encodeURIComponent(file.path)}`}
-                          alt={file.filename}
-                          className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                          onDoubleClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            const imageFiles = filteredAndSortedMedia.filter(f => 
-                              f.filename.match(/\.(jpg|jpeg|png|gif)$/i)
-                            );
-                            const imageIndex = imageFiles.findIndex(f => f.path === file.path);
-                            if (imageIndex !== -1) {
-                              openLightbox(imageFiles.map(f => f.path), imageIndex);
-                            }
-                          }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                          }}
-                        />
-                        {file.transaction_id && (
-                          <button
-                            onClick={async (e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              if (window.confirm(`Är du säker på att du vill ta bort detta kvitto från transaktionen "${file.transaction_title}"?`)) {
-                                // Spara kvittodata för undo
-                                const receiptPath = file.path;
-                                const transactionId = file.transaction_id;
-                                const transactionTitle = file.transaction_title;
-                                
-                                try {
-                                  const result = await api.deleteTransactionReceipt(transactionId, receiptPath);
-                                  const deletedPath = result.deleted_path;
-                                  
-                                  await loadMediaFiles();
-                                  if (reloadData) await reloadData();
-                                  
-                                  // Visa toast med undo-funktionalitet
-                                  showToast('Kvitto borttaget!', { 
-                                    type: 'success',
-                                    undo: true,
-                                    undoAction: async () => {
-                                      try {
-                                        if (!deletedPath) {
-                                          throw new Error('Kunde inte hitta filen i deleted-mappen');
-                                        }
-                                        
-                                        // Hämta filen från deleted-mappen
-                                        const deletedFileUrl = `http://192.168.1.232:5000/api/files/${encodeURIComponent(deletedPath.replace(/\\/g, '/'))}`;
-                                        
-                                        // Hämta filen som blob
-                                        const response = await fetch(deletedFileUrl);
-                                        if (!response.ok) {
-                                          throw new Error('Kunde inte hitta filen i deleted-mappen');
-                                        }
-                                        
-                                        const blob = await response.blob();
-                                        const filename = deletedPath.split(/[/\\]/).pop();
-                                        const fileToUpload = new File([blob], filename, { type: blob.type });
-                                        
-                                        // Ladda upp filen igen
-                                        await api.uploadReceipt(fileToUpload, transactionId);
-                                        
-                                        await loadMediaFiles();
-                                        if (reloadData) await reloadData();
-                                        
-                                        showToast('Kvitto återställt!', { type: 'success' });
-                                      } catch (err) {
-                                        console.error('Kunde inte ångra radering av kvitto:', err);
-                                        showToast('Kunde inte ångra: ' + (err.message || 'Okänt fel'), { type: 'error' });
-                                      }
-                                    }
-                                  });
-                                } catch (error) {
-                                  console.error('Kunde inte ta bort kvitto:', error);
-                                  showToast('Kunde inte ta bort kvitto: ' + (error.message || 'Okänt fel'), { type: 'error' });
-                                }
-                              }
-                            }}
-                            className="absolute top-2 right-2 p-1.5 bg-rose-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600 z-10"
-                            title="Ta bort kvitto"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                      </>
-                    ) : (
-                      <FileText className="w-12 h-12 text-zinc-400" />
-                    )}
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                    Sökväg för kvitton
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={receiptPath}
+                      onChange={(e) => setReceiptPath(e.target.value)}
+                      placeholder="C:\Dokument\Kvitton"
+                      disabled={loading}
+                      className="flex-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
+                    />
+                    <button
+                      onClick={() => handleSelectFolder('receipt')}
+                      disabled={loading}
+                      className="px-6 py-3 rounded-xl font-medium transition-all flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Folder size={18} />
+                      Välj plats
+                    </button>
+                    <button
+                      onClick={handleSave}
+                      disabled={loading}
+                      className={`px-6 py-3 rounded-xl font-medium transition-all flex items-center gap-2 ${saved
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                          : 'bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed'
+                        }`}
+                    >
+                      {saved ? (
+                        <>
+                          <CheckCircle size={18} />
+                          Sparad
+                        </>
+                      ) : (
+                        <>
+                          <Save size={18} />
+                          Spara
+                        </>
+                      )}
+                    </button>
                   </div>
-                  <p className="text-xs font-medium text-zinc-900 dark:text-white truncate mb-1" title={file.filename}>
-                    {file.filename}
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Kvitton kommer automatiskt att sparas i denna mapp när de laddas upp.
                   </p>
-                  <div className="flex items-center justify-between text-xs text-zinc-500">
-                    <span className={`px-2 py-0.5 rounded ${
-                      file.type === 'receipt' 
-                        ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
-                        : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400'
-                    }`}>
-                      {file.type === 'receipt' ? 'Kvitto' : 'Avtal'}
-                    </span>
-                    <span>{(file.size / 1024).toFixed(1)} KB</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Agreement Images Storage Section */}
+            <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-2.5 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl">
+                  <ImageIcon className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Avtalsbilder</h3>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">Välj var avtalsbilder ska sparas</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                    Sökväg för avtalsbilder
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={agreementImagesPath}
+                      onChange={(e) => setAgreementImagesPath(e.target.value)}
+                      placeholder="C:\Dokument\Avtal\Bilder"
+                      disabled={loading}
+                      className="flex-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
+                    />
+                    <button
+                      onClick={() => handleSelectFolder('agreement')}
+                      disabled={loading}
+                      className="px-6 py-3 rounded-xl font-medium transition-all flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Folder size={18} />
+                      Välj plats
+                    </button>
+                    <button
+                      onClick={handleSave}
+                      disabled={loading}
+                      className={`px-6 py-3 rounded-xl font-medium transition-all flex items-center gap-2 ${saved
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                          : 'bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed'
+                        }`}
+                    >
+                      {saved ? (
+                        <>
+                          <CheckCircle size={18} />
+                          Sparad
+                        </>
+                      ) : (
+                        <>
+                          <Save size={18} />
+                          Spara
+                        </>
+                      )}
+                    </button>
                   </div>
-                  {file.transaction_title && (
-                    <p 
-                      className="text-xs text-zinc-400 mt-1 truncate hover:text-zinc-600 dark:hover:text-zinc-300 cursor-pointer transition-colors"
-                      title={`Klicka för att öppna transaktion: ${file.transaction_title}`}
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Avtalsbilder kommer automatiskt att sparas i denna mapp när de laddas upp.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Media Library */}
+            <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 rounded-2xl p-6 shadow-sm dark:shadow-none">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl">
+                    <FileText className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Media Bibliotek</h3>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Sök, sortera och filtrera alla kvitton och bilder</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setMediaViewMode(mediaViewMode === 'grid' ? 'list' : 'grid')}
+                    className="p-2 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
+                    title={mediaViewMode === 'grid' ? 'Listvy' : 'Rutnätsvy'}
+                  >
+                    {mediaViewMode === 'grid' ? <List size={18} /> : <Grid3x3 size={18} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Search and Filters */}
+              <div className="space-y-4 mb-6">
+                <div className="flex gap-2">
+                  <div className="flex-1 relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-zinc-400" size={18} />
+                    <input
+                      type="text"
+                      value={mediaSearchQuery}
+                      onChange={(e) => setMediaSearchQuery(e.target.value)}
+                      placeholder="Sök efter filnamn, transaktion eller avtal..."
+                      className="w-full pl-10 pr-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <Filter size={16} className="text-zinc-500" />
+                    <select
+                      value={mediaFilterType}
+                      onChange={(e) => setMediaFilterType(e.target.value)}
+                      className="px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="all">Alla filer</option>
+                      <option value="receipts">Kvitton</option>
+                      <option value="agreements">Avtalsbilder</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Calendar size={16} className="text-zinc-500" />
+                    <select
+                      value={mediaSortBy}
+                      onChange={(e) => setMediaSortBy(e.target.value)}
+                      className="px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="date">Datum</option>
+                      <option value="name">Namn</option>
+                      <option value="size">Storlek</option>
+                    </select>
+                    <button
+                      onClick={() => setMediaSortOrder(mediaSortOrder === 'asc' ? 'desc' : 'asc')}
+                      className="px-3 py-2 bg-zinc-100 dark:bg-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-600 rounded-lg text-sm text-zinc-700 dark:text-zinc-300 transition-colors"
+                      title={mediaSortOrder === 'asc' ? 'Stigande' : 'Fallande'}
+                    >
+                      {mediaSortOrder === 'asc' ? '↑' : '↓'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Media Files Display */}
+              {loadingMedia ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="animate-spin text-indigo-600 dark:text-indigo-400" size={24} />
+                </div>
+              ) : filteredAndSortedMedia.length === 0 ? (
+                <div className="text-center py-12 text-zinc-500">
+                  <FileText size={48} className="mx-auto mb-4 text-zinc-400" />
+                  <p>Inga filer hittades</p>
+                  {mediaSearchQuery && (
+                    <p className="text-sm mt-2">Försök med en annan sökterm</p>
+                  )}
+                </div>
+              ) : mediaViewMode === 'grid' ? (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {filteredAndSortedMedia.map((file, idx) => (
+                    <div
+                      key={idx}
+                      className="bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl p-3 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer group"
                       onClick={(e) => {
-                        e.stopPropagation();
-                        if (file.transaction_id && setActiveTab && setSelectedTransaction) {
-                          // Hitta transaktionen
-                          const transaction = transactions.find(t => t.id === file.transaction_id);
-                          if (transaction) {
-                            setActiveTab('transactions');
-                            // Vänta lite så att tabben hinner bytas
-                            setTimeout(() => {
-                              setSelectedTransaction(transaction);
-                            }, 100);
-                          }
+                        // Only open in new tab if not double-clicking on image
+                        if (e.detail === 1 && !e.target.closest('img')) {
+                          window.open(`/uploads/${file.path.replace(/\\/g, '/')}`, '_blank');
                         }
                       }}
                     >
-                      {file.transaction_title}
-                    </p>
-                  )}
-                  {file.agreement_name && (
-                    <p className="text-xs text-zinc-400 mt-1 truncate" title={file.agreement_name}>
-                      {file.agreement_name}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <>
-              {filteredAndSortedMedia.length > 0 && (
-                <div className="mb-4 flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    checked={filteredAndSortedMedia.length > 0 && filteredAndSortedMedia.every(f => selectedMediaFiles.has(f.path))}
-                    onChange={(e) => handleSelectAllMedia(e.target.checked)}
-                    className="w-4 h-4 text-indigo-600 border-zinc-300 rounded focus:ring-indigo-500"
-                  />
-                  <span className="text-sm text-zinc-600 dark:text-zinc-400">
-                    Markera alla ({selectedMediaFiles.size} markerade)
-                  </span>
-                </div>
-              )}
-              <div className="space-y-2">
-                {filteredAndSortedMedia.map((file, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center gap-4 p-4 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer group"
-                    onClick={(e) => {
-                      // Only open in new tab if not clicking on checkbox or double-clicking on image
-                      if (e.detail === 1 && !e.target.closest('input[type="checkbox"]') && !e.target.closest('img')) {
-                        window.open(`http://192.168.1.232:5000/api/files/${encodeURIComponent(file.path)}`, '_blank');
-                      }
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedMediaFiles.has(file.path)}
-                      onChange={(e) => {
-                        e.stopPropagation();
-                        handleToggleMediaFile(file.path);
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                      className="w-5 h-5 text-indigo-600 border-zinc-300 rounded focus:ring-indigo-500 flex-shrink-0"
-                    />
-                    <div className="w-16 h-16 bg-white dark:bg-zinc-900 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden relative">
-                    {file.filename.match(/\.(jpg|jpeg|png|gif)$/i) ? (
-                      <>
-                        <img
-                          src={`http://192.168.1.232:5000/api/files/${encodeURIComponent(file.path)}`}
-                          alt={file.filename}
-                          className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                          onDoubleClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            const imageFiles = filteredAndSortedMedia.filter(f => 
-                              f.filename.match(/\.(jpg|jpeg|png|gif)$/i)
-                            );
-                            const imageIndex = imageFiles.findIndex(f => f.path === file.path);
-                            if (imageIndex !== -1) {
-                              openLightbox(imageFiles.map(f => f.path), imageIndex);
-                            }
-                          }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                          }}
-                        />
-                        {file.transaction_id && (
-                          <button
-                            onClick={async (e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              if (window.confirm(`Är du säker på att du vill ta bort detta kvitto från transaktionen "${file.transaction_title}"?`)) {
-                                // Spara kvittodata för undo
-                                const receiptPath = file.path;
-                                const transactionId = file.transaction_id;
-                                const transactionTitle = file.transaction_title;
-                                
-                                try {
-                                  const result = await api.deleteTransactionReceipt(transactionId, receiptPath);
-                                  const deletedPath = result.deleted_path;
-                                  
-                                  await loadMediaFiles();
-                                  if (reloadData) await reloadData();
-                                  
-                                  // Visa toast med undo-funktionalitet
-                                  showToast('Kvitto borttaget!', { 
-                                    type: 'success',
-                                    undo: true,
-                                    undoAction: async () => {
-                                      try {
-                                        if (!deletedPath) {
-                                          throw new Error('Kunde inte hitta filen i deleted-mappen');
-                                        }
-                                        
-                                        // Hämta filen från deleted-mappen
-                                        const deletedFileUrl = `http://192.168.1.232:5000/api/files/${encodeURIComponent(deletedPath.replace(/\\/g, '/'))}`;
-                                        
-                                        // Hämta filen som blob
-                                        const response = await fetch(deletedFileUrl);
-                                        if (!response.ok) {
-                                          throw new Error('Kunde inte hitta filen i deleted-mappen');
-                                        }
-                                        
-                                        const blob = await response.blob();
-                                        const filename = deletedPath.split(/[/\\]/).pop();
-                                        const fileToUpload = new File([blob], filename, { type: blob.type });
-                                        
-                                        // Ladda upp filen igen
-                                        await api.uploadReceipt(fileToUpload, transactionId);
-                                        
-                                        await loadMediaFiles();
-                                        if (reloadData) await reloadData();
-                                        
-                                        showToast('Kvitto återställt!', { type: 'success' });
-                                      } catch (err) {
-                                        console.error('Kunde inte ångra radering av kvitto:', err);
-                                        showToast('Kunde inte ångra: ' + (err.message || 'Okänt fel'), { type: 'error' });
-                                      }
-                                    }
-                                  });
-                                } catch (error) {
-                                  console.error('Kunde inte ta bort kvitto:', error);
-                                  showToast('Kunde inte ta bort kvitto: ' + (error.message || 'Okänt fel'), { type: 'error' });
+                      <div className="aspect-square bg-white dark:bg-zinc-900 rounded-lg mb-2 flex items-center justify-center overflow-hidden relative">
+                        {file.filename.match(/\.(jpg|jpeg|png|gif)$/i) ? (
+                          <>
+                            <img
+                              src={`http://192.168.1.232:5000/api/files/${encodeURIComponent(file.path)}`}
+                              alt={file.filename}
+                              className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                              onDoubleClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const imageFiles = filteredAndSortedMedia.filter(f =>
+                                  f.filename.match(/\.(jpg|jpeg|png|gif)$/i)
+                                );
+                                const imageIndex = imageFiles.findIndex(f => f.path === file.path);
+                                if (imageIndex !== -1) {
+                                  openLightbox(imageFiles.map(f => f.path), imageIndex);
                                 }
-                              }
-                            }}
-                            className="absolute top-1 right-1 p-1 bg-rose-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600 z-10"
-                            title="Ta bort kvitto"
-                          >
-                            <Trash2 size={12} />
-                          </button>
+                              }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                              }}
+                            />
+                            {file.transaction_id && (
+                              <button
+                                onClick={async (e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  if (window.confirm(`Är du säker på att du vill ta bort detta kvitto från transaktionen "${file.transaction_title}"?`)) {
+                                    // Spara kvittodata för undo
+                                    const receiptPath = file.path;
+                                    const transactionId = file.transaction_id;
+                                    const transactionTitle = file.transaction_title;
+
+                                    try {
+                                      const result = await api.deleteTransactionReceipt(transactionId, receiptPath);
+                                      const deletedPath = result.deleted_path;
+
+                                      await loadMediaFiles();
+                                      if (reloadData) await reloadData();
+
+                                      // Visa toast med undo-funktionalitet
+                                      showToast('Kvitto borttaget!', {
+                                        type: 'success',
+                                        undo: true,
+                                        undoAction: async () => {
+                                          try {
+                                            if (!deletedPath) {
+                                              throw new Error('Kunde inte hitta filen i deleted-mappen');
+                                            }
+
+                                            // Hämta filen från deleted-mappen
+                                            const deletedFileUrl = `/uploads/${deletedPath.replace(/\\/g, '/').split(/[/\\]/).pop()}`;
+
+                                            // Hämta filen som blob
+                                            const response = await fetch(deletedFileUrl);
+                                            if (!response.ok) {
+                                              throw new Error('Kunde inte hitta filen i deleted-mappen');
+                                            }
+
+                                            const blob = await response.blob();
+                                            const filename = deletedPath.split(/[/\\]/).pop();
+                                            const fileToUpload = new File([blob], filename, { type: blob.type });
+
+                                            // Ladda upp filen igen
+                                            await api.uploadReceipt(fileToUpload, transactionId);
+
+                                            await loadMediaFiles();
+                                            if (reloadData) await reloadData();
+
+                                            showToast('Kvitto återställt!', { type: 'success' });
+                                          } catch (err) {
+                                            console.error('Kunde inte ångra radering av kvitto:', err);
+                                            showToast('Kunde inte ångra: ' + (err.message || 'Okänt fel'), { type: 'error' });
+                                          }
+                                        }
+                                      });
+                                    } catch (error) {
+                                      console.error('Kunde inte ta bort kvitto:', error);
+                                      showToast('Kunde inte ta bort kvitto: ' + (error.message || 'Okänt fel'), { type: 'error' });
+                                    }
+                                  }
+                                }}
+                                className="absolute top-2 right-2 p-1.5 bg-rose-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600 z-10"
+                                title="Ta bort kvitto"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </>
+                        ) : (
+                          <FileText className="w-12 h-12 text-zinc-400" />
                         )}
-                      </>
-                    ) : (
-                      <FileText className="w-8 h-8 text-zinc-400" />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-zinc-900 dark:text-white truncate">
-                      {file.filename}
-                    </p>
-                    <div className="flex items-center gap-3 mt-1 text-xs text-zinc-500">
-                      <span className={`px-2 py-0.5 rounded ${
-                        file.type === 'receipt' 
-                          ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
-                          : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400'
-                      }`}>
-                        {file.type === 'receipt' ? 'Kvitto' : 'Avtal'}
-                      </span>
+                      </div>
+                      <p className="text-xs font-medium text-zinc-900 dark:text-white truncate mb-1" title={file.filename}>
+                        {file.filename}
+                      </p>
+                      <div className="flex items-center justify-between text-xs text-zinc-500">
+                        <span className={`px-2 py-0.5 rounded ${file.type === 'receipt'
+                            ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                            : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400'
+                          }`}>
+                          {file.type === 'receipt' ? 'Kvitto' : 'Avtal'}
+                        </span>
+                        <span>{(file.size / 1024).toFixed(1)} KB</span>
+                      </div>
                       {file.transaction_title && (
-                        <span 
-                          className="truncate hover:text-zinc-600 dark:hover:text-zinc-300 cursor-pointer transition-colors"
+                        <p
+                          className="text-xs text-zinc-400 mt-1 truncate hover:text-zinc-600 dark:hover:text-zinc-300 cursor-pointer transition-colors"
                           title={`Klicka för att öppna transaktion: ${file.transaction_title}`}
                           onClick={(e) => {
                             e.stopPropagation();
@@ -1918,26 +1733,197 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
                           }}
                         >
                           {file.transaction_title}
-                        </span>
+                        </p>
                       )}
                       {file.agreement_name && (
-                        <span className="truncate">{file.agreement_name}</span>
-                      )}
-                      {file.date && (
-                        <span>{new Date(file.date).toLocaleDateString('sv-SE')}</span>
+                        <p className="text-xs text-zinc-400 mt-1 truncate" title={file.agreement_name}>
+                          {file.agreement_name}
+                        </p>
                       )}
                     </div>
-                  </div>
-                  <div className="text-right text-xs text-zinc-500">
-                    <p>{(file.size / 1024).toFixed(1)} KB</p>
-                  </div>
+                  ))}
                 </div>
-              ))}
-              </div>
-            </>
-          )}
-        </div>
-      </>
+              ) : (
+                <>
+                  {filteredAndSortedMedia.length > 0 && (
+                    <div className="mb-4 flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={filteredAndSortedMedia.length > 0 && filteredAndSortedMedia.every(f => selectedMediaFiles.has(f.path))}
+                        onChange={(e) => handleSelectAllMedia(e.target.checked)}
+                        className="w-4 h-4 text-indigo-600 border-zinc-300 rounded focus:ring-indigo-500"
+                      />
+                      <span className="text-sm text-zinc-600 dark:text-zinc-400">
+                        Markera alla ({selectedMediaFiles.size} markerade)
+                      </span>
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    {filteredAndSortedMedia.map((file, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center gap-4 p-4 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer group"
+                        onClick={(e) => {
+                          // Only open in new tab if not clicking on checkbox or double-clicking on image
+                          if (e.detail === 1 && !e.target.closest('input[type="checkbox"]') && !e.target.closest('img')) {
+                            window.open(`/uploads/${file.path.replace(/\\/g, '/')}`, '_blank');
+                          }
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedMediaFiles.has(file.path)}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            handleToggleMediaFile(file.path);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-5 h-5 text-indigo-600 border-zinc-300 rounded focus:ring-indigo-500 flex-shrink-0"
+                        />
+                        <div className="w-16 h-16 bg-white dark:bg-zinc-900 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden relative">
+                          {file.filename.match(/\.(jpg|jpeg|png|gif)$/i) ? (
+                            <>
+                              <img
+                                src={`http://192.168.1.232:5000/api/files/${encodeURIComponent(file.path)}`}
+                                alt={file.filename}
+                                className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                                onDoubleClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  const imageFiles = filteredAndSortedMedia.filter(f =>
+                                    f.filename.match(/\.(jpg|jpeg|png|gif)$/i)
+                                  );
+                                  const imageIndex = imageFiles.findIndex(f => f.path === file.path);
+                                  if (imageIndex !== -1) {
+                                    openLightbox(imageFiles.map(f => f.path), imageIndex);
+                                  }
+                                }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                }}
+                              />
+                              {file.transaction_id && (
+                                <button
+                                  onClick={async (e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    if (window.confirm(`Är du säker på att du vill ta bort detta kvitto från transaktionen "${file.transaction_title}"?`)) {
+                                      // Spara kvittodata för undo
+                                      const receiptPath = file.path;
+                                      const transactionId = file.transaction_id;
+                                      const transactionTitle = file.transaction_title;
+
+                                      try {
+                                        const result = await api.deleteTransactionReceipt(transactionId, receiptPath);
+                                        const deletedPath = result.deleted_path;
+
+                                        await loadMediaFiles();
+                                        if (reloadData) await reloadData();
+
+                                        // Visa toast med undo-funktionalitet
+                                        showToast('Kvitto borttaget!', {
+                                          type: 'success',
+                                          undo: true,
+                                          undoAction: async () => {
+                                            try {
+                                              if (!deletedPath) {
+                                                throw new Error('Kunde inte hitta filen i deleted-mappen');
+                                              }
+
+                                              // Hämta filen från deleted-mappen
+                                              const deletedFileUrl = `http://192.168.1.232:5000/api/files/${encodeURIComponent(deletedPath.replace(/\\/g, '/'))}`;
+
+                                              // Hämta filen som blob
+                                              const response = await fetch(deletedFileUrl);
+                                              if (!response.ok) {
+                                                throw new Error('Kunde inte hitta filen i deleted-mappen');
+                                              }
+
+                                              const blob = await response.blob();
+                                              const filename = deletedPath.split(/[/\\]/).pop();
+                                              const fileToUpload = new File([blob], filename, { type: blob.type });
+
+                                              // Ladda upp filen igen
+                                              await api.uploadReceipt(fileToUpload, transactionId);
+
+                                              await loadMediaFiles();
+                                              if (reloadData) await reloadData();
+
+                                              showToast('Kvitto återställt!', { type: 'success' });
+                                            } catch (err) {
+                                              console.error('Kunde inte ångra radering av kvitto:', err);
+                                              showToast('Kunde inte ångra: ' + (err.message || 'Okänt fel'), { type: 'error' });
+                                            }
+                                          }
+                                        });
+                                      } catch (error) {
+                                        console.error('Kunde inte ta bort kvitto:', error);
+                                        showToast('Kunde inte ta bort kvitto: ' + (error.message || 'Okänt fel'), { type: 'error' });
+                                      }
+                                    }
+                                  }}
+                                  className="absolute top-1 right-1 p-1 bg-rose-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600 z-10"
+                                  title="Ta bort kvitto"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              )}
+                            </>
+                          ) : (
+                            <FileText className="w-8 h-8 text-zinc-400" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-zinc-900 dark:text-white truncate">
+                            {file.filename}
+                          </p>
+                          <div className="flex items-center gap-3 mt-1 text-xs text-zinc-500">
+                            <span className={`px-2 py-0.5 rounded ${file.type === 'receipt'
+                                ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                                : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400'
+                              }`}>
+                              {file.type === 'receipt' ? 'Kvitto' : 'Avtal'}
+                            </span>
+                            {file.transaction_title && (
+                              <span
+                                className="truncate hover:text-zinc-600 dark:hover:text-zinc-300 cursor-pointer transition-colors"
+                                title={`Klicka för att öppna transaktion: ${file.transaction_title}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (file.transaction_id && setActiveTab && setSelectedTransaction) {
+                                    // Hitta transaktionen
+                                    const transaction = transactions.find(t => t.id === file.transaction_id);
+                                    if (transaction) {
+                                      setActiveTab('transactions');
+                                      // Vänta lite så att tabben hinner bytas
+                                      setTimeout(() => {
+                                        setSelectedTransaction(transaction);
+                                      }, 100);
+                                    }
+                                  }
+                                }}
+                              >
+                                {file.transaction_title}
+                              </span>
+                            )}
+                            {file.agreement_name && (
+                              <span className="truncate">{file.agreement_name}</span>
+                            )}
+                            {file.date && (
+                              <span>{new Date(file.date).toLocaleDateString('sv-SE')}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-right text-xs text-zinc-500">
+                          <p>{(file.size / 1024).toFixed(1)} KB</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </>
         )}
 
         {/* History Tab */}
@@ -1959,7 +1945,7 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
         categories={categories}
         onMerge={handleMergeCategories}
       />
-      
+
       {/* Theme Customizer Modal */}
       <ThemeCustomizer
         isOpen={isThemeCustomizerOpen}
@@ -1994,7 +1980,7 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
           setLocalColorTheme(newTheme);
           const newDefaultTheme = newDarkMode ? 'dark' : 'light';
           setDefaultTheme(newDefaultTheme);
-          
+
           // Save to backend
           try {
             await api.saveSettings({
@@ -2014,7 +2000,7 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
           }
         }}
       />
-      
+
       {/* Image Lightbox */}
       {lightboxImages && lightboxImages.length > 0 && (
         <ImageLightbox

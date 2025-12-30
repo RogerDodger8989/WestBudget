@@ -56,7 +56,7 @@ print(f"DEBUG: JWT_SECRET_KEY loaded: {'Yes' if os.environ.get('JWT_SECRET_KEY')
 print(f"DEBUG: DATABASE_URL is: {os.environ.get('DATABASE_URL')}")
 print(f"DEBUG: STRIPE_SECRET_KEY present: {'Yes' if os.environ.get('STRIPE_SECRET_KEY') else 'No'}")
 print(f"DEBUG: SENDGRID_API_KEY present: {'Yes' if os.environ.get('SENDGRID_API_KEY') else 'No'}")
-print("🚀 VERSION CHECK: V11 (CLEANED ALL HARDCODED IPS) 🚀")
+print("🚀 VERSION CHECK: V12 (FINAL CLEAN - SETTINGS FIXED) 🚀")
 
 app = Flask(__name__)
 
