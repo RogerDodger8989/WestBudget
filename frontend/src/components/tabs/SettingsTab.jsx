@@ -1612,7 +1612,7 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
                         {file.filename.match(/\.(jpg|jpeg|png|gif)$/i) ? (
                           <>
                             <img
-                              src={`http://192.168.1.232:5000/api/files/${encodeURIComponent(file.path)}`}
+                              src={`/uploads/${file.path.replace(/\\/g, '/')}`}
                               alt={file.filename}
                               className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
                               onDoubleClick={(e) => {
