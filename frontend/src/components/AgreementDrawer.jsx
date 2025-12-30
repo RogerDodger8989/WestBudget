@@ -219,10 +219,10 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
           </span>
           <div className="mt-2 flex items-center justify-center gap-2">
             <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${formData.status === 'Aktiv'
-                ? 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20'
-                : formData.status === 'Uppsagd'
-                  ? 'bg-zinc-100 text-zinc-500 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-500 dark:border-zinc-700'
-                  : 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20'
+              ? 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20'
+              : formData.status === 'Uppsagd'
+                ? 'bg-zinc-100 text-zinc-500 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-500 dark:border-zinc-700'
+                : 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20'
               }`}>
               {formData.status}
             </span>
@@ -531,14 +531,14 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
                   type="button"
                   onClick={() => handleChange('icon', icon)}
                   className={`w-8 h-8 rounded-lg flex items-center justify-center text-lg transition-all ${formData.icon === icon
-                      ? `${getThemeBgClass(colorTheme, isDarkMode)} border-2 ${getThemeBorderClass(colorTheme)}`
-                      : `bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 ${colorTheme === 'indigo' ? 'hover:border-indigo-500' :
-                        colorTheme === 'blue' ? 'hover:border-blue-500' :
-                          colorTheme === 'emerald' ? 'hover:border-emerald-500' :
-                            colorTheme === 'purple' ? 'hover:border-purple-500' :
-                              colorTheme === 'rose' ? 'hover:border-rose-500' :
-                                'hover:border-amber-500'
-                      }`
+                    ? `${getThemeBgClass(colorTheme, isDarkMode)} border-2 ${getThemeBorderClass(colorTheme)}`
+                    : `bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 ${colorTheme === 'indigo' ? 'hover:border-indigo-500' :
+                      colorTheme === 'blue' ? 'hover:border-blue-500' :
+                        colorTheme === 'emerald' ? 'hover:border-emerald-500' :
+                          colorTheme === 'purple' ? 'hover:border-purple-500' :
+                            colorTheme === 'rose' ? 'hover:border-rose-500' :
+                              'hover:border-amber-500'
+                    }`
                     }`}
                 >
                   {icon}
@@ -586,11 +586,11 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
           <div
             onClick={() => fileInputRef.current?.click()}
             className={`border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-xl p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-colors bg-zinc-50 dark:bg-zinc-800/30 group ${colorTheme === 'indigo' ? 'hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10' :
-                colorTheme === 'blue' ? 'hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10' :
-                  colorTheme === 'emerald' ? 'hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10' :
-                    colorTheme === 'purple' ? 'hover:border-purple-500 hover:bg-purple-50 dark:hover:bg-purple-500/10' :
-                      colorTheme === 'rose' ? 'hover:border-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10' :
-                        'hover:border-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10'
+              colorTheme === 'blue' ? 'hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10' :
+                colorTheme === 'emerald' ? 'hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10' :
+                  colorTheme === 'purple' ? 'hover:border-purple-500 hover:bg-purple-50 dark:hover:bg-purple-500/10' :
+                    colorTheme === 'rose' ? 'hover:border-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10' :
+                      'hover:border-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10'
               }`}
           >
             <div className="w-12 h-12 bg-white dark:bg-zinc-800 rounded-full flex items-center justify-center mb-3 shadow-sm group-hover:scale-110 transition-transform">
@@ -604,98 +604,104 @@ const AgreementDrawer = ({ agreement, onClose, onSave, onDelete, onImageUpload, 
           {images.length > 0 && (
             <div className="grid grid-cols-2 gap-3 mt-3">
               {images.map((imagePath, index) => {
-                // Hantera både relativa och absoluta sökvägar
                 let imageUrl;
                 const normalizedPath = imagePath.replace(/\\/g, '/');
 
-                console.log(`🖼️ [AgreementDrawer] Bild ${index + 1}:`, imagePath, 'Normaliserad:', normalizedPath);
+                // Debug log
+                // console.log(`[AgreementDrawer] Image ${index}:`, imagePath);
 
-                if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
-                  // Fullständig URL
-                  imageUrl = imagePath;
-                  // Check for absolute paths typical in local dev
+                if (imagePath.startsWith('http')) {
+                  // Legacy absolute path handling
                   if (imagePath.includes(':') || (imagePath.startsWith('/') && !imagePath.startsWith('/uploads'))) {
-                    // For WestBudget specific absolute paths, try to extract just filename if possible or use relative API
                     const filename = normalizedPath.split(/[/\\]/).pop();
                     imageUrl = `/uploads/${filename}`;
                   } else {
-                    // Standard relative path
                     const pathToUse = normalizedPath.startsWith('uploads/') ? normalizedPath.replace('uploads/', '') : normalizedPath;
-                    // Use generic uploads endpoint
-                    // Om sökvägen börjar med "avtal/", använd den direkt
                     if (pathToUse.startsWith('avtal/')) {
                       imageUrl = `/uploads/${pathToUse}`;
                     } else {
-                      // Annars, försök med avtal/ prefix
                       imageUrl = `/uploads/avtal/${pathToUse}`;
                     }
                   }
+                } else {
+                  // Clean relative path handling
+                  const pathToUse = normalizedPath.startsWith('uploads/') ? normalizedPath.replace('uploads/', '') : normalizedPath;
+                  if (pathToUse.startsWith('avtal/')) {
+                    imageUrl = `/uploads/${pathToUse}`;
+                  } else {
+                    imageUrl = `/uploads/avtal/${pathToUse}`;
+                  }
+                }
 
-                  console.log(`🖼️ [AgreementDrawer] Bild URL:`, imageUrl);
+                // Ensure no hardcoded IPs
+                if (imageUrl.includes('192.168.1.232')) {
+                  const filename = normalizedPath.split(/[/\\]/).pop();
+                  imageUrl = `/uploads/${filename}`;
+                }
 
-                  return (
-                    <div key={index} className="relative group">
-                      <img
-                        src={imageUrl}
-                        alt={`Avtalsbild ${index + 1}`}
-                        className="w-full h-32 object-cover rounded-lg border border-zinc-200 dark:border-zinc-700 cursor-pointer hover:opacity-90 transition-opacity"
-                        onDoubleClick={() => {
-                          openLightbox(images, index);
-                        }}
-                        onLoad={() => {
-                          console.log(`✅ [AgreementDrawer] Bild ${index + 1} laddad:`, imageUrl);
-                        }}
-                        onError={(e) => {
-                          console.error('❌ [AgreementDrawer] Kunde inte ladda bild:', imageUrl, 'Original sökväg:', imagePath);
+                return (
+                  <div key={index} className="relative group">
+                    <img
+                      src={imageUrl}
+                      alt={`Avtalsbild ${index + 1}`}
+                      className="w-full h-32 object-cover rounded-lg border border-zinc-200 dark:border-zinc-700 cursor-pointer hover:opacity-90 transition-opacity"
+                      onDoubleClick={() => {
+                        openLightbox(images, index);
+                      }}
+                      onLoad={() => {
+                        console.log(`✅ [AgreementDrawer] Bild ${index + 1} laddad:`, imageUrl);
+                      }}
+                      onError={(e) => {
+                        console.error('❌ [AgreementDrawer] Kunde inte ladda bild:', imageUrl, 'Original sökväg:', imagePath);
 
-                          // Försök alternativa sökvägar
-                          const alternatives = [];
+                        // Försök alternativa sökvägar
+                        const alternatives = [];
 
-                          // Om det är en relativ sökväg, försök olika varianter
-                          if (!imagePath.includes(':\\') && !imagePath.startsWith('/')) {
-                            const basePath = normalizedPath.replace('avtal/', '');
-                            alternatives.push(
-                              `/uploads/${normalizedPath}`,
-                              `/uploads/${normalizedPath}`,
-                              `/uploads/avtal/${basePath}`,
-                              `/uploads/${basePath}`
-                            );
+                        // Om det är en relativ sökväg, försök olika varianter
+                        if (!imagePath.includes(':\\') && !imagePath.startsWith('/')) {
+                          const basePath = normalizedPath.replace('avtal/', '');
+                          alternatives.push(
+                            `/uploads/${normalizedPath}`,
+                            `/uploads/${normalizedPath}`,
+                            `/uploads/avtal/${basePath}`,
+                            `/uploads/${basePath}`
+                          );
+                        } else {
+                          // För absoluta sökvägar, försök med olika encoding
+                          const filename = normalizedPath.split(/[/\\]/).pop();
+                          alternatives.push(
+                            `/uploads/${normalizedPath}`,
+                            `/uploads/${filename}`
+                          );
+                        }
+
+                        // Försök nästa alternativ
+                        let altIndex = 0;
+                        const tryNext = () => {
+                          if (altIndex < alternatives.length) {
+                            console.log(`🔄 [AgreementDrawer] Försöker alternativ ${altIndex + 1}:`, alternatives[altIndex]);
+                            e.target.src = alternatives[altIndex];
+                            altIndex++;
+                            e.target.onerror = tryNext;
                           } else {
-                            // För absoluta sökvägar, försök med olika encoding
-                            const filename = normalizedPath.split(/[/\\]/).pop();
-                            alternatives.push(
-                              `/uploads/${normalizedPath}`,
-                              `/uploads/${filename}`
-                            );
+                            // Alla alternativ misslyckades
+                            e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23ccc" width="100" height="100"/%3E%3Ctext fill="%23999" x="50%" y="50%" text-anchor="middle" dy=".3em" font-size="12"%3EBild saknas%3C/text%3E%3C/svg%3E';
+                            e.target.onerror = null;
                           }
-
-                          // Försök nästa alternativ
-                          let altIndex = 0;
-                          const tryNext = () => {
-                            if (altIndex < alternatives.length) {
-                              console.log(`🔄 [AgreementDrawer] Försöker alternativ ${altIndex + 1}:`, alternatives[altIndex]);
-                              e.target.src = alternatives[altIndex];
-                              altIndex++;
-                              e.target.onerror = tryNext;
-                            } else {
-                              // Alla alternativ misslyckades
-                              e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23ccc" width="100" height="100"/%3E%3Ctext fill="%23999" x="50%" y="50%" text-anchor="middle" dy=".3em" font-size="12"%3EBild saknas%3C/text%3E%3C/svg%3E';
-                              e.target.onerror = null;
-                            }
-                          };
-                          tryNext();
-                        }}
-                      />
-                      <button
-                        onClick={() => handleRemoveImage(imagePath)}
-                        className="absolute top-2 right-2 p-1 bg-rose-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                        title="Ta bort bild"
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                  );
-                })}
+                        };
+                        tryNext();
+                      }}
+                    />
+                    <button
+                      onClick={() => handleRemoveImage(imagePath)}
+                      className="absolute top-2 right-2 p-1 bg-rose-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Ta bort bild"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
