@@ -56,7 +56,7 @@ print(f"DEBUG: JWT_SECRET_KEY loaded: {'Yes' if os.environ.get('JWT_SECRET_KEY')
 print(f"DEBUG: DATABASE_URL is: {os.environ.get('DATABASE_URL')}")
 print(f"DEBUG: STRIPE_SECRET_KEY present: {'Yes' if os.environ.get('STRIPE_SECRET_KEY') else 'No'}")
 print(f"DEBUG: SENDGRID_API_KEY present: {'Yes' if os.environ.get('SENDGRID_API_KEY') else 'No'}")
-print("🚀 VERSION CHECK: V14 (ADDED SAVINGS ROUTES) 🚀")
+print("🚀 VERSION CHECK: V15 (DATE FIXES) 🚀")
 
 app = Flask(__name__)
 
@@ -1022,7 +1022,15 @@ def get_vehicle_expenses():
             cursor.execute("SELECT * FROM vehicle_expenses ORDER BY date DESC")
         rows = cursor.fetchall()
         conn.close()
-        return jsonify([dict(row) for row in rows])
+        
+        expenses = []
+        for row in rows:
+            e = dict(row)
+            if e.get('date'): e['date'] = str(e['date'])
+            if e.get('created_at'): e['created_at'] = str(e['created_at'])
+            expenses.append(e)
+            
+        return jsonify(expenses)
     except Exception as e: return jsonify({'error': str(e)}), 500
 
 @app.route('/vehicle-expenses', methods=['POST'])
@@ -1042,7 +1050,12 @@ def create_vehicle_expense():
         row = cursor.fetchone()
         conn.commit()
         conn.close()
-        return jsonify(dict(row)), 201
+        
+        res = dict(row)
+        if res.get('date'): res['date'] = str(res['date'])
+        if res.get('created_at'): res['created_at'] = str(res['created_at'])
+        
+        return jsonify(res), 201
     except Exception as e: return jsonify({'error': str(e)}), 500
 
 @app.route('/vehicle-expenses/<int:id>', methods=['DELETE'])
@@ -1069,7 +1082,15 @@ def get_loans():
         cursor.execute("SELECT * FROM loans ORDER BY name")
         rows = cursor.fetchall()
         conn.close()
-        return jsonify([dict(row) for row in rows])
+        
+        loans = []
+        for row in rows:
+            l = dict(row)
+            for d in ['start_date', 'end_date', 'created_at', 'updated_at']:
+                if l.get(d): l[d] = str(l[d])
+            loans.append(l)
+            
+        return jsonify(loans)
     except Exception as e: return jsonify({'error': str(e)}), 500
 
 @app.route('/loans', methods=['POST'])
@@ -1091,7 +1112,12 @@ def create_loan():
         row = cursor.fetchone()
         conn.commit()
         conn.close()
-        return jsonify(dict(row)), 201
+        
+        res = dict(row)
+        for d in ['start_date', 'end_date', 'created_at', 'updated_at']:
+             if res.get(d): res[d] = str(res[d])
+             
+        return jsonify(res), 201
     except Exception as e: return jsonify({'error': str(e)}), 500
 
 @app.route('/loans/<int:id>', methods=['PUT', 'DELETE'])
@@ -1123,7 +1149,12 @@ def manage_loan(id):
         conn.commit()
         conn.close()
         if not row: return jsonify({'error': 'Not found'}), 404
-        return jsonify(dict(row))
+        
+        res = dict(row)
+        for d in ['start_date', 'end_date', 'created_at', 'updated_at']:
+             if res.get(d): res[d] = str(res[d])
+             
+        return jsonify(res)
     except Exception as e: return jsonify({'error': str(e)}), 500
 
 # --- Savings ---
@@ -1137,8 +1168,18 @@ def get_savings_goals():
         cursor.execute("SELECT * FROM savings_goals ORDER BY created_at DESC")
         rows = cursor.fetchall()
         conn.close()
-        return jsonify([dict(row) for row in rows])
+        
+        goals = []
+        for row in rows:
+             g = dict(row)
+             if g.get('deadline'): g['deadline'] = str(g['deadline'])
+             if g.get('created_at'): g['created_at'] = str(g['created_at'])
+             if g.get('updated_at'): g['updated_at'] = str(g['updated_at'])
+             goals.append(g)
+             
+        return jsonify(goals)
     except Exception as e: return jsonify({'error': str(e)}), 500
+
 
 @app.route('/savings/goals', methods=['POST'])
 @require_auth
