@@ -8,6 +8,8 @@ import { useImageLightbox } from '../hooks/useImageLightbox';
 
 const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agreements = [] }) => {
   const { colorTheme } = useTheme();
+  // Add missing hook initialization
+  const { lightboxImages, lightboxIndex, openLightbox, closeLightbox } = useImageLightbox();
   const fileInputRef = useRef(null);
   const [formData, setFormData] = useState({
     registration_number: vehicle.registration_number || '',
@@ -114,10 +116,10 @@ const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agre
 
   const handleDelete = async () => {
     if (!onDelete) return;
-    
+
     const confirmed = window.confirm(`Är du säker på att du vill radera "${vehicle.make_model}" (${vehicle.registration_number})? Detta kan inte ångras.`);
     if (!confirmed) return;
-    
+
     setIsDeleting(true);
     try {
       await onDelete(vehicle.id);
@@ -129,7 +131,7 @@ const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agre
   const handleRemoveImage = async (imagePath) => {
     const updatedImages = images.filter(img => img !== imagePath);
     setImages(updatedImages);
-    
+
     try {
       await onSave(vehicle.id, {
         ...formData,
@@ -142,7 +144,7 @@ const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agre
   };
 
   // Filter agreements to only show insurance-related ones
-  const insuranceAgreements = agreements.filter(a => 
+  const insuranceAgreements = agreements.filter(a =>
     a.category === 'Försäkring' && a.status === 'Aktiv'
   );
 
@@ -156,8 +158,8 @@ const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agre
           <h2 className="text-lg font-bold text-zinc-900 dark:text-white mb-1">{vehicle.make_model}</h2>
           <p className="text-sm text-zinc-500 font-mono uppercase">{vehicle.registration_number}</p>
         </div>
-        <button 
-          onClick={onClose} 
+        <button
+          onClick={onClose}
           className="p-2 text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-full transition-colors"
         >
           <X size={20} />
@@ -165,16 +167,15 @@ const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agre
       </div>
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
-        
+
         {/* Status */}
         <div className="text-center py-4">
-          <span className={`px-3 py-1.5 rounded-full text-sm font-medium border ${
-            formData.status === 'Aktiv' 
-              ? 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20' 
+          <span className={`px-3 py-1.5 rounded-full text-sm font-medium border ${formData.status === 'Aktiv'
+              ? 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20'
               : formData.status === 'Såld'
-              ? 'bg-zinc-100 text-zinc-500 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-500 dark:border-zinc-700'
-              : 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20'
-          }`}>
+                ? 'bg-zinc-100 text-zinc-500 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-500 dark:border-zinc-700'
+                : 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20'
+            }`}>
             {formData.status}
           </span>
         </div>
@@ -395,17 +396,17 @@ const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agre
             <UploadCloud size={18} />
             Ladda upp bilder
           </button>
-          
+
           {images.length > 0 && (
             <div className="grid grid-cols-3 gap-2 mt-3">
               {images.map((imagePath, idx) => {
                 // Construct image URL
-                const imageUrl = imagePath.startsWith('http') 
-                  ? imagePath 
+                const imageUrl = imagePath.startsWith('http')
+                  ? imagePath
                   : imagePath.startsWith('/') || imagePath.startsWith('uploads/')
-                  ? `http://192.168.1.232:5000/${imagePath.replace(/^\/+/, '')}`
-                  : `http://192.168.1.232:5000/uploads/${imagePath}`;
-                
+                    ? `http://192.168.1.232:5000/${imagePath.replace(/^\/+/, '')}`
+                    : `http://192.168.1.232:5000/uploads/${imagePath}`;
+
                 return (
                   <div key={idx} className="relative group">
                     <img
@@ -430,7 +431,7 @@ const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agre
           )}
         </div>
       </div>
-      
+
       {/* Image Lightbox */}
       {lightboxImages && lightboxImages.length > 0 && (
         <ImageLightbox
