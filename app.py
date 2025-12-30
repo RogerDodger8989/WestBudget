@@ -56,7 +56,7 @@ print(f"DEBUG: JWT_SECRET_KEY loaded: {'Yes' if os.environ.get('JWT_SECRET_KEY')
 print(f"DEBUG: DATABASE_URL is: {os.environ.get('DATABASE_URL')}")
 print(f"DEBUG: STRIPE_SECRET_KEY present: {'Yes' if os.environ.get('STRIPE_SECRET_KEY') else 'No'}")
 print(f"DEBUG: SENDGRID_API_KEY present: {'Yes' if os.environ.get('SENDGRID_API_KEY') else 'No'}")
-print("🚀 VERSION CHECK: V7 (LETS FIX THE LIGHTBOX) 🚀")
+print("🚀 VERSION CHECK: V8 (PROACTIVE BUG SWEEP) 🚀")
 
 app = Flask(__name__)
 # Enable CORS for frontend with credentials support
@@ -251,6 +251,16 @@ if os.environ.get("DATABASE_URL"):
 
 
 
+
+# ============================================================================
+# DATA HELPERS
+# ============================================================================
+
+def parse_date(v):
+    """Convert empty strings to None for Postgres Date/Timestamp fields"""
+    if not v:
+        return None
+    return v
 
 # ============================================================================
 # DATABASE HELPERS
@@ -561,7 +571,7 @@ def create_transaction():
             RETURNING *
         """, (
             data.get('title'),
-            data.get('date'),
+            parse_date(data.get('date')),
             data.get('amount'),
             data.get('type'),
             data.get('category'),
@@ -598,7 +608,11 @@ def update_transaction(id):
         for f in fields:
             if f in data:
                 updates.append(f"{f} = %s")
-                values.append(data[f])
+                val = data[f]
+                # Sanitize date
+                if f in ['date']: 
+                    val = parse_date(val)
+                values.append(val)
         
         if not updates:
             return jsonify({'message': 'No fields to update'})
@@ -771,6 +785,8 @@ def update_agreement(id):
                 val = data[f]
                 if f == 'images' and isinstance(val, list):
                     val = json.dumps(val)
+                if f in ['next_payment', 'start_date', 'end_date']:
+                    val = parse_date(val)
                 values.append(val)
         
         if not updates: return jsonify({'message': 'No updates'})
@@ -845,7 +861,7 @@ def create_vehicle():
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *
         """, (
             data.get('registration_number'), data.get('make_model'), data.get('odometer', 0),
-            data.get('next_inspection'), data.get('insurance_company'), data.get('insurance_type'),
+            parse_date(data.get('next_inspection')), data.get('insurance_company'), data.get('insurance_type'),
             data.get('status', 'Aktiv'), data.get('category', 'Personbil'), data.get('note', ''),
             json.dumps(data.get('images', []))
         ))
@@ -879,6 +895,7 @@ def manage_vehicle(id):
                 updates.append(f"{f}=%s")
                 val = data[f]
                 if f == 'images' and isinstance(val, list): val = json.dumps(val)
+                if f in ['next_inspection', 'next_service_date']: val = parse_date(val)
                 values.append(val)
         
         if not updates: return jsonify({'message': 'No updates'})
@@ -922,7 +939,7 @@ def create_vehicle_expense():
             INSERT INTO vehicle_expenses (vehicle_id, category, amount, date, description, receipt_path, note, odometer_at_purchase)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING *
         """, (
-            data.get('vehicle_id'), data.get('category'), data.get('amount'), data.get('date'),
+            data.get('vehicle_id'), data.get('category'), data.get('amount'), parse_date(data.get('date')),
             data.get('description', ''), data.get('receipt_path'), data.get('note', ''), data.get('odometer_at_purchase')
         ))
         row = cursor.fetchone()
@@ -971,7 +988,7 @@ def create_loan():
         """, (
             data.get('name'), data.get('lender'), data.get('principal_amount'), data.get('current_balance'),
             data.get('interest_rate'), data.get('monthly_payment'), data.get('amortization_amount'),
-            data.get('interest_amount'), data.get('start_date'), data.get('end_date'),
+            data.get('interest_amount'), parse_date(data.get('start_date')), parse_date(data.get('end_date')),
             data.get('status', 'Aktiv'), data.get('category', 'Bolån'), data.get('note', '')
         ))
         row = cursor.fetchone()
@@ -1000,7 +1017,9 @@ def manage_loan(id):
         for f in fields:
             if f in data:
                 updates.append(f"{f}=%s")
-                values.append(data[f])
+                val = data[f]
+                if f in ['start_date', 'end_date']: val = parse_date(val)
+                values.append(val)
         values.append(id)
         cursor.execute(f"UPDATE loans SET {','.join(updates)}, updated_at=NOW() WHERE id=%s RETURNING *", values)
         row = cursor.fetchone()
@@ -1036,7 +1055,7 @@ def create_savings_goal():
             VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *
         """, (
             data.get('name'), data.get('target_amount'), data.get('current_amount', 0),
-            data.get('deadline'), data.get('category'), data.get('status', 'Aktiv'), data.get('description', '')
+            parse_date(data.get('deadline')), data.get('category'), data.get('status', 'Aktiv'), data.get('description', '')
         ))
         row = cursor.fetchone()
         conn.commit()
