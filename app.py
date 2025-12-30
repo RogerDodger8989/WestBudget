@@ -56,7 +56,7 @@ print(f"DEBUG: JWT_SECRET_KEY loaded: {'Yes' if os.environ.get('JWT_SECRET_KEY')
 print(f"DEBUG: DATABASE_URL is: {os.environ.get('DATABASE_URL')}")
 print(f"DEBUG: STRIPE_SECRET_KEY present: {'Yes' if os.environ.get('STRIPE_SECRET_KEY') else 'No'}")
 print(f"DEBUG: SENDGRID_API_KEY present: {'Yes' if os.environ.get('SENDGRID_API_KEY') else 'No'}")
-print("🚀 VERSION CHECK: V4 (STRINGS FOR CATEGORIES) 🚀")
+print("🚀 VERSION CHECK: V5 (FOUND DUPLICATE ENDPOINT) 🚀")
 
 app = Flask(__name__)
 # Enable CORS for frontend with credentials support
@@ -650,7 +650,8 @@ def get_categories():
         cursor.execute("SELECT * FROM categories ORDER BY name")
         rows = cursor.fetchall()
         conn.close()
-        return jsonify([dict(row) for row in rows])
+        # Frontend expects strings
+        return jsonify([row['name'] for row in rows])
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
