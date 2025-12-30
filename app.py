@@ -519,7 +519,6 @@ def handle_dashboard_layout():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/saved-searches', methods=['GET', 'POST'])
-@require_auth
 def handle_saved_searches():
     if request.method == 'GET':
         return jsonify([]), 200
