@@ -221,7 +221,6 @@ def init_db_pool():
                 max_lifetime=300, # Recycle connections every 5 minutes
                 kwargs={
                     "row_factory": dict_row,
-                    "sslmode": 'require',
                     "connect_timeout": 10
                 }
             )
