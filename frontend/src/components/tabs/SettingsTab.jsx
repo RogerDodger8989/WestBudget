@@ -592,8 +592,8 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
         <button
           onClick={() => setActiveSubTab('general')}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeSubTab === 'general'
-              ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
-              : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+            ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
+            : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
             }`}
         >
           <Settings size={16} />
@@ -602,8 +602,8 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
         <button
           onClick={() => setActiveSubTab('categories')}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeSubTab === 'categories'
-              ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
-              : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+            ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
+            : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
             }`}
         >
           <Tag size={16} />
@@ -612,8 +612,8 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
         <button
           onClick={() => setActiveSubTab('images')}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeSubTab === 'images'
-              ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
-              : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+            ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
+            : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
             }`}
         >
           <ImageIcon size={16} />
@@ -622,8 +622,8 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
         <button
           onClick={() => setActiveSubTab('history')}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeSubTab === 'history'
-              ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
-              : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+            ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
+            : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
             }`}
         >
           <History size={16} />
@@ -633,8 +633,8 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
           <button
             onClick={() => setActiveSubTab('admin')}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeSubTab === 'admin'
-                ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
-                : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+              ? `${getThemeBgClass(colorTheme, false)} dark:${getThemeBgClass(colorTheme, true)} ${getThemeTextClass(colorTheme, false)} dark:${getThemeTextClass(colorTheme, true)} shadow-sm`
+              : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
               }`}
           >
             <Settings size={16} />
@@ -739,8 +739,8 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
                     onClick={handleSave}
                     disabled={loading}
                     className={`w-full px-6 py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2 ${saved
-                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                        : `${getThemeButtonClass(colorTheme, 'primary')} disabled:opacity-50 disabled:cursor-not-allowed`
+                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                      : `${getThemeButtonClass(colorTheme, 'primary')} disabled:opacity-50 disabled:cursor-not-allowed`
                       }`}
                   >
                     {saved ? (
@@ -938,8 +938,8 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
                 <button
                   onClick={() => setActiveCategoryTab('categories')}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeCategoryTab === 'categories'
-                      ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm'
-                      : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+                    ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm'
+                    : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
                     }`}
                 >
                   Kategorier
@@ -947,8 +947,8 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
                 <button
                   onClick={() => setActiveCategoryTab('rules')}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeCategoryTab === 'rules'
-                      ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm'
-                      : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+                    ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm'
+                    : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
                     }`}
                 >
                   Kategoriregler
@@ -1203,8 +1203,8 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
                           <div
                             key={rule.id}
                             className={`p-3 rounded-lg border ${rule.is_active
-                                ? 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700'
-                                : 'bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 opacity-60'
+                              ? 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700'
+                              : 'bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 opacity-60'
                               }`}
                           >
                             {isEditing ? (
@@ -1343,8 +1343,8 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
                                       }
                                     }}
                                     className={`px-3 py-1 text-xs rounded-lg transition-colors ${rule.is_active
-                                        ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
-                                        : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400'
+                                      ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                                      : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400'
                                       }`}
                                   >
                                     {rule.is_active ? 'Aktiv' : 'Inaktiv'}
@@ -1422,8 +1422,8 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
                       onClick={handleSave}
                       disabled={loading}
                       className={`px-6 py-3 rounded-xl font-medium transition-all flex items-center gap-2 ${saved
-                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                          : 'bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed'
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                        : 'bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed'
                         }`}
                     >
                       {saved ? (
@@ -1484,8 +1484,8 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
                       onClick={handleSave}
                       disabled={loading}
                       className={`px-6 py-3 rounded-xl font-medium transition-all flex items-center gap-2 ${saved
-                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                          : 'bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed'
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                        : 'bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed'
                         }`}
                     >
                       {saved ? (
@@ -1706,8 +1706,8 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
                       </p>
                       <div className="flex items-center justify-between text-xs text-zinc-500">
                         <span className={`px-2 py-0.5 rounded ${file.type === 'receipt'
-                            ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
-                            : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400'
+                          ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                          : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400'
                           }`}>
                           {file.type === 'receipt' ? 'Kvitto' : 'Avtal'}
                         </span>
@@ -1784,7 +1784,7 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
                           {file.filename.match(/\.(jpg|jpeg|png|gif)$/i) ? (
                             <>
                               <img
-                                src={`http://192.168.1.232:5000/api/files/${encodeURIComponent(file.path)}`}
+                                src={`/uploads/${file.path.replace(/\\/g, '/')}`}
                                 alt={file.filename}
                                 className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
                                 onDoubleClick={(e) => {
@@ -1831,7 +1831,7 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
                                               }
 
                                               // Hämta filen från deleted-mappen
-                                              const deletedFileUrl = `http://192.168.1.232:5000/api/files/${encodeURIComponent(deletedPath.replace(/\\/g, '/'))}`;
+                                              const deletedFileUrl = `/uploads/${deletedPath.replace(/\\/g, '/').split(/[/\\]/).pop()}`;
 
                                               // Hämta filen som blob
                                               const response = await fetch(deletedFileUrl);
@@ -1879,8 +1879,8 @@ const SettingsTab = ({ getTitle, reloadData, isDarkMode, toggleTheme, transactio
                           </p>
                           <div className="flex items-center gap-3 mt-1 text-xs text-zinc-500">
                             <span className={`px-2 py-0.5 rounded ${file.type === 'receipt'
-                                ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
-                                : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400'
+                              ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                              : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400'
                               }`}>
                               {file.type === 'receipt' ? 'Kvitto' : 'Avtal'}
                             </span>
