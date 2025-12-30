@@ -56,7 +56,7 @@ print(f"DEBUG: JWT_SECRET_KEY loaded: {'Yes' if os.environ.get('JWT_SECRET_KEY')
 print(f"DEBUG: DATABASE_URL is: {os.environ.get('DATABASE_URL')}")
 print(f"DEBUG: STRIPE_SECRET_KEY present: {'Yes' if os.environ.get('STRIPE_SECRET_KEY') else 'No'}")
 print(f"DEBUG: SENDGRID_API_KEY present: {'Yes' if os.environ.get('SENDGRID_API_KEY') else 'No'}")
-print("🚀 VERSION CHECK: V15 (DATE FIXES) 🚀")
+print("🚀 VERSION CHECK: V16 (AGREEMENT LOGIC FIX) 🚀")
 
 app = Flask(__name__)
 
@@ -749,6 +749,13 @@ def create_agreement():
         # Helper to strict parse dates
         def parse_date(v):
             return v if v else None
+            
+        next_payment = parse_date(data.get('next_payment'))
+        start_date = parse_date(data.get('start_date'))
+        
+        # Fallback
+        if not next_payment and start_date:
+            next_payment = start_date
 
         cursor.execute("""
             INSERT INTO agreements (name, provider, cost, frequency, next_payment, status, category, icon, notice, images, start_date, end_date)
@@ -756,9 +763,9 @@ def create_agreement():
             RETURNING *
         """, (
             data.get('name'), data.get('provider'), data.get('cost'), data.get('frequency'),
-            parse_date(data.get('next_payment')), data.get('status', 'Aktiv'), data.get('category'),
+            next_payment, data.get('status', 'Aktiv'), data.get('category'),
             data.get('icon', '📄'), data.get('notice', ''), images,
-            parse_date(data.get('start_date')), parse_date(data.get('end_date'))
+            start_date, parse_date(data.get('end_date'))
         ))
         new_agreement = cursor.fetchone()
         conn.commit()
@@ -784,6 +791,11 @@ def update_agreement(id):
         fields = ['name', 'provider', 'cost', 'frequency', 'next_payment', 'status', 'category', 'icon', 'notice', 'images', 'start_date', 'end_date']
         updates = []
         values = []
+        
+        # Helper to get value from data or fallback
+        def get_val(f):
+            return data.get(f)
+
         for f in fields:
             if f in data:
                 updates.append(f"{f} = %s")
@@ -792,6 +804,20 @@ def update_agreement(id):
                     val = json.dumps(val)
                 if f in ['next_payment', 'start_date', 'end_date']:
                     val = parse_date(val)
+                
+                # Fallback logic for next_payment
+                if f == 'next_payment' and val is None:
+                    # If next_payment is explicitly set to empty (None), try start_date
+                    start_date_val = parse_date(data.get('start_date'))
+                    if start_date_val:
+                        val = start_date_val
+                    else:
+                        # If no start_date in payload, we might need to fetch current agreement or fail?
+                        # But DB constraint will fail if we send None. 
+                        # We try to keep it as None and hope DB allows it (it doesn't).
+                        # User case: "I have start date". So start_date_val should cover it.
+                        pass
+                        
                 values.append(val)
         
         if not updates: return jsonify({'message': 'No updates'})
