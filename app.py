@@ -149,11 +149,11 @@ class PostgresCursorWrapper:
         # Translate SQLite ? placeholders to Postgres %s
         pg_query = query.replace('?', '%s')
         
-        # Determine if it's an INSERT/UPDATE that needs RETURNING id for lastrowid
+            # Determine if it's an INSERT/UPDATE that needs RETURNING id for lastrowid
         is_insert = pg_query.strip().upper().startswith("INSERT")
         
         try:
-            if is_insert and "RETURNING id" not in pg_query:
+            if is_insert and "RETURNING" not in pg_query.upper():
                  pg_query += " RETURNING id"
                  if params:
                      self.cursor.execute(pg_query, params)
