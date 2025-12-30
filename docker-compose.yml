@@ -9,13 +9,26 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      # Du ville spara bilderna här:
+      # Du ville spara bilderna här (på din NAS):
       - /mnt/data/media/apps/trunas-server/WestBudget/uploads:/app/WestBudget/uploads
     environment:
-      - DATABASE_URL=postgresql://user:pass@host:5432/db  # Din Supabase/Postgres URL
-      - SUPABASE_URL=din_url
-      - SUPABASE_KEY=din_nyckel
-      - STRIPE_SECRET_KEY=din_stripe_nyckel
-      - SENDGRID_API_KEY=din_sendgrid_nyckel
-      - JWT_SECRET_KEY=slumpmässig_hemlig_text
-      # Lägg till andra variabler från din .env här
+      # Use local postgres database service name 'postgres'
+      - DATABASE_URL=postgresql://westbudget:securepassword@postgres:5432/westbudget
+      - APPDATA=/app
+      - JWT_SECRET_KEY=change_this_to_something_secret_if_you_want
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: westbudget_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: westbudget
+      POSTGRES_PASSWORD: securepassword
+      POSTGRES_DB: westbudget
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
