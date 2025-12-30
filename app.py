@@ -56,7 +56,7 @@ print(f"DEBUG: JWT_SECRET_KEY loaded: {'Yes' if os.environ.get('JWT_SECRET_KEY')
 print(f"DEBUG: DATABASE_URL is: {os.environ.get('DATABASE_URL')}")
 print(f"DEBUG: STRIPE_SECRET_KEY present: {'Yes' if os.environ.get('STRIPE_SECRET_KEY') else 'No'}")
 print(f"DEBUG: SENDGRID_API_KEY present: {'Yes' if os.environ.get('SENDGRID_API_KEY') else 'No'}")
-print("🚀 VERSION CHECK: V13 (BUILD FIX - SYNTAX CLEANUP) 🚀")
+print("🚀 VERSION CHECK: V14 (ADDED SAVINGS ROUTES) 🚀")
 
 app = Flask(__name__)
 
@@ -1160,6 +1160,48 @@ def create_savings_goal():
         return jsonify(dict(row)), 201
     except Exception as e: return jsonify({'error': str(e)}), 500
 
+@app.route('/savings/goals/<int:id>', methods=['PUT', 'DELETE'])
+@require_auth
+def manage_savings_goal(id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        if request.method == 'DELETE':
+            cursor.execute("DELETE FROM savings_goals WHERE id = %s RETURNING id", (id,))
+            if not cursor.fetchone(): return jsonify({'error': 'Not found'}), 404
+            conn.commit()
+            conn.close()
+            return jsonify({'message': 'Deleted'})
+
+        # PUT
+        data = request.json
+        fields = ['name', 'target_amount', 'current_amount', 'deadline', 'category', 'status', 'description']
+        updates, values = [], []
+        for f in fields:
+            if f in data:
+                updates.append(f"{f}=%s")
+                val = data[f]
+                if f == 'deadline': val = parse_date(val)
+                values.append(val)
+        
+        if not updates: return jsonify({'message': 'No updates'})
+        
+        values.append(id)
+        cursor.execute(f"UPDATE savings_goals SET {', '.join(updates)}, updated_at=NOW() WHERE id=%s RETURNING *", values)
+        row = cursor.fetchone()
+        conn.commit()
+        conn.close()
+        
+        if not row: return jsonify({'error': 'Not found'}), 404
+        
+        res = dict(row)
+        if res.get('deadline'): res['deadline'] = str(res['deadline'])
+        if res.get('created_at'): res['created_at'] = str(res['created_at'])
+        if res.get('updated_at'): res['updated_at'] = str(res['updated_at'])
+        return jsonify(res)
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
 @app.route('/savings/accounts', methods=['GET'])
 @require_auth
 def get_savings_accounts():
@@ -1190,6 +1232,46 @@ def create_savings_account():
         conn.commit()
         conn.close()
         return jsonify(dict(row)), 201
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+@app.route('/savings/accounts/<int:id>', methods=['PUT', 'DELETE'])
+@require_auth
+def manage_savings_account(id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        if request.method == 'DELETE':
+            cursor.execute("DELETE FROM savings_accounts WHERE id = %s RETURNING id", (id,))
+            if not cursor.fetchone(): return jsonify({'error': 'Not found'}), 404
+            conn.commit()
+            conn.close()
+            return jsonify({'message': 'Deleted'})
+
+        # PUT
+        data = request.json
+        fields = ['name', 'balance', 'description', 'category', 'status']
+        updates, values = [], []
+        for f in fields:
+            if f in data:
+                updates.append(f"{f}=%s")
+                val = data[f]
+                values.append(val)
+        
+        if not updates: return jsonify({'message': 'No updates'})
+        
+        values.append(id)
+        cursor.execute(f"UPDATE savings_accounts SET {', '.join(updates)}, updated_at=NOW() WHERE id=%s RETURNING *", values)
+        row = cursor.fetchone()
+        conn.commit()
+        conn.close()
+        
+        if not row: return jsonify({'error': 'Not found'}), 404
+        
+        res = dict(row)
+        if res.get('created_at'): res['created_at'] = str(res['created_at'])
+        if res.get('updated_at'): res['updated_at'] = str(res['updated_at'])
+        return jsonify(res)
     except Exception as e: return jsonify({'error': str(e)}), 500
 
 # --- Licenses ---
