@@ -221,7 +221,8 @@ def delete_agreement(agreement_id):
 def get_categories():
     """Get all categories"""
     categories = Category.query.order_by(Category.name).all()
-    return jsonify([c.to_dict() for c in categories]), 200
+    # Frontend expects list of strings for dropdowns
+    return jsonify([c.name for c in categories]), 200
 
 
 @economy_api.route('/categories', methods=['POST'])
