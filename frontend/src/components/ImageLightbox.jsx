@@ -12,11 +12,11 @@ const ImageLightbox = ({ images, currentIndex, onClose }) => {
   const containerRef = useRef(null);
 
   const currentImage = images[currentImgIndex];
-  const imageUrl = currentImage?.startsWith('http') 
-    ? currentImage 
+  const imageUrl = currentImage?.startsWith('http')
+    ? currentImage
     : currentImage?.includes(':\\') || currentImage?.startsWith('/')
-    ? `http://192.168.1.232:5000/api/files/${encodeURIComponent(currentImage.replace(/\\/g, '/'))}`
-    : `http://192.168.1.232:5000/uploads/${currentImage?.replace(/\\/g, '/')}`;
+      ? `/uploads/${currentImage.replace(/\\/g, '/').split('/').pop()}`
+      : `/uploads/${currentImage?.replace(/\\/g, '/')}`;
 
   useEffect(() => {
     // Reset zoom and position when image changes
@@ -57,18 +57,18 @@ const ImageLightbox = ({ images, currentIndex, onClose }) => {
         e.preventDefault();
         const newX = e.clientX - dragStart.x;
         const newY = e.clientY - dragStart.y;
-        
+
         // Constrain panning to keep image visible
         if (imageRef.current && containerRef.current) {
           const imgRect = imageRef.current.getBoundingClientRect();
           const containerRect = containerRef.current.getBoundingClientRect();
-          
+
           // Calculate max pan distance based on zoomed image size
           const scaledWidth = imgRect.width;
           const scaledHeight = imgRect.height;
           const maxX = Math.max(0, (scaledWidth - containerRect.width) / 2);
           const maxY = Math.max(0, (scaledHeight - containerRect.height) / 2);
-          
+
           setPosition({
             x: Math.max(-maxX, Math.min(maxX, newX)),
             y: Math.max(-maxY, Math.min(maxY, newY))
@@ -105,23 +105,23 @@ const ImageLightbox = ({ images, currentIndex, onClose }) => {
     e.preventDefault();
     const delta = e.deltaY > 0 ? -0.15 : 0.15;
     const newZoom = Math.max(0.5, Math.min(5, zoom + delta));
-    
+
     // Zoom towards mouse position
     if (imageRef.current && containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
       const mouseX = e.clientX - rect.left - rect.width / 2;
       const mouseY = e.clientY - rect.top - rect.height / 2;
-      
+
       const zoomFactor = newZoom / zoom;
       setPosition({
         x: position.x * zoomFactor - mouseX * (zoomFactor - 1),
         y: position.y * zoomFactor - mouseY * (zoomFactor - 1)
       });
     }
-    
+
     setZoom(newZoom);
   };
-  
+
   const handleDoubleClick = (e) => {
     e.stopPropagation();
     if (zoom === 1) {
@@ -130,7 +130,7 @@ const ImageLightbox = ({ images, currentIndex, onClose }) => {
         const rect = containerRef.current.getBoundingClientRect();
         const mouseX = e.clientX - rect.left - rect.width / 2;
         const mouseY = e.clientY - rect.top - rect.height / 2;
-        
+
         setZoom(2);
         setPosition({
           x: -mouseX,
@@ -197,13 +197,13 @@ const ImageLightbox = ({ images, currentIndex, onClose }) => {
   }, []);
 
   const modalContent = (
-    <div 
+    <div
       className="fixed inset-0 bg-black/95 backdrop-blur-md flex items-center justify-center"
-      style={{ 
-        position: 'fixed', 
-        top: 0, 
-        left: 0, 
-        right: 0, 
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
         bottom: 0,
         zIndex: 99999,
         isolation: 'isolate'
@@ -307,7 +307,7 @@ const ImageLightbox = ({ images, currentIndex, onClose }) => {
       </div>
     </div>
   );
-  
+
   // Render using portal to ensure it's on top of everything
   return createPortal(modalContent, document.body);
 };
