@@ -171,10 +171,10 @@ const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agre
         {/* Status */}
         <div className="text-center py-4">
           <span className={`px-3 py-1.5 rounded-full text-sm font-medium border ${formData.status === 'Aktiv'
-              ? 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20'
-              : formData.status === 'Såld'
-                ? 'bg-zinc-100 text-zinc-500 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-500 dark:border-zinc-700'
-                : 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20'
+            ? 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20'
+            : formData.status === 'Såld'
+              ? 'bg-zinc-100 text-zinc-500 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-500 dark:border-zinc-700'
+              : 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20'
             }`}>
             {formData.status}
           </span>
@@ -404,8 +404,8 @@ const VehicleDrawer = ({ vehicle, onClose, onSave, onDelete, onImageUpload, agre
                 const imageUrl = imagePath.startsWith('http')
                   ? imagePath
                   : imagePath.startsWith('/') || imagePath.startsWith('uploads/')
-                    ? `http://192.168.1.232:5000/${imagePath.replace(/^\/+/, '')}`
-                    : `http://192.168.1.232:5000/uploads/${imagePath}`;
+                    ? `/uploads/${imagePath.replace(/^\/+/, '').replace(/^uploads\//, '')}`
+                    : `/uploads/${imagePath}`;
 
                 return (
                   <div key={idx} className="relative group">

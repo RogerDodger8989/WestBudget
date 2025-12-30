@@ -56,9 +56,14 @@ print(f"DEBUG: JWT_SECRET_KEY loaded: {'Yes' if os.environ.get('JWT_SECRET_KEY')
 print(f"DEBUG: DATABASE_URL is: {os.environ.get('DATABASE_URL')}")
 print(f"DEBUG: STRIPE_SECRET_KEY present: {'Yes' if os.environ.get('STRIPE_SECRET_KEY') else 'No'}")
 print(f"DEBUG: SENDGRID_API_KEY present: {'Yes' if os.environ.get('SENDGRID_API_KEY') else 'No'}")
-print("🚀 VERSION CHECK: V9 (MISSING UPLOAD ENDPOINTS) 🚀")
+print("🚀 VERSION CHECK: V10 (FIX IMAGES SERVING) 🚀")
 
 app = Flask(__name__)
+
+# Serve Uploads
+@app.route('/uploads/<path:filename>')
+def serve_upload(filename):
+    return send_from_directory(UPLOAD_FOLDER, filename)
 # Enable CORS for frontend with credentials support
 CORS(app, resources={
     r"/*": {
